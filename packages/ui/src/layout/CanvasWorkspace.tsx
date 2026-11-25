@@ -1,4 +1,4 @@
-import { draftConversation as latestDraftConversation,projectSketchImagePaths,useBoardSources,useCore,useCoreIdentity,useProject,useProjects,useRunsStore,useThreads,WORKSPACE_AREAS,type WorkspaceArea } from "@fabdesk/client-core";
+import { draftConversation as latestDraftConversation,hasFabplaneSession,projectSketchImagePaths,useAuthStore,useBoardSources,useCore,useCoreIdentity,useProject,useProjects,useRunsStore,useThreads,WORKSPACE_AREAS,type WorkspaceArea } from "@fabdesk/client-core";
 import type { ProjectDetail } from "@fabdesk/protocol";
 import { useEffect,useRef,useState } from "react";
 import { ProfileButton } from "../auth/ProfileAccountDialog";
@@ -25,6 +25,7 @@ import { WhatsNewLink } from "../whatsnew/WhatsNew";
 import type { AppShellProps } from "./AppShell";
 import "./canvas-v6.css";
 import "./canvas-workspace.css";
+import { connectionLabel } from "./connection-label";
 import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
 import { ProjectActivity } from "./ProjectActivity";
 import { ProjectHome } from "./ProjectHome";
@@ -109,6 +110,9 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const home = !projectId && !threadId && !secondary;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
+  const fabplaneSession = useAuthStore((s) => hasFabplaneSession(s.state));
+  const connection = connectionLabel({ connected, localCore: local, fabplaneSession });
+  const connectionTitle = coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`;
 
   const destinations = projectId && !secondary && (!conversationOnly || isDraft) && <nav className="fd-canvas-destinations" aria-label="Project workspace">
     {isDraft ? <><Button size="sm" variant="ghost" aria-pressed={!draftConversation} onClick={() => { setDraftView("sketch"); if (!sketchPaths.length) ui().setSketchOpen(true, "draw"); }}><Icon name="compose" width={16} height={16} />Sketch</Button><Button size="sm" variant="ghost" aria-pressed={draftConversation} onClick={() => { if (!threadId) ui().setActiveThread(latestDraftConversation(projectId, threads.data ?? [])?.id ?? null); setDraftView("conversation"); }}><Icon name="sparkles" width={16} height={16} />Conversation</Button></> : <WorkspaceMenu label={<><Icon name="library" width={16} height={16} /><span>{fresh ? "Start" : areaLabel}</span><Icon name="chevronDown" width={14} height={14} /></>}>
@@ -149,7 +153,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         {home && !showProjects && <Button size="sm" onClick={() => setCreating("create")}><Icon name="plus" width={16} height={16} />New project</Button>}
         {home && <Button size="sm" onClick={() => setShowProjects(!showProjects)}><Icon name={showProjects ? "chevronLeft" : "folder"} width={16} height={16} />{showProjects ? "Home" : "Projects"}</Button>}
         {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
-        <span className="fd-canvas-connection" title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`}><i data-connected={connected} />{connected ? local ? "Local workspace" : "Remote workspace" : "Reconnecting…"}</span>
+        <span className="fd-canvas-connection" title={connectionTitle}><i data-connected={connected} />{connection ?? <span className="sr-only">Connected</span>}</span>
         {projectId && !fresh && !isDraft && <Button size="sm" variant="secondary" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
         {projectId && !fresh && !isDraft && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
         <ProfileButton />
