@@ -100,4 +100,10 @@ describe("final verification display", () => {
     expect(finishItNextStep(session())).toBeNull();
     expect(finishItNextStep(session({ status: "completed" }))).toBeNull();
   });
+
+  test("an ended session does not show a step as still running", () => {
+    const ended = session({ status: "failed", error: "interrupted by daemon restart" });
+    expect(finishItDisplayedMilestoneStatus(ended, ended.milestones[2]!)).toBe("pending");
+    expect(finishItDisplayedMilestoneStatus(session(), session().milestones[2]!)).toBe("running");
+  });
 });

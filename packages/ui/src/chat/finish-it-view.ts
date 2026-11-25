@@ -28,6 +28,9 @@ export function finishItDisplayedMilestoneStatus(
   milestone: FinishItMilestone,
 ): FinishItMilestone["status"] {
   if (finishingFinalChecks(session) && milestone.id === "verify") return "running";
+  // A session that ended mid-step (stopped, interrupted) can leave steps recorded as running;
+  // nothing is running any more, so they are simply not done.
+  if (!finishItActive(session) && milestone.status === "running") return "pending";
   return milestone.status;
 }
 
