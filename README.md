@@ -64,8 +64,12 @@ out in Settings → Privacy. Reports never include prompts, board files, tokens 
 [docs/sentry.md](docs/sentry.md).
 
 The onboarding drop-off funnel is a separate, optional PostHog capture from `fabdesk-core` (no SDK).
-It is off unless `POSTHOG_KEY` is set; users can also turn it off in Settings → Privacy. Events never
-include prompts, board files, tokens, emails, project names or paths. See
+It stays off until the person explicitly opts in on this device, and sends nothing unless
+`POSTHOG_KEY` is configured. The first-install screen names PostHog and explains campaign/account
+linkage; declining does not limit app features. Settings → Privacy can stop future analytics.
+Milestones and limited error categories never include prompts, board files, tokens, emails,
+project names, paths or raw error text. Source builds and forks need no analytics credentials;
+leave the key unset to disable capture. See
 [docs/onboarding-funnel.md](docs/onboarding-funnel.md).
 
 Agent-run debugging is separate from crash reporting: every in-app run gets a portable `llm-dump.json`

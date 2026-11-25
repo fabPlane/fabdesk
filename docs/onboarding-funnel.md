@@ -7,8 +7,22 @@ complete no-op when `POSTHOG_KEY` is unset.
 
 This is not crash reporting ([sentry.md](sentry.md)) and not the first-party product events gated
 by usage-archive consent ([telemetry.md](telemetry.md)). Users can turn the funnel off in
-Settings → Privacy (`productAnalytics`, default on). That flag is local to the device and is not
-part of Cloud Settings.
+Settings → Privacy. `productAnalytics` defaults off and also requires
+`productAnalyticsChoiceComplete=true`. Both fields stay on this device, outside Cloud Settings.
+The desktop asks every undecided installation, regardless of region, before sign-in/workspace
+access. Both choices start unchecked; continuing without analytics records a rejection.
+Older saved `productAnalytics=true` values without the new explicit-choice marker remain off.
+Website consent does not substitute for desktop consent.
+
+This is pseudonymous analytics: a random device/website ID can be linked to the account subject
+on sign-in, with first-touch campaign tags. It is not anonymous usage. The privacy screen and
+settings disclose PostHog, activation, error categories and account/campaign linkage.
+Revoking consent stops queued sends and retries; it cannot recall a request already sent.
+Activity before consent is not recorded or replayed. Opting in starts with the current app launch
+and signed-in state. Other milestones require subsequent activity.
+
+The session/usage archive and Sentry have separate controls and existing policies; this
+analytics choice does not enable either of them.
 
 Events never include prompts, board files, tokens, emails, project names or paths.
 
@@ -126,7 +140,12 @@ reporting a crash that occurs before the funnel can initialize.
 
 Runtime values override a key compiled into the binary. An explicitly empty `POSTHOG_KEY=`
 disables a compiled-in key. Release builds read GitHub secrets `POSTHOG_KEY` and optional
-`POSTHOG_HOST`. Development and CI send nothing unless those variables are set.
+`POSTHOG_HOST`. Development and CI send nothing unless those variables are set and desktop analytics is explicitly
+allowed. Contributors and forks need no organization secrets to build or test. Forks can leave the
+key unset, set their own project, or disable capture with `POSTHOG_KEY=`. Only a public project
+ingestion token (`phc_`) belongs in distributed binaries; never embed personal/admin credentials.
+An ingestion token is extractable and permits event submission, so these metrics are observational,
+not a trusted billing, entitlement or security signal.
 
 ## How to view
 

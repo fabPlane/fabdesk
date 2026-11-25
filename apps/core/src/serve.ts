@@ -433,6 +433,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       }
     },
   );
+  let lastFunnelConsent = funnel.optedIn();
   funnel.record("onboarding_app_launched");
   if (adopted.phId) funnel.record("onboarding_landing");
   const signedIn = auth.state();
@@ -709,6 +710,18 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     funnel,
     onSettingsChanged: () => {
       void cloudSettings.push();
+      const funnelConsent = funnel.optedIn();
+      if (funnelConsent !== lastFunnelConsent) funnel.consentChanged();
+      if (funnelConsent && !lastFunnelConsent) {
+        // Start with the current launch, never replay activity from before consent.
+        funnel.record("onboarding_app_launched");
+        if (funnel.handoff().phId) funnel.record("onboarding_landing");
+        const currentAuth = auth.state();
+        if (currentAuth.status === "signed_in" && currentAuth.principal?.subject) {
+          funnel.identify(currentAuth.principal.subject);
+        }
+      }
+      lastFunnelConsent = funnelConsent;
       const consent = hasArchiveConsent();
       if (consent && !lastArchiveConsent) {
         // Let a cancelled backfill settle before starting the new consent period's backfill.

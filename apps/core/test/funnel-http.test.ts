@@ -47,6 +47,14 @@ beforeAll(async () => {
       return services;
     },
   });
+  expect(daemon.funnel.optedIn()).toBe(false);
+  expect(daemon.funnel.snapshot().events).toEqual([]);
+  expect(captures).toEqual([]);
+  const consent = await api("/settings", {
+    method: "PATCH",
+    body: JSON.stringify({ productAnalytics: true, productAnalyticsChoiceComplete: true }),
+  });
+  expect(consent.status).toBe(200);
 });
 
 afterAll(async () => {

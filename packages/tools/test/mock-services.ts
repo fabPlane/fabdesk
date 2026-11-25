@@ -80,6 +80,7 @@ export function mockServices(
       webmcpWriteTools: false,
       errorReporting: true,
       productAnalytics: true,
+      productAnalyticsChoiceComplete: true,
       usageArchiveConsent: false,
       usageArchiveChoiceComplete: false,
       theme: "system",

@@ -17,6 +17,8 @@ import {
   pairingUrlFromEndpoints,
   parsePairingUrl,
   Settings,
+  productAnalyticsAllowed,
+  productAnalyticsChoice,
   CloudSettings,
   findOpenCatalogArg,
   isOpenCatalogIntent,
@@ -124,13 +126,17 @@ describe("schemas", () => {
     expect(CloudSettings.safeParse({ schema: 1 }).success).toBe(false);
     expect(CloudSettings.safeParse({ schema: 2, updatedAt: 1 }).success).toBe(false);
     expect(
-      CloudSettings.parse({ schema: 1, updatedAt: 1, productAnalytics: false }),
+      CloudSettings.parse({ schema: 1, updatedAt: 1, productAnalytics: false, productAnalyticsChoiceComplete: true }),
     ).toEqual({ schema: 1, updatedAt: 1 });
   });
 
-  test("productAnalytics defaults on and is a local Settings flag", () => {
-    expect(Settings.parse({}).productAnalytics).toBe(true);
+  test("productAnalytics defaults off and requires a separate explicit choice", () => {
+    expect(Settings.parse({}).productAnalytics).toBe(false);
+    expect(Settings.parse({ productAnalytics: true }).productAnalyticsChoiceComplete).toBe(false);
     expect(Settings.parse({ productAnalytics: false }).productAnalytics).toBe(false);
+    expect(productAnalyticsAllowed(Settings.parse({ productAnalytics: true }))).toBe(false);
+    expect(productAnalyticsAllowed(Settings.parse(productAnalyticsChoice(false)))).toBe(false);
+    expect(productAnalyticsAllowed(Settings.parse(productAnalyticsChoice(true)))).toBe(true);
   });
 
   test("DaemonHandshake requires a real token", () => {

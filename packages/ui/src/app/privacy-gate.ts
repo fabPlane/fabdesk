@@ -10,8 +10,8 @@ export function privacyScreenRequired(query: { data?: PrivacyStatus | undefined;
 }
 
 export function needsPrivacyScreen(
-  settings: Pick<Settings, "usageArchiveChoiceComplete">,
+  settings: Pick<Settings, "usageArchiveChoiceComplete" | "productAnalyticsChoiceComplete">,
   screenRequired: boolean,
 ): boolean {
-  return screenRequired && !settings.usageArchiveChoiceComplete;
+  return !settings.productAnalyticsChoiceComplete || (screenRequired && !settings.usageArchiveChoiceComplete);
 }

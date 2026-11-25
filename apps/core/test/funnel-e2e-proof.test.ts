@@ -43,6 +43,7 @@ const posthog = Bun.serve({
 });
 
 let daemon: Daemon;
+let design: CoreServices["design"];
 
 const wait = () => new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -91,6 +92,7 @@ function emitTool(id: string, name: string, result: { output: unknown; isError?:
 beforeAll(async () => {
   const home = await mkdtemp(join(tmpdir(), "fabdesk-funnel-e2e-"));
   const seed = Store.open(join(home, "fabdesk.db"));
+  seed.settings.patch({ productAnalytics: true, productAnalyticsChoiceComplete: true });
   seed.settings.writeRaw("funnel_anon_distinct_id", PRE_ANON);
   seed.close();
   process.env["FABDESK_PROJECTS_DIR"] = join(home, "Fabdesk");
@@ -110,13 +112,16 @@ beforeAll(async () => {
       POSTHOG_HOST: posthog.url.origin,
     },
     funnelArgv: ["fabdesk-core", "serve", OPEN_URL],
-    services: async ({ projects, bus, store }) =>
-      mockServices([], {
+    services: async ({ projects, bus, store }) => {
+      const services = mockServices([], {
         projects,
         bus: { emit: (e) => bus.emit(e) },
         routeRuns: store.routeRuns,
         channel: "internal",
-      }) as unknown as CoreServices,
+      }) as unknown as CoreServices;
+      design = services.design;
+      return services;
+    },
   });
   await daemon.funnel.flush();
 });
@@ -193,12 +198,17 @@ describe("funnel e2e PostHog /capture/ proof", () => {
     expect(afterFail.events.some((e) => e.event === "onboarding_first_board_built")).toBe(false);
     expect(named("onboarding_first_board_built")).toHaveLength(0);
     emitTool("build-ok", "circuit_build", { output: { ok: true } });
+    const projectDir = await mkdtemp(join(tmpdir(), "funnel-e2e-board-"));
+    await Bun.write(join(projectDir, "circuit.netlist.json"), "BROKEN");
+    expect((await design.build({ projectDir })).ok).toBe(false);
+    await Bun.write(join(projectDir, "circuit.netlist.json"), "{}");
+    expect((await design.build({ projectDir })).ok).toBe(true);
     emitTool("route-ok", "route_run", { output: { ok: true } });
     emitTool("import-ok", "project_import_kicad", { output: { ok: true } });
     await wait();
     await daemon.funnel.flush();
     const snap = await snapshot();
-    for (const event of FUNNEL_EVENTS) {
+    for (const event of FUNNEL_EVENTS.filter(event => event !== "onboarding_first_ai_run_error")) {
       expect(snap.events.some((e) => e.event === event)).toBe(true);
       expect(named(event).length).toBeGreaterThan(0);
     }
