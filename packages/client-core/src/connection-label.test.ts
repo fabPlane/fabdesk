@@ -5,10 +5,10 @@ describe("connectionLabel", () => {
   test("fabPlane mode on a local core shows no label", () => {
     expect(connectionLabel({ connected: true, localCore: true, authMode: "fabplane" })).toBeNull();
   });
-  test("local auth on a local core says local mode", () => {
-    expect(connectionLabel({ connected: true, localCore: true, authMode: "local" })).toBe("Local mode");
+  test("local auth on a local core says local", () => {
+    expect(connectionLabel({ connected: true, localCore: true, authMode: "local" })).toBe("Local");
   });
-  test("unknown auth state is not reported as local mode", () => {
+  test("unknown auth state is not reported as local", () => {
     expect(connectionLabel({ connected: true, localCore: true, authMode: undefined })).toBeNull();
   });
   test("a core on another host is named whatever the auth mode", () => {
