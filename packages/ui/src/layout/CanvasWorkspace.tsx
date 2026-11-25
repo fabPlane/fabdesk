@@ -153,6 +153,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         {home && <Button size="sm" onClick={() => setShowProjects(!showProjects)}><Icon name={showProjects ? "chevronLeft" : "folder"} width={16} height={16} />{showProjects ? "Home" : "Projects"}</Button>}
         {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
         <span className="fd-canvas-connection" title={connectionTitle}><i data-connected={connected} />{connection ?? <span className="sr-only">Connected</span>}</span>
+        <span className="fd-canvas-update"><UpdateBadge /></span>
         {projectId && !fresh && !isDraft && <Button size="sm" variant="secondary" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
         {projectId && !fresh && !isDraft && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
         <ProfileButton />
@@ -163,7 +164,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
           <button onClick={() => ui().setInventoryOpen(true)}><Icon name="library" width={16} height={16} />Parts inventory</button>
           {projectId && <button onClick={() => { ui().setBoardOpen(!boardOpen); setAssistantOpen(false); }}>{boardOpen ? "Focus conversation" : "Return to canvas"}</button>}
           <button onClick={() => ui().setCanvasMode(false)}>Use classic layout</button>
-          <div className="fd-menu-divider" /><div className="fd-workspace-update-actions"><WhatsNewLink /><UpdateBadge /></div>
+          <div className="fd-menu-divider" /><div className="fd-workspace-update-actions"><WhatsNewLink /></div>
         </WorkspaceMenu>
       </div>
     </header>
