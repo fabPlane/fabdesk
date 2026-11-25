@@ -176,6 +176,12 @@ export interface UiState {
   projectExitRequested: boolean;
   requestProjectClose: (open: boolean) => void;
   closeProject: () => boolean;
+  /**
+   * The Home button: leave the project view at once. Nothing stops when a project is left (runs and
+   * jobs live in the core), so the confirmation appears only when leaving could lose something:
+   * an open edit that blocks leaving, or a Notes draft that was never saved.
+   */
+  goHome: () => boolean;
   projectExitBlocks: Record<string, { projectId: string; message: string }>;
   setProjectExitBlock: (key: string, block: { projectId: string; message: string } | null) => void;
   /** Start a blank conversation; a missing project opens the picker. */
@@ -241,7 +247,7 @@ function historyLocation(s: UiState): WorkspaceHistoryEntry | null {
 export function createUiStore(storage?: StateStorage) {
   return create<UiState>()(
   persist(
-    (rawSet) => {
+    (rawSet, get) => {
       let navigationBatch = false;
       const set = (update: Partial<UiState> | ((state: UiState) => Partial<UiState>)) => rawSet(state => {
         const patch = typeof update === "function" ? update(state) : update;
@@ -382,6 +388,16 @@ export function createUiStore(storage?: StateStorage) {
     if (block) projectExitBlocks[key] = block; else delete projectExitBlocks[key];
     return { projectExitBlocks };
   }),
+  goHome: () => {
+    const s = get();
+    const unsavedNotes = Object.entries(s.notesDrafts).some(([key, draft]) => {
+      if (draft.content === draft.base) return false;
+      try { const parsed: unknown = JSON.parse(key); return Array.isArray(parsed) && parsed[1] === s.activeProjectId; }
+      catch { return false; }
+    });
+    if (unsavedNotes) { set({ projectExitRequested: true }); return false; }
+    return get().closeProject();
+  },
   closeProject: () => {
     let closed = false;
     set(s => {

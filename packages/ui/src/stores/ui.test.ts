@@ -613,3 +613,26 @@ test("Account opens the shared profile window without navigating or losing setti
   expect(store.getState().profileReason).toBeNull();
   expect(store.getState().settingsOpen).toBe(true);
 });
+
+test("Home leaves the project at once and asks only when something could be lost", () => {
+  const store = createUiStore({ getItem: () => null, setItem() {}, removeItem() {} });
+  store.getState().setActiveProject("a");
+  expect(store.getState().goHome()).toBe(true);
+  expect(store.getState()).toMatchObject({ activeProjectId: null, projectExitRequested: false });
+
+  store.getState().setActiveProject("a");
+  store.getState().setNotesDraft(JSON.stringify(["http://core", "a"]), { base: "saved", content: "draft" });
+  expect(store.getState().goHome()).toBe(false);
+  expect(store.getState()).toMatchObject({ activeProjectId: "a", projectExitRequested: true });
+  store.getState().requestProjectClose(false);
+
+  store.getState().setNotesDraft(JSON.stringify(["http://core", "a"]), null);
+  store.getState().setNotesDraft(JSON.stringify(["http://core", "other"]), { base: "saved", content: "draft" });
+  store.getState().setProjectExitBlock("edit", { projectId: "a", message: "Finish the placement edit" });
+  expect(store.getState().goHome()).toBe(false);
+  expect(store.getState()).toMatchObject({ activeProjectId: "a", projectExitRequested: true });
+  store.getState().requestProjectClose(false);
+  store.getState().setProjectExitBlock("edit", null);
+  expect(store.getState().goHome()).toBe(true);
+  expect(store.getState().activeProjectId).toBeNull();
+});
