@@ -427,6 +427,25 @@ test("idea planning is restricted and promotion carries history into a fresh eng
   h.runs[2]!.finish(); await settle();
 });
 
+test("Antigravity cannot run before an idea is promoted and keeps the selected model afterward", async () => {
+  const h = await harness({ agentId: "antigravity" }), p = h.project("antigravity-idea"), t = h.thread();
+  const base = p.manifest();
+  let manifest: typeof base = { ...base, ideaDraft: {} };
+  p.manifest = () => manifest;
+  const model = "gemini-4-neon-high", prompt = "make me a simple blinking light board";
+  const start = () => h.manager.start({ threadId: t.id, project: p, agentId: "antigravity", model, prompt, attachments: [] });
+  await expect(start()).rejects.toThrow("create the project first");
+  expect(h.runs).toHaveLength(0);
+  expect(h.manager.activeCount()).toBe(0);
+  manifest = { ...base, promotedAt: new Date().toISOString() };
+  await start();
+  expect(h.runs[0]?.session.model).toBe(model);
+  expect(h.runs[0]?.session.prompt).toContain(prompt);
+  expect(h.runs[0]?.session.planningOnly).toBeUndefined();
+  h.runs[0]!.finish();
+  await settle();
+});
+
 test("a run token names its agent; only agents whose tool timeout fabdesk raised get the full durable wait", async () => {
   const h = await harness();
   expect(h.manager.activeRunAgent(null)).toBeNull();

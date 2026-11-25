@@ -114,6 +114,11 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
     title: "This model is busy right now",
     message: "Try again later, or choose a different model for this chat and resend your message when you’re ready.", action: "models",
   };
+  if (/(?:not available to this Antigravity account|Google Antigravity did not confirm the selected model|Antigravity model no longer reports the requested thinking level)/i.test(text)) return {
+    title: "Antigravity could not use the selected model",
+    message: "Reopen the model picker to refresh the models on this host. Choose an available model or Antigravity’s default, then resend. No prompt was sent to the agent.",
+    action: "models",
+  };
   if (["model_not_found", "model_not_supported", "unsupported_model"].includes(code ?? "") || /model_not_found|model.*(?:does not exist|not found|not available|not supported|do not have access)|unsupported model/i.test(text)) return {
     title: "The selected model is unavailable",
     message: "Choose a different model for this chat, then send your message again. A model appearing in the picker does not guarantee access with your agent account.", action: "models",

@@ -33,8 +33,8 @@ export function ThreadView({ presentation = "chat", referenceStart = false }: { 
   const messages = useMessages(activeThreadId);
   const { create } = useThreadMutations();
   const onCreateThread = useCallback(
-    async (input: { agentId: AgentId; model?: string }) => {
-      let destination = projectId;
+    async (input: { agentId: AgentId; model?: string; projectId?: string }) => {
+      let destination = input.projectId ?? projectId;
       let createdProject = false;
       if (activeThreadId) throw new Error("Wait for the current chat to load before sending.");
       if (!destination && presentation !== "start") {
