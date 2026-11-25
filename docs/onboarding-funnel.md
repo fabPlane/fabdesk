@@ -85,6 +85,35 @@ link may remain unattributed. Do not infer a match from IP, country or timestamp
 The app must be a release containing the funnel instrumentation and compiled
 PostHog key; already-installed releases are not changed by setting CI secrets.
 
+## Errors during activation
+
+The same attributed person also receives these first-of-stage milestones:
+
+| Event | Trigger |
+| --- | --- |
+| `onboarding_first_board_build_error` | Design-service build fails, throws (except cancellation), or returns an empty board |
+| `onboarding_first_ai_run_error` | An in-app agent run finishes with status `failed`, including startup failures; `aborted` is excluded |
+| `onboarding_first_tool_error` | An in-app agent tool result reports `isError=true` |
+
+These events are once per distinct identity, like the other onboarding milestones.
+They measure affected users, **not total errors**. `failure_kind` is restricted to
+`build_failed`, `empty_board`, `exception`, `failed`, or `tool_error`;
+`tool_group` is restricted to `build`, `route`, `review`, `import`, or `other`.
+Raw exception text, stack traces, tool inputs/outputs, project names/paths, prompts
+and board files are not sent to PostHog. These events respect `productAnalytics`.
+
+Use a unique-user funnel `landing_view` → `onboarding_first_board_build_error` →
+`onboarding_first_board_built` to see recovery, or compare the cohort with any
+first-error event against the cohort reaching first-board activation. Apply
+campaign filters to the landing step. Tool/AI events cover in-app agent sessions;
+external clients are covered for design-service build failures, not every tool.
+
+Detailed crash diagnostics remain in the existing Sentry integration
+([sentry.md](sentry.md)), with its separate `errorReporting` switch. Signed-in
+users use the same account subject in Sentry and the onboarding funnel. Sentry
+is not duplicated as PostHog exception capture, and this does not guarantee
+reporting a crash that occurs before the funnel can initialize.
+
 ## Env vars
 
 | Variable | Role |

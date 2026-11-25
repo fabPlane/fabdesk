@@ -210,6 +210,19 @@ describe("funnel HTTP", () => {
     expect(snap.events.filter((e) => e.event === "onboarding_first_project")).toHaveLength(1);
   });
 
+  test("failed AI runs record an attributed error while user-aborted runs do not", async () => {
+    daemon.bus.emit({ ts: Date.now(), topic: "agent.done", runId: "cancelled", threadId: "thread", status: "aborted" });
+    await daemon.funnel.flush();
+    expect(daemon.funnel.snapshot().events.some(e => e.event === "onboarding_first_ai_run_error")).toBe(false);
+    daemon.bus.emit({ ts: Date.now(), topic: "agent.done", runId: "failed", threadId: "thread", status: "failed" });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    await daemon.funnel.flush();
+    const failure = captures.find(e => e.event === "onboarding_first_ai_run_error");
+    expect(failure?.properties).toMatchObject({ distinct_id: daemon.funnel.distinctId(), utm_source: "newsletter", failure_kind: "failed" });
+    const tool = captures.find(e => e.event === "onboarding_first_tool_error");
+    expect(tool?.properties).toMatchObject({ tool_group: "build", failure_kind: "tool_error" });
+  });
+
   test("productAnalytics off is local and stops new events", async () => {
     const patched = await api("/settings", {
       method: "PATCH",

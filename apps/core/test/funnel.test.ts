@@ -99,10 +99,52 @@ describe("Funnel", () => {
         utm_campaign: "india_circuits",
         utm_content: "creative_1",
       });
+      const errors = bodies.filter(e => e.event === "onboarding_first_board_build_error");
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.properties).toMatchObject({ distinct_id: "account_subject", utm_source: "openai", failure_kind: "build_failed" });
       expect(JSON.stringify(bodies)).not.toContain("never-sent");
     } finally {
       store.close();
     }
+  });
+
+  test("first error stages use bounded categories, respect opt-out and do not send raw errors", async () => {
+    const store = await openStore();
+    const bodies: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    const funnel = new Funnel({ store, env: { POSTHOG_KEY: "phc_test" }, fetch: async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response("{}", { status: 200 });
+    }});
+    try {
+      funnel.adopt({ phId: "ad_visitor", utmCampaign: "india_circuits" });
+      expect(funnel.noteError("tool", "tool_error", "mcp__fabdesk__route_run")).toBe(true);
+      expect(funnel.noteError("tool", "tool_error", "/private/project/secret")).toBe(false);
+      expect(funnel.noteError("ai_run", "failed")).toBe(true);
+      store.settings.patch({ productAnalytics: false });
+      expect(funnel.noteError("board_build", "exception")).toBe(false);
+      await funnel.flush();
+      expect(bodies.filter(e => e.event.startsWith("onboarding_first_"))).toHaveLength(2);
+      expect(bodies.find(e => e.event === "onboarding_first_tool_error")?.properties).toMatchObject({ distinct_id: "ad_visitor", tool_group: "route", failure_kind: "tool_error", utm_campaign: "india_circuits" });
+      expect(JSON.stringify(bodies)).not.toContain("/private/project/secret");
+    } finally { store.close(); }
+  });
+
+  test("cancelled builds preserve their error without recording a failure", async () => {
+    const store = await openStore();
+    const funnel = new Funnel({ store, env: {} });
+    const cancelled = new Error("private cancellation detail");
+    cancelled.name = "AbortError";
+    const design: Pick<DesignService, "build"> = { async build() { throw cancelled; } };
+    trackBoardBuilds(design, funnel);
+    try {
+      await expect(design.build({ projectDir: "private" })).rejects.toBe(cancelled);
+      const aborted = new AbortController();
+      aborted.abort();
+      const returned: Pick<DesignService, "build"> = { async build() { return { ok: false, errors: [], warnings: [], durationMs: 0, counts: { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 } }; } };
+      trackBoardBuilds(returned, funnel);
+      await returned.build({ projectDir: "private", signal: aborted.signal });
+      expect(store.funnel.list()).toEqual([]);
+    } finally { store.close(); }
   });
 
   test("capture is a no-op without a key and still records locally", async () => {

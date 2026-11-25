@@ -412,7 +412,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   };
   const pendingFunnelTools = new Map<string, string>();
   const unsubscribeProductAnalytics = bus.subscribe(
-    ["agent.started", "agent.tool_use", "agent.tool_result"],
+    ["agent.started", "agent.tool_use", "agent.tool_result", "agent.done"],
     (events) => {
       for (const ev of events) {
         if (ev.event.topic === "agent.started") {
@@ -426,6 +426,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           const name = pendingFunnelTools.get(ev.event.id);
           pendingFunnelTools.delete(ev.event.id);
           if (name && ev.event.isError !== true) funnel.noteTool(name);
+          else if (name && ev.event.isError === true) funnel.noteError("tool", "tool_error", name);
+        } else if (ev.event.topic === "agent.done" && ev.event.status === "failed") {
+          funnel.noteError("ai_run", "failed");
         }
       }
     },

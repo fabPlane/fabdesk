@@ -244,6 +244,9 @@ export const FUNNEL_EVENTS = [
   "onboarding_first_board_built",
   "onboarding_first_route",
   "onboarding_first_board_viewed",
+  "onboarding_first_board_build_error",
+  "onboarding_first_ai_run_error",
+  "onboarding_first_tool_error",
 ] as const;
 export type FunnelEventName = (typeof FUNNEL_EVENTS)[number];
 
