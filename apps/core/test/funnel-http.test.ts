@@ -118,6 +118,51 @@ describe("funnel HTTP", () => {
     expect((pcb?.properties as { source?: string } | undefined)?.source).toBe("pcb");
   });
 
+  test("tool activations wait for a successful tool_result", async () => {
+    const wait = () => new Promise((resolve) => setTimeout(resolve, 50));
+    daemon.bus.emit({
+      ts: Date.now(),
+      topic: "agent.tool_use",
+      runId: "run-fail",
+      messageId: "msg-fail",
+      id: "tool-fail",
+      name: "circuit_build",
+      input: {},
+    });
+    daemon.bus.emit({
+      ts: Date.now(),
+      topic: "agent.tool_result",
+      runId: "run-fail",
+      messageId: "msg-fail",
+      id: "tool-fail",
+      output: { error: "layout failed" },
+      isError: true,
+    });
+    await wait();
+    const afterFail = (await (await api("/funnel")).json()) as FunnelSnapshot;
+    expect(afterFail.events.some((e) => e.event === "onboarding_first_board_built")).toBe(false);
+    daemon.bus.emit({
+      ts: Date.now(),
+      topic: "agent.tool_use",
+      runId: "run-ok",
+      messageId: "msg-ok",
+      id: "tool-ok",
+      name: "circuit_build",
+      input: {},
+    });
+    daemon.bus.emit({
+      ts: Date.now(),
+      topic: "agent.tool_result",
+      runId: "run-ok",
+      messageId: "msg-ok",
+      id: "tool-ok",
+      output: { ok: true },
+    });
+    await wait();
+    const afterOk = (await (await api("/funnel")).json()) as FunnelSnapshot;
+    expect(afterOk.events.filter((e) => e.event === "onboarding_first_board_built")).toHaveLength(1);
+  });
+
   test("creating a project records onboarding_first_project once", async () => {
     const created = await api("/projects", {
       method: "POST",

@@ -127,7 +127,7 @@ export class Funnel {
     if (isEmptyFunnelHandoff(incoming)) return this.handoff();
     const merged = mergeFunnelHandoff(this.handoff(), incoming);
     this.opts.store.settings.writeRaw(HANDOFF_KEY, merged);
-    const phId = incoming.phId?.trim();
+    const phId = merged.phId?.trim();
     if (phId) this.adoptAnonymousId(phId);
     return merged;
   }
@@ -236,13 +236,15 @@ ${handoff ? `<ul>${handoff}</ul>` : "<p>none</p>"}
       return;
     }
     if (existing === phId) return;
-    this.enqueue(() =>
-      this.capture({
-        event: "$create_alias",
-        distinct_id: existing,
-        properties: { alias: phId },
-      }),
-    );
+    if (this.optedIn()) {
+      this.enqueue(() =>
+        this.capture({
+          event: "$create_alias",
+          distinct_id: existing,
+          properties: { alias: phId },
+        }),
+      );
+    }
     this.opts.store.settings.writeRaw(ANON_KEY, phId);
   }
 

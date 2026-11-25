@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import type { CoreInfo } from "../shared/core-info";
+import { isCoreReady, type CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
 import { applyDesktopIdentity } from "./dev-profile";
 import { registerIpc } from "./ipc";
@@ -64,10 +64,8 @@ function corePosthogEnv(): Record<string, string> {
   return out;
 }
 
-function postFunnelHandoff(handoff: FunnelHandoff): void {
-  if (isEmptyFunnelHandoff(handoff)) return;
-  const info = supervisor?.info();
-  if (!info?.url || !info.token) return;
+function postFunnelHandoff(handoff: FunnelHandoff, info: CoreInfo | null = supervisor?.info() ?? null): void {
+  if (isEmptyFunnelHandoff(handoff) || !isCoreReady(info)) return;
   void fetch(`${info.url}/funnel/handoff`, {
     method: "POST",
     headers: {
@@ -80,7 +78,7 @@ function postFunnelHandoff(handoff: FunnelHandoff): void {
 
 function deliverFunnelHandoff(next: FunnelHandoff): void {
   launchHandoff = mergeFunnelHandoff(launchHandoff, next);
-  postFunnelHandoff(next);
+  postFunnelHandoff(launchHandoff);
 }
 
 function sendOpenCatalog(intent: OpenCatalogIntent): void {
@@ -374,7 +372,10 @@ if (!app.requestSingleInstanceLock()) {
     });
     // The core's persisted `errorReporting` setting is the source of truth for the opt-out.
     supervisor.on("status", (info: CoreInfo) => {
-      if (info.status.state === "ready") void syncErrorReportingFromCore(info);
+      if (info.status.state === "ready") {
+        void syncErrorReportingFromCore(info);
+        postFunnelHandoff(launchHandoff, info);
+      }
     });
     const updates = new UpdateChecker({
       url: process.env["FABDESK_UPDATE_URL"],

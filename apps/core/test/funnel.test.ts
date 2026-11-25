@@ -177,6 +177,48 @@ describe("Funnel", () => {
     store.close();
   });
 
+  test("later ph_id does not replace first-touch anonymous id", async () => {
+    const store = await openStore();
+    const bodies: Array<Record<string, unknown>> = [];
+    const funnel = new Funnel({
+      store,
+      env: { POSTHOG_KEY: "phc_test", POSTHOG_HOST: "https://example.i.posthog.com" },
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response("{}", { status: 200 });
+      },
+    });
+    funnel.adopt({ phId: "ph_first", utmSource: "google" });
+    expect(funnel.distinctId()).toBe("ph_first");
+    funnel.adopt({ phId: "ph_second", utmCampaign: "try" });
+    await funnel.flush();
+    expect(funnel.distinctId()).toBe("ph_first");
+    expect(funnel.handoff()).toMatchObject({ phId: "ph_first", utmSource: "google", utmCampaign: "try" });
+    expect(bodies.some((b) => b.event === "$create_alias")).toBe(false);
+    store.close();
+  });
+
+  test("opted-out alias persists the website id locally without capturing", async () => {
+    const store = await openStore();
+    store.settings.patch({ productAnalytics: false });
+    const bodies: Array<Record<string, unknown>> = [];
+    const funnel = new Funnel({
+      store,
+      env: { POSTHOG_KEY: "phc_test", POSTHOG_HOST: "https://example.i.posthog.com" },
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response("{}", { status: 200 });
+      },
+    });
+    const minted = funnel.distinctId();
+    expect(minted.startsWith("anon_")).toBe(true);
+    funnel.adopt({ phId: "ph_landing" });
+    await funnel.flush();
+    expect(funnel.distinctId()).toBe("ph_landing");
+    expect(bodies).toEqual([]);
+    store.close();
+  });
+
   test("productAnalytics off skips record and capture", async () => {
     const store = await openStore();
     store.settings.patch({ productAnalytics: false });

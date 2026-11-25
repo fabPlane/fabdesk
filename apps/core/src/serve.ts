@@ -410,8 +410,9 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     funnel.record("onboarding_first_project");
     return imported;
   };
+  const pendingFunnelTools = new Map<string, string>();
   const unsubscribeProductAnalytics = bus.subscribe(
-    ["agent.started", "agent.tool_use"],
+    ["agent.started", "agent.tool_use", "agent.tool_result"],
     (events) => {
       for (const ev of events) {
         if (ev.event.topic === "agent.started") {
@@ -420,7 +421,11 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         } else if (ev.event.topic === "agent.tool_use") {
           const exportTool = ev.event.name.replace(/^mcp__.+?__/, "").replace(/^functions\./, "");
           if (exportTool.startsWith("export_")) productAnalytics.track("export", { exportTool });
-          funnel.noteTool(ev.event.name);
+          pendingFunnelTools.set(ev.event.id, ev.event.name);
+        } else if (ev.event.topic === "agent.tool_result") {
+          const name = pendingFunnelTools.get(ev.event.id);
+          pendingFunnelTools.delete(ev.event.id);
+          if (name && ev.event.isError !== true) funnel.noteTool(name);
         }
       }
     },
