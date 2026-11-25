@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createRequire } from "node:module";
 import {
+  chmodSync,
+  statSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -18,6 +20,7 @@ const { Arch } = require("builder-util");
 const afterPack = require("../../scripts/after-pack.cjs") as {
   copyBundledKicad: (context: unknown, src: string) => string;
   jreSigningBinaries: (appPath: string) => string[];
+  makeOwnerWritable: (root: string) => number;
   signAdHocSidecars: (
     appPath: string,
     binaries: string[],
@@ -156,6 +159,33 @@ describe("after-pack platform mapping", () => {
       }
       expect(afterPack.jreSigningBinaries(app).sort()).toEqual(paths.sort());
     } finally { await rm(app, { recursive: true, force: true }); }
+  });
+  test("makes read-only bundle files and folders owner-writable so Squirrel.Mac can update them", () => {
+    const app = mkdtempSync(join(tmpdir(), "after-pack-writable-"));
+    try {
+      const legal = join(app, "Contents/Resources/pcb/freerouting/jre/legal/java.xml");
+      mkdirSync(legal, { recursive: true });
+      const notice = join(legal, "bcel.md");
+      const java = join(app, "Contents/Resources/pcb/freerouting/jre/java");
+      const plain = join(app, "Contents/Info.plist");
+      writeFileSync(notice, "notice");
+      writeFileSync(java, "binary");
+      writeFileSync(plain, "plist");
+      chmodSync(notice, 0o444);
+      chmodSync(java, 0o555);
+      chmodSync(legal, 0o555);
+      symlinkSync("missing-target", join(app, "Contents/dangling"));
+
+      expect(afterPack.makeOwnerWritable(app)).toBe(3);
+      expect(statSync(notice).mode & 0o777).toBe(0o644);
+      expect(statSync(java).mode & 0o777).toBe(0o755);
+      expect(statSync(legal).mode & 0o777).toBe(0o755);
+      expect(statSync(plain).mode & 0o777).toBe(0o644);
+      expect(afterPack.makeOwnerWritable(app)).toBe(0);
+    } finally {
+      chmodSync(join(app, "Contents/Resources/pcb/freerouting/jre/legal/java.xml"), 0o755);
+      rmSync(app, { recursive: true, force: true });
+    }
   });
   test("maps electron-builder's numeric ARM64 architecture to the staged bundle", () => {
     const result = afterPack.platformArch({
