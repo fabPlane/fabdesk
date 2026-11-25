@@ -78,9 +78,10 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
           tone={connected ? "success" : coreStatus?.state === "crashed" ? "danger" : "warning"}
           title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; SSE ${sseStatus}${port ? `; port ${port}` : ""}`}
           className="fd-topbar-status"
+          data-connected={connected}
         >
           <span className="fd-topbar-status-dot mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-          <span className="fd-topbar-status-text">{connected ? "Core connected" : `Core ${coreStatus?.state ?? sseStatus}`}</span>
+          {connected ? <span className="sr-only">Connected</span> : <span className="fd-topbar-status-text">{`Core ${coreStatus?.state ?? sseStatus}`}</span>}
         </Badge>
         <ProfileButton />
         <div className="fd-topbar-tools flex items-center gap-1">
