@@ -132,6 +132,23 @@ nativeTest("denies when no approval callback exists, even with bypass selected",
   expect(events).toContainEqual({ type:"tool_result", id:"t1", output:"cancelled", isError:false });
 });
 
+nativeTest("Run without approval allows a native prompt without asking", async () => {
+  const asked: unknown[] = [];
+  const events = await collect({
+    ...fixture(), runtimeMode: "full",
+    requestApproval: async (req) => { asked.push(req); return "deny"; },
+  });
+  expect(asked).toEqual([]);
+  expect(events).toContainEqual({ type:"tool_result", id:"t1", output:"once", isError:false });
+});
+
+nativeTest("Run without approval still never picks an answer or an ambiguous option", async () => {
+  for (const question of ["1", "unknown"]) {
+    const events = await collect({ ...fixture({ AGY_QUESTION: question }), runtimeMode: "full" });
+    expect(events).toContainEqual({ type:"tool_result", id:"t1", output:"cancelled", isError:false });
+  }
+});
+
 nativeTest("explains authentication or an incompatible CLI without forwarding raw diagnostics", async () => {
   const auth = await collect(fixture({ DENY_AUTH: "1" }));
   expect(auth).toEqual([

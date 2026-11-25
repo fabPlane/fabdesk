@@ -183,6 +183,11 @@ function runAntigravity(session: AgentSession, probe?: Probe): AgentRun {
             }).catch(() => "");
             optionId = choices.get(answer.trim());
           }
+        } else if (active && !interaction && allowOnce.length === 1 && session.runtimeMode === "full") {
+          // "Run without approval": the user chose no approval pauses, so a native prompt is
+          // answered with its single allow-once option. The CLI still runs sandboxed, and a
+          // prompt with no or several allow options stays unanswered rather than guessed.
+          optionId = string(allowOnce[0]!["optionId"]);
         } else if (active && !interaction && allowOnce.length <= 1 && session.requestApproval) {
           const decision = await session.requestApproval({
             tool: title ?? "Antigravity tool",
