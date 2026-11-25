@@ -132,13 +132,19 @@ export class Funnel {
     return merged;
   }
 
-  record(event: FunnelEventName): boolean {
+  record(event: FunnelEventName, extra?: Record<string, string>): boolean {
     if (!this.optedIn()) return false;
     const distinctId = this.distinctId();
     if (!this.opts.store.funnel.insert(distinctId, event, this.now().toISOString())) return false;
-    const properties = this.eventProperties();
+    const properties = this.eventProperties(extra);
     this.enqueue(() => this.capture({ event, distinct_id: distinctId, properties }));
     return true;
+  }
+
+  /** Drop the signed-in subject and mint a new anon id. First-touch handoff stays install-level. */
+  resetIdentity(): void {
+    this.opts.store.settings.deleteRaw(SUBJECT_KEY);
+    this.opts.store.settings.writeRaw(ANON_KEY, `anon_${randomUUID()}`);
   }
 
   identify(subject: string): void {
@@ -240,7 +246,7 @@ ${handoff ? `<ul>${handoff}</ul>` : "<p>none</p>"}
     this.opts.store.settings.writeRaw(ANON_KEY, phId);
   }
 
-  private eventProperties(): Record<string, string> {
+  private eventProperties(extra?: Record<string, string>): Record<string, string> {
     const handoff = this.handoff();
     const props: Record<string, string> = { $lib: "fabdesk-core", $lib_version: VERSION };
     if (handoff.utmSource) props.utm_source = handoff.utmSource;
@@ -250,6 +256,8 @@ ${handoff ? `<ul>${handoff}</ul>` : "<p>none</p>"}
     if (handoff.utmTerm) props.utm_term = handoff.utmTerm;
     if (handoff.gclid) props.gclid = handoff.gclid;
     if (handoff.referrer) props.referrer = handoff.referrer;
+    const source = extra?.["source"];
+    if (source === "review" || source === "check" || source === "pcb") props.source = source;
     return props;
   }
 
@@ -281,21 +289,30 @@ ${handoff ? `<ul>${handoff}</ul>` : "<p>none</p>"}
       $lib_version: VERSION,
       ...(body.properties ?? {}),
     };
-    try {
-      await this.fetchImpl(`${host}/capture/`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          api_key: key,
-          event: body.event,
-          distinct_id: body.distinct_id,
-          properties,
-          timestamp: this.now().toISOString(),
-        }),
-      });
-    } catch (e) {
-      logger.warn("funnel capture failed", { error: errMsg(e) });
+    const payload = JSON.stringify({
+      api_key: key,
+      event: body.event,
+      distinct_id: body.distinct_id,
+      properties,
+      timestamp: this.now().toISOString(),
+    });
+    const url = `${host}/capture/`;
+    let lastError: string | undefined;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await this.fetchImpl(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: payload,
+        });
+        if (res.ok) return;
+        lastError = `HTTP ${res.status}`;
+        if (res.status < 500) break;
+      } catch (e) {
+        lastError = errMsg(e);
+      }
     }
+    logger.warn("funnel capture failed", { error: lastError ?? "unknown" });
   }
 }
 

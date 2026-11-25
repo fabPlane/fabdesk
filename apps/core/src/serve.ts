@@ -443,6 +443,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
         setSentryUser(sentryUserFromAuth(ev.event.state));
         const subject = ev.event.state.principal?.subject?.trim();
         if (ev.event.state.status === "signed_in" && subject) funnel.identify(subject);
+        else if (ev.event.state.status === "signed_out") funnel.resetIdentity();
       }
   });
   const cloudSettings = new CloudSettingsSync({

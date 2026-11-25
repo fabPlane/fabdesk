@@ -91,6 +91,89 @@ describe("Funnel", () => {
       referrer: "https://news.example/path",
     });
     expect(funnel.snapshot().events.some((e) => e.event === "onboarding_signed_in")).toBe(true);
+    funnel.resetIdentity();
+    expect(funnel.identifiedSubject()).toBeNull();
+    expect(funnel.distinctId().startsWith("anon_")).toBe(true);
+    expect(funnel.distinctId()).not.toBe(minted);
+    expect(funnel.handoff()).toMatchObject({
+      phId: "ph_landing",
+      utmSource: "google",
+      utmCampaign: "try",
+    });
+    store.close();
+  });
+
+  test("record forwards allow-listed source and drops other keys", async () => {
+    const store = await openStore();
+    const bodies: Array<Record<string, unknown>> = [];
+    const funnel = new Funnel({
+      store,
+      env: { POSTHOG_KEY: "phc_test", POSTHOG_HOST: "https://example.i.posthog.com" },
+      now: () => new Date("2026-11-25T00:00:00.000Z"),
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response("{}", { status: 200 });
+      },
+    });
+    expect(
+      funnel.record("onboarding_first_review_viewed", { source: "review", path: "/secret.kicad_pcb" }),
+    ).toBe(true);
+    expect(funnel.record("onboarding_first_board_viewed", { source: "schematic" })).toBe(true);
+    await funnel.flush();
+    const review = bodies.find((b) => b.event === "onboarding_first_review_viewed")!;
+    const reviewProps = review.properties as Record<string, unknown>;
+    expect(reviewProps["source"]).toBe("review");
+    expect(reviewProps["path"]).toBeUndefined();
+    const board = bodies.find((b) => b.event === "onboarding_first_board_viewed")!;
+    expect((board.properties as Record<string, unknown>)["source"]).toBeUndefined();
+    store.close();
+  });
+
+  test("capture retries 5xx and network errors three times, not 4xx; local once stays", async () => {
+    const store = await openStore();
+    const statuses: number[] = [];
+    const funnel5xx = new Funnel({
+      store,
+      env: { POSTHOG_KEY: "phc_test", POSTHOG_HOST: "https://example.i.posthog.com" },
+      fetch: async () => {
+        statuses.push(503);
+        return new Response("no", { status: 503 });
+      },
+    });
+    expect(funnel5xx.record("onboarding_app_launched")).toBe(true);
+    await funnel5xx.flush();
+    expect(statuses).toEqual([503, 503, 503]);
+    expect(funnel5xx.snapshot().events.map((e) => e.event)).toEqual(["onboarding_app_launched"]);
+
+    const four: number[] = [];
+    const funnel4xx = new Funnel({
+      store,
+      env: { POSTHOG_KEY: "phc_test", POSTHOG_HOST: "https://example.i.posthog.com" },
+      fetch: async () => {
+        four.push(400);
+        return new Response("no", { status: 400 });
+      },
+    });
+    expect(funnel4xx.record("onboarding_first_project")).toBe(true);
+    await funnel4xx.flush();
+    expect(four).toEqual([400]);
+    expect(funnel4xx.snapshot().events.map((e) => e.event)).toEqual([
+      "onboarding_app_launched",
+      "onboarding_first_project",
+    ]);
+
+    const net: number[] = [];
+    const funnelNet = new Funnel({
+      store,
+      env: { POSTHOG_KEY: "phc_test", POSTHOG_HOST: "https://example.i.posthog.com" },
+      fetch: async () => {
+        net.push(1);
+        throw new Error("ECONNRESET");
+      },
+    });
+    expect(funnelNet.record("onboarding_first_ai_run")).toBe(true);
+    await funnelNet.flush();
+    expect(net).toEqual([1, 1, 1]);
     store.close();
   });
 

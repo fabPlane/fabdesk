@@ -111,6 +111,11 @@ describe("funnel HTTP", () => {
     });
     expect(board.status).toBe(200);
     expect((await board.json()) as { recorded: boolean }).toEqual({ recorded: true });
+    await daemon.funnel.flush();
+    const review = captures.find((b) => b.event === "onboarding_first_review_viewed");
+    expect((review?.properties as { source?: string } | undefined)?.source).toBe("review");
+    const pcb = captures.find((b) => b.event === "onboarding_first_board_viewed");
+    expect((pcb?.properties as { source?: string } | undefined)?.source).toBe("pcb");
   });
 
   test("creating a project records onboarding_first_project once", async () => {

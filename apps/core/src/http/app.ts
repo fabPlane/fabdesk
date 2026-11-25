@@ -1136,7 +1136,12 @@ export function createApp(deps: AppDeps): Hono<Env> {
     if (!CLIENT_FUNNEL_EVENTS.includes(parsed.data.event as ClientFunnelEvent)) {
       return c.json({ recorded: false }, 400);
     }
-    return c.json({ recorded: deps.funnel.record(parsed.data.event as ClientFunnelEvent) });
+    const extra = parsed.data.properties;
+    return c.json({
+      recorded: extra
+        ? deps.funnel.record(parsed.data.event as ClientFunnelEvent, extra)
+        : deps.funnel.record(parsed.data.event as ClientFunnelEvent),
+    });
   });
   app.patch("/settings", async (c) => {
     const raw: unknown = await c.req.json();
