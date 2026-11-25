@@ -21,6 +21,8 @@ import {
 } from "./sentry";
 import { registerUpdateIpc, UpdateChecker } from "./updates";
 import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
+import { inPlaceUnsupportedReason } from "./update-feed";
+import { UpdateInstaller } from "./update-install";
 import { migrateLegacyUserData } from "./user-data";
 import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
 import { CadRuntimeManager, CadRuntimeConsent } from "./cad-runtime";
@@ -151,6 +153,24 @@ let pcbSupervisor: PcbSupervisor | null = null;
 let cadSupervisor: CadSupervisor | null = null;
 let automation: AppAutomation | null = null;
 let quitting = false;
+
+/**
+ * Stops the core and the bridges and marks the app as quitting, so the next quit goes straight
+ * through. Shared by a normal quit and by an in-place update, which must not replace the app
+ * while its child processes still run from it.
+ */
+async function stopBackendsForQuit(): Promise<void> {
+  if (quitting) return;
+  quitting = true;
+  void automation?.stop();
+  try {
+    await supervisor?.stop({ shutdown: true }).catch(() => {});
+    await Promise.all([pcbSupervisor?.stop(), cadSupervisor?.stop()]);
+    await flushSentry();
+  } catch {
+    // Quitting anyway.
+  }
+}
 
 function developmentIconPath(): string | undefined {
   if (app.isPackaged) return undefined;
@@ -382,7 +402,24 @@ if (!app.requestSingleInstanceLock()) {
       enabled: process.env["FABDESK_UPDATE_CHECK"] !== "0",
     });
     registerUpdateIpc(updates);
-    registerUpdateDownloadIpc(new UpdateDownloader(updates));
+    const downloader = new UpdateDownloader(updates);
+    const inPlaceBlocked = inPlaceUnsupportedReason({
+      platform: process.platform,
+      packaged: app.isPackaged,
+      exePath: app.getPath("exe"),
+      appImage: process.env["APPIMAGE"],
+      disabled: process.env["FABDESK_UPDATE_INPLACE"] === "0",
+    });
+    if (inPlaceBlocked) console.log(`[update] installer downloads only: ${inPlaceBlocked}`);
+    registerUpdateDownloadIpc(
+      inPlaceBlocked
+        ? downloader
+        : new UpdateInstaller(updates, {
+            prepareQuit: stopBackendsForQuit,
+            fallback: downloader,
+            installRecordPath: join(app.getPath("userData"), "update-install.json"),
+          }),
+    );
     updates.start();
     coreStartup = supervisor.start();
     createWindow();
@@ -414,13 +451,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on("before-quit", (e) => {
     if (quitting || !supervisor) return;
     e.preventDefault();
-    quitting = true;
-    void automation?.stop();
-    supervisor
-      .stop({ shutdown: true })
-      .catch(() => {})
-      .then(() => Promise.all([pcbSupervisor?.stop(), cadSupervisor?.stop()]))
-      .then(() => flushSentry())
-      .finally(() => app.quit());
+    void stopBackendsForQuit().finally(() => app.quit());
   });
 }

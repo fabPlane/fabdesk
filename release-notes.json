@@ -13,5 +13,11 @@
       "Switching agents and models in a conversation no longer depends on saving future defaults; failure messages are more compact.",
       "Missing connection endpoints explain what to select before adding a cable guide."
     ]
+  },
+  {
+    "id": "2026-11-25-in-place-updates",
+    "improved": [
+      "Updates install themselves: after the download, Restart to update replaces the app and reopens it, with no installer window to drag."
+    ]
   }
 ]

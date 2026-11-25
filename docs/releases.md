@@ -63,7 +63,25 @@ Changing this baseline or merging the PR does not itself publish a release.
    `id` to `release-notes.json`; it applies to the next release only.
 4. **In-app update check**: `@fabdesk/updates` fetches `https://fabplane.com/desktop/latest.json`
    at startup and every 6 hours (`FABDESK_UPDATE_URL` overrides), compares semver with the running
-   version and points the user at the right installer. It never downloads or installs on its own.
+   version and shows the update badge. Nothing downloads until the user clicks it.
+5. **In-place update** (`apps/desktop/src/main/update-install.ts`): clicking the badge downloads
+   the update with electron-updater, checks it against the manifest's SHA-256, and the badge
+   becomes **Restart to update**. That click stops the core and the bridges, replaces the app and
+   relaunches it: Squirrel.Mac from the `.zip` on macOS (never the DMG), the NSIS installer run
+   silently on Windows, a file swap for the AppImage.
+   - The feed is still `latest.json`: a custom electron-updater provider reads it, so no
+     `latest-mac.yml` / `latest.yml` is hosted and the website publishes nothing new. The
+     `publish` entry in `electron-builder.yml` only makes the build write `app-update.yml`
+     (cache folder name, Windows publisher); `latest*.yml` and `.blockmap` files that
+     electron-builder leaves in `release/` are not released. Downloads are full size, since no
+     blockmaps are hosted.
+   - macOS needs the signed, notarized build: Squirrel.Mac refuses an update whose signature does
+     not match the running app.
+   - The old flow (download the installer to Downloads, then open it) remains for a `.deb`
+     install, an app run from the mounted DMG or a translocated path, `FABDESK_UPDATE_INPLACE=0`,
+     for the rest of the session after two failed in-place attempts, and for a version whose
+     in-place install was started but did not apply (`update-install.json` in the user data
+     folder records the started version; the next launch compares it with the running one).
 
 TraceMaker weekly binaries reuse the same public host under `tracemaker/`
 (`https://downloads.fabplane.com/tracemaker/…`). See [routers.md](routers.md). The desktop

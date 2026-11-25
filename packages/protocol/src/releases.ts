@@ -65,7 +65,17 @@ export const UpdateDownloadState = z.discriminatedUnion("state", [
     bytesPerSecond: z.number().nonnegative().nullable(),
   }),
   z.object({ state: z.literal("verifying"), version: z.string(), filename: z.string() }),
-  z.object({ state: z.literal("done"), version: z.string(), filename: z.string(), path: z.string(), sha256: z.string() }),
+  z.object({
+    state: z.literal("done"),
+    version: z.string(),
+    filename: z.string(),
+    path: z.string(),
+    sha256: z.string(),
+    /** True when the host replaces the app itself and relaunches; otherwise it opens the installer file. */
+    restart: z.boolean().optional(),
+  }),
+  /** The host is replacing the app and is about to relaunch. */
+  z.object({ state: z.literal("installing"), version: z.string() }),
   z.object({ state: z.literal("error"), version: z.string().optional(), message: z.string() }),
 ]);
 export type UpdateDownloadState = z.infer<typeof UpdateDownloadState>;
