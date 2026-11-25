@@ -734,6 +734,7 @@ export class AgentRunManager {
       runtimeMode,
       requestInput: (req) => this.requestInput(active, req, req.signal),
       ...(runtimeMode === "supervised" ? { supervisor } : {}),
+      ...(input.agentId === "antigravity" ? { requestApproval: supervisor.requestApproval } : {}),
       ...(agentSettings?.extraAllowedTools?.length
         ? { extraAllowedTools: agentSettings.extraAllowedTools }
         : {}),

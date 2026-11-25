@@ -42,12 +42,12 @@ describe("detectBinary", () => {
   test("falls back to later candidates and to explicit paths", async () => {
     const path = fakeBinary("cursor-agent");
     const args = versionArgs("cursor-agent version 2026.1.5");
-    expect(await detectBinary(["agent", "cursor-agent"], undefined, args)).toEqual({
+    expect(await detectBinary(["fabdesk-absent-first-candidate", "cursor-agent"], undefined, args)).toEqual({
       installed: true,
       version: "2026.1.5",
       path,
     });
-    expect(await detectBinary(["agent", path], undefined, args)).toEqual({
+    expect(await detectBinary(["fabdesk-absent-first-candidate", path], undefined, args)).toEqual({
       installed: true,
       version: "2026.1.5",
       path,
@@ -133,6 +133,7 @@ describe("detectAgents", () => {
   test("returns one AgentInfo per adapter with install hints and settings overrides", async () => {
     const grokPath = fakeBinary("grok");
     const custom = fakeBinary("codex-custom");
+    const antigravityPath = fakeBinary("agy");
     const infos = await detectAgents({
       kicadCliPath: null,
       ngspicePath: null,
@@ -144,6 +145,9 @@ describe("detectAgents", () => {
       defaultAgent: "claude",
       defaultRuntimeMode: "full",
       agents: {
+        // Keep this registry test off host-installed/authenticated CLIs.
+        claude: { binaryPath: join(dir, "missing-claude"), model: null, permissionMode: "acceptEdits", extraAllowedTools: [], pickerModels: [] },
+        cursor: { binaryPath: join(dir, "missing-cursor"), model: null, permissionMode: "acceptEdits", extraAllowedTools: [], pickerModels: [] },
         codex: {
           binaryPath: custom,
           model: null,
@@ -164,22 +168,24 @@ describe("detectAgents", () => {
       cloudOrgId: null,
       voice: { provider: "auto", language: "en", pushToTalkMode: "hold", pushToTalkShortcut: "Alt+Space" },
     });
-    expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor"]);
+    expect(infos.map((i) => i.id)).toEqual(["claude", "codex", "grok", "cursor", "antigravity"]);
     const byId = Object.fromEntries(infos.map((i) => [i.id, i]));
-    // claude/cursor also probe fixed home paths (~/.local/bin/…), so only PATH-independent facts are asserted.
+    // Explicit missing paths must not fall back to host-installed CLIs.
     expect(byId["claude"]).toMatchObject({ displayName: "Claude" });
-    expect(typeof byId["claude"]?.installed).toBe("boolean");
+    expect(byId["claude"]?.installed).toBe(false);
     expect(byId["claude"]?.installHint).toContain("claude");
     expect(byId["codex"]).toMatchObject({ installed: true, version: process.versions.bun, path: custom });
     expect(byId["grok"]).toMatchObject({ installed: true, version: process.versions.bun, path: grokPath });
-    expect(byId["cursor"]).toMatchObject({ displayName: "Cursor" });
-    for (const info of infos) expect(info.models.length).toBeGreaterThan(0);
-    // Only Claude Code can pause a tool call for approval (see each adapter for why).
+    expect(byId["cursor"]).toMatchObject({ displayName: "Cursor", installed: false });
+    expect(byId["antigravity"]).toMatchObject({ displayName: "Google Antigravity", installed: true, path: antigravityPath, models: [] });
+    for (const info of infos.filter((a) => a.id !== "antigravity")) expect(info.models.length).toBeGreaterThan(0);
+    // See each adapter for supported FabDesk runtime modes.
     expect(infos.map((i) => [i.id, i.supportsSupervised])).toEqual([
       ["claude", true],
       ["codex", false],
       ["grok", false],
       ["cursor", false],
+      ["antigravity", false],
     ]);
   });
 });

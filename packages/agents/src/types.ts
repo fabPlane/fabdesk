@@ -54,6 +54,8 @@ export interface AgentSession {
   /** `supervised` pauses writes for approval; adapters that cannot must not be started with it. */
   runtimeMode?: AgentRuntimeMode;
   supervisor?: AgentSupervisor;
+  /** Approve one native prompt in harnesses with their own permission policy. */
+  requestApproval?: AgentSupervisor["requestApproval"];
   /** Interactive questions are available independently of tool-approval supervision. */
   requestInput?: AgentSupervisor["requestInput"];
   extraAllowedTools?: string[];
