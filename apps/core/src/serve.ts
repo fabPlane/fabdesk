@@ -54,7 +54,7 @@ import {
   setSentryUser,
 } from "./sentry";
 import { ProductAnalytics, analyticsBuild } from "./product-analytics";
-import { Funnel } from "./funnel";
+import { Funnel, trackBoardBuilds } from "./funnel";
 import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
 import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
@@ -484,6 +484,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
           appBridgeFile: locateAppBridgeFile(config.handshakePath),
           telemetry,
         });
+
+  trackBoardBuilds(services.design, funnel);
 
   // fabplane.com carts and inventory (`shopping` tools, `/cloud` routes); tests may inject their own.
   const storedToken =

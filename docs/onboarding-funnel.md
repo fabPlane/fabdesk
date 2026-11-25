@@ -14,7 +14,7 @@ Events never include prompts, board files, tokens, emails, project names or path
 
 ## Website contract (fabplane.com)
 
-The public site owns posthog-js on `/try`. Pass the anonymous distinct_id plus first-touch fields
+The public site owns posthog-js on `/try` and `/community`. Pass the anonymous distinct_id plus first-touch fields
 into login and download:
 
 | Query key | Meaning |
@@ -63,6 +63,27 @@ fabdesk then:
 Extra activation: `onboarding_sign_in_started`, `onboarding_first_kicad_import`,
 `onboarding_first_board_built`, `onboarding_first_route`, `onboarding_first_board_viewed`. Each
 `(distinct_id, event)` pair is stored once.
+
+`onboarding_first_board_built` is recorded at the design service after a build
+returns `ok: true` with at least one component. This covers built-in agents and
+external MCP/HTTP callers. Agent tool-result text, failures, exceptions and empty
+boards do not qualify. It means a board was generated; it is not evidence of
+DRC/ERC clearance, routing completion, manufacturability or a physically working
+board. Native editing without a compile is outside this metric.
+
+For the ad-to-build funnel use `landing_view` → `download_click` →
+`onboarding_app_launched` → `onboarding_first_board_built`, a seven-day window,
+with optional sign-in/project/AI-run steps as diagnostics rather than mandatory
+steps. Filter the landing step to `utm_source=openai`, `utm_medium=cpc`, and the
+India campaign; break down by `utm_campaign` / `utm_content` on the landing step.
+Do not count `discord_join_click` as a successful design or a completed join.
+
+Installer downloads alone cannot transfer a browser ID to a desktop executable.
+After installation, the download page's explicit `fabplane://open?ph_id=…&utm_…`
+link must be used to adopt attribution. A manual OS launch or a copied Discord
+link may remain unattributed. Do not infer a match from IP, country or timestamps.
+The app must be a release containing the funnel instrumentation and compiled
+PostHog key; already-installed releases are not changed by setting CI secrets.
 
 ## Env vars
 

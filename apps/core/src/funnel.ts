@@ -16,6 +16,7 @@ import {
 } from "@fabdesk/protocol";
 import { VERSION } from "./config";
 import type { Store } from "./db";
+import type { DesignService } from "@fabdesk/tools";
 import { logger, errMsg } from "./log";
 
 declare const FABDESK_POSTHOG_KEY: string | undefined;
@@ -60,7 +61,6 @@ function toolName(raw: string): string {
 
 const TOOL_EVENTS: Record<string, FunnelEventName[]> = {
   project_import_kicad: ["onboarding_first_project", "onboarding_first_kicad_import"],
-  circuit_build: ["onboarding_first_board_built"],
   route_run: ["onboarding_first_route"],
   board_review: ["onboarding_first_review_viewed"],
   pcb_inspect: ["onboarding_first_board_viewed"],
@@ -72,6 +72,26 @@ export type FunnelCapture = {
   distinct_id: string;
   properties?: Record<string, unknown>;
 };
+
+/** Observe the actual build, including calls made over external MCP/HTTP clients.
+ * Agent tool_result messages alone are not evidence that a board was built.
+ * This is a generated non-empty board, not a DRC pass or manufacturing approval.
+ */
+export function trackBoardBuilds(design: Pick<DesignService, "build">, funnel: Funnel): void {
+  const build = design.build.bind(design);
+  design.build = async (options) => {
+    const result = await build(options);
+    if (result.ok && result.counts.components > 0) {
+      try {
+        funnel.record("onboarding_first_board_built");
+      } catch (error) {
+        // Analytics must not turn a successfully generated board into a tool failure.
+        logger.warn("board activation recording failed", { error: errMsg(error) });
+      }
+    }
+    return result;
+  };
+}
 
 export class Funnel {
   private readonly fetchImpl: typeof fetch;
