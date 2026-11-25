@@ -319,6 +319,12 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       let threadId = thread?.id;
       let created = preparedThread.current;
       if (!threadId) {
+        // A failed first send can leave a hidden thread under the previous choice.
+        // The queue falls back to the stored model when the provider default is selected,
+        // so persist the current choice explicitly, including a null model, before sending.
+        if (created && (created.agentId !== agentId || created.model !== (model || null))) {
+          created = await client.patchThread(created.id, { agentId, model: model || null });
+        }
         // No title: the daemon names the thread after this first message (and tells every client).
         created ??= await onCreateThread({ agentId, ...(model ? { model } : {}), ...(destination ? { projectId: destination } : {}) });
         preparedThread.current = created;
