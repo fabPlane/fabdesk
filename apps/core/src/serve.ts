@@ -53,7 +53,7 @@ import {
   sentryUserFromAuth,
   setSentryUser,
 } from "./sentry";
-import { ProductAnalytics } from "./product-analytics";
+import { ProductAnalytics, analyticsBuild } from "./product-analytics";
 import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
 import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
@@ -355,11 +355,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     emit: (e) => bus.emit(e),
   });
   archiveBearer = () => auth.token();
+  const reportsProductEvents = analyticsBuild(buildInfo().kind);
   const productAnalytics = new ProductAnalytics({
     apiOrigin: config.apiOrigin,
     version: config.version,
     store: store.settings,
-    allowed: () => hasArchiveConsent(),
+    allowed: () => reportsProductEvents && hasArchiveConsent(),
     identity: () => {
       const state = auth.state();
       const accountSubject =
