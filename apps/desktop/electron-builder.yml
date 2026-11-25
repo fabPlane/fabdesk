@@ -19,7 +19,13 @@ files:
   - "!out/native/**"
 asar: true
 npmRebuild: false
-publish: null
+# Nothing is uploaded from here (`--publish never`), and the app never reads this URL: in-place
+# updates take the release from the website's latest.json (src/main/update-install.ts). The entry
+# exists so electron-builder writes Resources/app-update.yml, which electron-updater needs for its
+# cache folder name and, on Windows, the publisher the downloaded installer must be signed by.
+publish:
+  provider: generic
+  url: https://downloads.fabplane.com/desktop
 protocols:
   - name: fabPlane
     schemes:

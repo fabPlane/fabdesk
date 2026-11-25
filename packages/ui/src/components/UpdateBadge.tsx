@@ -8,8 +8,10 @@ function mb(bytes: number): string {
 }
 
 /**
- * "Update X" pill in the top bar. On Electron a click downloads the installer in-app and the
- * pill turns into a progress bar, then "Install X" opens the file. Elsewhere it opens the URL.
+ * "Update X" pill in the top bar. On Electron a click downloads the update in-app and the pill
+ * turns into a progress bar. Then "Restart to update" replaces the app and relaunches it, or,
+ * where the app cannot replace itself, "Install X" opens the installer file. Elsewhere it opens
+ * the URL.
  */
 export function UpdateBadge() {
   const { host } = useCore();
@@ -70,15 +72,26 @@ export function UpdateBadge() {
       </span>
     );
   }
+  if (dl.state === "installing" && dl.version === version) {
+    return (
+      <span className={cn(base, "border-accent/40 bg-panel-2 text-fg")} title={`Installing fabPlane ${version}. The app restarts on its own.`}>
+        Restarting…
+      </span>
+    );
+  }
   if (dl.state === "done" && dl.version === version) {
     return (
       <button
         type="button"
-        title={`${dl.filename} downloaded and verified. Click to open the installer.`}
+        title={
+          dl.restart
+            ? `fabPlane ${version} is downloaded and verified. Click to restart into it.`
+            : `${dl.filename} downloaded and verified. Click to open the installer.`
+        }
         onClick={() => void host.openUpdate?.()}
         className={cn(base, "cursor-pointer border-success/50 bg-success/15 text-success")}
       >
-        Install {version}
+        {dl.restart ? "Restart to update" : `Install ${version}`}
       </button>
     );
   }
