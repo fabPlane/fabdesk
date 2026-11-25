@@ -52,6 +52,9 @@ import type {
   RouteFrameLine,
   RouteResult,
   Settings,
+  ClientFunnelEvent,
+  FunnelHandoff,
+  FunnelSnapshot,
   SpeechStatus,
   SpeechTranscript,
   Run,
@@ -706,6 +709,21 @@ export class CoreClient {
   }
   installLocalSpeech(): Promise<{ modelPath: string; status: SpeechStatus }> {
     return this.request("/v1/speech/local/install", { method: "POST" });
+  }
+  getFunnel(): Promise<FunnelSnapshot> {
+    return this.request("/funnel");
+  }
+  submitFunnelHandoff(handoff: FunnelHandoff): Promise<FunnelSnapshot> {
+    return this.request("/funnel/handoff", { method: "POST", json: handoff });
+  }
+  trackFunnelEvent(
+    event: ClientFunnelEvent,
+    properties?: Record<string, string>,
+  ): Promise<{ recorded: boolean }> {
+    return this.request("/funnel/events", {
+      method: "POST",
+      json: { event, ...(properties ? { properties } : {}) },
+    });
   }
   getSettings(): Promise<Settings> {
     return this.request("/settings");

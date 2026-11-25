@@ -5,6 +5,7 @@ export * from "./api";
 export * from "./devices";
 export * from "./opensource";
 export * from "./open-link";
+export * from "./funnel-handoff";
 export * from "./releases";
 export * from "./fp-pcb";
 export * from "./parts";

@@ -22,6 +22,8 @@ import { inspectPcbPreviewRevision } from "./pcb-preview-revision";
 import type {
   AgentId,
   ApprovalDecision,
+  AuthState,
+  ClientFunnelEvent,
   PendingRequests,
   RuntimeMode,
   Job,
@@ -382,6 +384,37 @@ export function useAuthState() {
     if (q.data) setState(q.data);
   }, [q.data, setState]);
   return q;
+}
+
+const firedFunnelEvents = new Set<string>();
+
+function funnelIdentity(state: AuthState | null): string {
+  if (state?.status === "signed_in" && state.principal?.subject) return state.principal.subject;
+  return state?.status ?? "anon";
+}
+
+/** Fire a client funnel event once per identity; retries if the POST fails or nothing was recorded. */
+export function useFunnelEvent(
+  event: ClientFunnelEvent,
+  enabled = true,
+  properties?: Record<string, string>,
+): void {
+  const client = useCoreClient();
+  const identity = useAuthStore((s) => funnelIdentity(s.state));
+  useEffect(() => {
+    if (!enabled) return;
+    const key = `${client.baseUrl}:${identity}:${event}`;
+    if (firedFunnelEvents.has(key)) return;
+    firedFunnelEvents.add(key);
+    void client
+      .trackFunnelEvent(event, properties)
+      .then((result) => {
+        if (!result.recorded) firedFunnelEvents.delete(key);
+      })
+      .catch(() => {
+        firedFunnelEvents.delete(key);
+      });
+  }, [client, enabled, event, identity, properties]);
 }
 
 export function useToolManifest() {

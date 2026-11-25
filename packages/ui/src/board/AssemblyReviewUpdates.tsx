@@ -1,4 +1,4 @@
-import { assemblyCheckNeedsReview,assemblyCheckSummaryLabel,assemblyModelNeedsReview,assemblyModelSummaryLabel,assemblyReviewRows,outputInputsNeedReview,outputRevisionLabel,overviewBoardImages,restoreAssemblySelection,useAssemblyCheckSummaries,useAssemblyModelSummaries,useAssemblyPreviewRevisions,useOutputRevisions,useProject,useRunTool,useVideoInputRevision,videoInputsNeedReview } from "@fabdesk/client-core";
+import { assemblyCheckNeedsReview,assemblyCheckSummaryLabel,assemblyModelNeedsReview,assemblyModelSummaryLabel,assemblyReviewRows,outputInputsNeedReview,outputRevisionLabel,overviewBoardImages,restoreAssemblySelection,useAssemblyCheckSummaries,useAssemblyModelSummaries,useAssemblyPreviewRevisions,useFunnelEvent,useOutputRevisions,useProject,useRunTool,useVideoInputRevision,videoInputsNeedReview } from "@fabdesk/client-core";
 import { ASSEMBLY_MANIFEST_PATH,type ProjectBoardSources } from "@fabdesk/protocol";
 import { useState } from "react";
 import { askAboutSurface,useAssistantSurface } from "../chat/useAssistantSurface";
@@ -10,6 +10,7 @@ import { ReviewDesignSources,ReviewKeepNote,ReviewScope,ReviewUpdateTable,type R
 import { videoInputLabel } from "./VideoSourceStatus";
 
 export function AssemblyReviewUpdates({ projectId, data, checking, failed, onRetry }: { projectId: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void }) {
+  useFunnelEvent("onboarding_first_review_viewed", true, { source: "review" });
   const project = useProject(projectId), previews = useAssemblyPreviewRevisions(projectId, data.sources), update = useRunTool();
   const checks = useAssemblyCheckSummaries(projectId, data), checkById = new Map((checks.data ?? []).map(row => [row.sourceId, row]));
   const models = useAssemblyModelSummaries(projectId, data), modelById = new Map((models.data ?? []).map(row => [row.sourceId, row]));

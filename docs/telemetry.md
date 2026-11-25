@@ -4,6 +4,10 @@ Fabdesk sends a small set of anonymous product events from the core daemon to fa
 is **no PostHog SDK** in the desktop, renderer, or core: the daemon POSTs hashed identifiers
 itself. PostHog, when used at all, is a server-side forward on the API.
 
+The onboarding drop-off funnel is a separate lightweight HTTP `/capture/` from `fabdesk-core`
+(also no SDK). It is documented in [onboarding-funnel.md](onboarding-funnel.md) and is off unless
+`POSTHOG_KEY` is set. That path is not gated by usage-archive consent.
+
 This is not the consented usage archive of conversations and run dumps. That path is documented
 in [usage-data-backup.md](usage-data-backup.md). Product analytics never includes design files.
 

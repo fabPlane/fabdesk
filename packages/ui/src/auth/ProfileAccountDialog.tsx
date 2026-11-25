@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   acceptAuthSnapshot,
   cloudAccountId,
+  deviceLoginUrl,
   hasFabplaneSession,
   useAuthStore,
   useCore,
@@ -125,7 +126,7 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
     acceptAuthSnapshot(cache, before, next);
     const current = useAuthStore.getState().state;
     if (current?.status === "pending" && current.pending && !credentials)
-      await host.openExternal(current.pending.verificationUriComplete);
+      await host.openExternal(await deviceLoginUrl(client, current.pending.verificationUriComplete));
   };
   const signOut = async () => {
     await client.logout();
@@ -211,7 +212,7 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
             <p>Approve this code in your browser:</p>
             <strong className="fd-profile-code">{pending.userCode}</strong>
             <Button
-              onClick={() => void run(() => host.openExternal(pending.verificationUriComplete))}
+              onClick={() => void run(async () => host.openExternal(await deviceLoginUrl(client, pending.verificationUriComplete)))}
               disabled={busy}
             >
               Open browser <Icon name="externalLink" width={15} height={15} />

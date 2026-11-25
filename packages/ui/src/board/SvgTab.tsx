@@ -1,4 +1,4 @@
-import { pcbSvgHasNativeCoordinates,useBoardCommentMutations,useBoardComments,useBoardSources,useCoreClient,useLivePreview,usePcbPreviewRevision,useProject,useProjectText,useRootSchematicPreview } from "@fabdesk/client-core";
+import { pcbSvgHasNativeCoordinates,useBoardCommentMutations,useBoardComments,useBoardSources,useCoreClient,useFunnelEvent,useLivePreview,usePcbPreviewRevision,useProject,useProjectText,useRootSchematicPreview } from "@fabdesk/client-core";
 import type { BoardComment,CommentView } from "@fabdesk/protocol";
 import { commentAnchorLabel,commentMillimetrePoint } from "@fabdesk/protocol";
 import { useEffect,useMemo,useRef,useState } from "react";
@@ -90,6 +90,7 @@ function SvgTabContent({ kind, active = true, onOpenChecks }: { kind: "schematic
   const selectSheet = (path: string | null) => { setCanvasPoint(null); setCommentMode(false); setSelectedId(null); setDraftPoint(null); useUiStore.getState().setSchematicPage(pageKey, path); };
   const schematicPreview = useRootSchematicPreview(projectId, schematicPage, kind === "schematic" && scopeReady);
   const drawing = kind === "schematic" ? schematicPreview.data?.svg ?? rendered.data : rendered.data;
+  useFunnelEvent("onboarding_first_board_viewed", kind === "pcb" && active && Boolean(drawing), { source: "pcb" });
   const nativeSheet = kind === "schematic" ? schematicPreview.data?.sheet?.nativeSheet : undefined;
   const legacyPinsVisible = !nativeSheet || nativeSheet.nativePath === "board.kicad_sch" && nativeSheet.hierarchyPath === "/";
   useAssistantSurface(projectId && active && kind === "schematic" && nativeSheet ? { projectId, label: `Schematic · ${nativeSheet.hierarchyPath === "/" ? "Root circuit" : nativeSheet.hierarchyPath}`, priority: 8, details: JSON.stringify({ source: nativeSheet.nativePath, sheet: nativeSheet, sourceRevision: schematicPreview.data?.sourceRevision, previewState: schematicPreview.data?.state, instruction: "Use this captured sheet instance, not a matching reference in another sheet. Inspect current native sources before editing or making electrical claims." }) } : null);

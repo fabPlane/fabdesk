@@ -6,6 +6,7 @@ describe("CLI exposure profiles", () => {
     const usage = cliUsage({});
     expect(usage).toContain("fabdesk-core mcp");
     expect(usage).toContain("fabpcb tool search");
+    expect(usage).toContain("fabdesk-core funnel");
   });
 
   test("substrate usage omits MCP and registry tool access", () => {

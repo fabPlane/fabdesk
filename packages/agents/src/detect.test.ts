@@ -155,6 +155,7 @@ describe("detectAgents", () => {
       keepCoreRunning: false,
       webmcpWriteTools: false,
       errorReporting: true,
+      productAnalytics: true,
       usageArchiveConsent: false,
       usageArchiveChoiceComplete: false,
       theme: "system",
