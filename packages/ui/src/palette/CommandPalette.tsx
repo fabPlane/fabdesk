@@ -12,7 +12,7 @@ import { useOpenWhatsNew } from "../whatsnew/WhatsNew";
 
 export function CommandPalette() {
   const thicknessMm = useUiStore((s) => stencilThicknessMm(s.activeProjectId ? s.stencilThicknessByProject?.[s.activeProjectId] : undefined));
-  const { host } = useCore();
+  const { host, client } = useCore();
   const open = useUiStore((s) => s.paletteOpen);
   const setOpen = useUiStore((s) => s.setPaletteOpen);
   const setActiveThread = useUiStore((s) => s.setActiveThread);
@@ -59,7 +59,7 @@ export function CommandPalette() {
         />
         <Command.List className="min-h-0 flex-1 overflow-auto p-1.5">
           <Command.Empty>No results.</Command.Empty>
-          {projectId && <Command.Group heading="Project"><Command.Item value="close project return home open different project" onSelect={pick(() => useUiStore.getState().goHome())}>Home</Command.Item></Command.Group>}
+          {projectId && <Command.Group heading="Project"><Command.Item value="close project return home open different project" onSelect={pick(() => useUiStore.getState().goHome(client.baseUrl))}>Home</Command.Item></Command.Group>}
           {canvasMode && projectId && (Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map(area => (
             <Command.Group key={area} heading={area === "boards" && assembly ? "Boards" : WORKSPACE_AREAS[area].label}>
               {workspaceViews(area).length === 0 && <Command.Item disabled={!projectId} value={area === "connections" ? "connections linked parts across boards cable relationships" : area === "history" ? "board history revisions timeline compare parts changes" : "project overview all boards assembly"} onSelect={pick(() => useUiStore.getState().setWorkspaceArea(area))}>{area === "overview" ? "Project overview" : WORKSPACE_AREAS[area].label}</Command.Item>}

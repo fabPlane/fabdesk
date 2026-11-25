@@ -179,9 +179,11 @@ export interface UiState {
   /**
    * The Home button: leave the project view at once. Nothing stops when a project is left (runs and
    * jobs live in the core), so the confirmation appears only when leaving could lose something:
-   * an open edit that blocks leaving, or a Notes draft that was never saved.
+   * an open edit that blocks leaving, or a Notes draft that was never saved. `endpoint` is the
+   * current core's base URL: Notes drafts are kept per core, and another core's draft for the same
+   * project id is not this project's.
    */
-  goHome: () => boolean;
+  goHome: (endpoint: string) => boolean;
   projectExitBlocks: Record<string, { projectId: string; message: string }>;
   setProjectExitBlock: (key: string, block: { projectId: string; message: string } | null) => void;
   /** Start a blank conversation; a missing project opens the picker. */
@@ -388,14 +390,10 @@ export function createUiStore(storage?: StateStorage) {
     if (block) projectExitBlocks[key] = block; else delete projectExitBlocks[key];
     return { projectExitBlocks };
   }),
-  goHome: () => {
+  goHome: (endpoint) => {
     const s = get();
-    const unsavedNotes = Object.entries(s.notesDrafts).some(([key, draft]) => {
-      if (draft.content === draft.base) return false;
-      try { const parsed: unknown = JSON.parse(key); return Array.isArray(parsed) && parsed[1] === s.activeProjectId; }
-      catch { return false; }
-    });
-    if (unsavedNotes) { set({ projectExitRequested: true }); return false; }
+    const notes = s.notesDrafts[JSON.stringify([endpoint, s.activeProjectId])];
+    if (notes && notes.content !== notes.base) { set({ projectExitRequested: true }); return false; }
     return get().closeProject();
   },
   closeProject: () => {

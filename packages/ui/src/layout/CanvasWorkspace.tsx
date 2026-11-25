@@ -155,7 +155,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       <button className="fd-canvas-brand" title="Project overview" onClick={() => { if (projectId) openArea("overview"); else { ui().setActiveThread(null); setShowProjects(false); } }}>
         <FabPlaneLogo /><span>fabPlane</span>
       </button>
-      {projectId ? <><WorkspaceBackButton /><strong className="fd-project-identity" title={name}>{name}</strong><Button className="fd-header-home" size="sm" variant="ghost" onClick={() => ui().goHome()} title="Return to Home. Running work continues.">Home</Button></> : <span className="fd-home-header-label">{showProjects ? "Projects" : "Home"}</span>}
+      {projectId ? <><WorkspaceBackButton /><strong className="fd-project-identity" title={name}>{name}</strong><Button className="fd-header-home" size="sm" variant="ghost" onClick={() => ui().goHome(client.baseUrl)} title="Return to Home. Running work continues.">Home</Button></> : <span className="fd-home-header-label">{showProjects ? "Projects" : "Home"}</span>}
       {isDraft && <span className="fd-idea-badge">Draft</span>}
       {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
       <div className="fd-canvas-header-actions">
@@ -169,7 +169,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         {projectId && !fresh && !isDraft && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
         <ProfileButton />
         <WorkspaceMenu className="fd-workspace-overflow" label={<span aria-label="Workspace options"><Icon name="more" width={20} height={20} /></span>}>
-          {projectId && <><div className="fd-menu-caption">Current project</div><button onClick={() => setProjectAction({ id: projectId, name, action: "rename", isDraft })}><Icon name="compose" width={16} height={16} />{isDraft ? "Rename idea" : "Rename project"}</button><button onClick={() => ui().goHome()}><Icon name="close" width={16} height={16} />Home</button><button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Project conversations</button><div className="fd-menu-divider" /></>}
+          {projectId && <><div className="fd-menu-caption">Current project</div><button onClick={() => setProjectAction({ id: projectId, name, action: "rename", isDraft })}><Icon name="compose" width={16} height={16} />{isDraft ? "Rename idea" : "Rename project"}</button><button onClick={() => ui().goHome(client.baseUrl)}><Icon name="close" width={16} height={16} />Home</button><button onClick={() => setNavigationOpen(true)}><Icon name="sidebar" width={16} height={16} />Project conversations</button><div className="fd-menu-divider" /></>}
           <button onClick={() => ui().setPaletteOpen(true)}><Icon name="search" width={16} height={16} />Search commands</button>
           <button onClick={() => ui().setSettingsOpen(true)}><Icon name="settings" width={16} height={16} />Settings</button>
           <button onClick={() => ui().setInventoryOpen(true)}><Icon name="library" width={16} height={16} />Parts inventory</button>
