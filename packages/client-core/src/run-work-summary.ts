@@ -31,3 +31,44 @@ export function summarizeRunWork(messages: Message[], startedAt: number) {
     next: failed ? "Review the recorded error in tool details; completed work remains available. Retry after resolving the cause." : result ? "Waiting for the next recorded action." : "Waiting for this operation to return.",
   };
 }
+
+export type RunStep = { id: string; label: string; state: "running" | "done" | "failed"; detail?: string };
+
+const resultText = (output: unknown): string => {
+  if (typeof output === "string") return output;
+  const fields = record(output);
+  if (typeof fields?.text === "string") return fields.text;
+  const first = Array.isArray(fields?.content) ? record(fields.content[0]) : null;
+  return typeof first?.text === "string" ? first.text : "";
+};
+
+/**
+ * The latest tool steps of a run, oldest first, for a "what is the agent doing" list. Like
+ * `summarizeRunWork` it reads only persisted tool history; `detail` is the first line the tool
+ * returned, shortened, so a failed build shows its reason without opening tool details.
+ */
+export function recentRunSteps(messages: Message[], startedAt: number, limit = 6): RunStep[] {
+  const parts = messages.filter(m => m.role === "assistant" && Date.parse(m.createdAt) >= startedAt).flatMap(m => m.parts);
+  const results = new Map(parts.filter(p => p.type === "tool_result").map(p => [p.id, p]));
+  return parts.filter(p => p.type === "tool_use").slice(-limit).map((use) => {
+    const bare = use.name.replace(/^mcp__.+?__/, "").replace(/^functions\./, "");
+    const name = bare === "capability_call" && typeof record(use.input)?.name === "string" ? String(record(use.input)!.name) : bare;
+    const result = results.get(use.id), output = record(result?.output);
+    const failed = result?.isError === true || output?.isError === true || output?.ok === false;
+    const line = result ? resultText(result.output).split("\n").find(text => text.trim())?.trim() ?? "" : "";
+    return {
+      id: use.id,
+      label: labels[name] ?? name.replace(/_/g, " "),
+      state: !result ? "running" as const : failed ? "failed" as const : "done" as const,
+      ...(line ? { detail: line.length > 160 ? `${line.slice(0, 159)}…` : line } : {}),
+    };
+  });
+}
+
+/** The agent's most recent words in a run, shortened to one line; null before it has said anything. */
+export function latestRunNote(messages: Message[], startedAt: number): string | null {
+  const texts = messages.filter(m => m.role === "assistant" && Date.parse(m.createdAt) >= startedAt)
+    .flatMap(m => m.parts).filter(p => p.type === "text").map(p => p.text.trim()).filter(Boolean);
+  const last = texts.at(-1)?.replace(/\s+/g, " ");
+  return last ? (last.length > 220 ? `${last.slice(0, 219)}…` : last) : null;
+}
