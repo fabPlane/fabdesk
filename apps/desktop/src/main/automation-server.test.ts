@@ -168,6 +168,17 @@ describe("eval", () => {
     await expect(evalInWindow(w, "x".repeat(70_000))).rejects.toThrow(/exceeds/);
   });
 
+  test("does not retry snippets after a renderer execution rejection", async () => {
+    const w = fakeWindow(1);
+    let calls = 0;
+    w.executeJavaScript = async () => {
+      calls += 1;
+      throw new Error("renderer closed");
+    };
+    expect(await evalInWindow(w, "1")).toEqual({ ok: false, error: "script execution failed: renderer closed" });
+    expect(calls).toBe(1);
+  });
+
   test("times out", async () => {
     const w = fakeWindow(1);
     w.executeJavaScript = () => new Promise(() => {});
@@ -286,6 +297,19 @@ describe("routes", () => {
     expect(err.status).toBe(422);
     expect(String((err.body as { error: string }).error)).toContain("nope");
     await expect(handleBridgeRequest(req("POST", "/eval", {}), deps([w]))).rejects.toMatchObject({ status: 400 });
+  });
+
+  test("POST /eval sends only valid JavaScript to the renderer", async () => {
+    const w = fakeWindow(1);
+    // Regression: the old expression probe sent an invalid semicolon to the page before retrying.
+    const statement = await handleBridgeRequest(req("POST", "/eval", { code: "void 0; true" }), deps([w]));
+    expect(statement).toEqual({ status: 200, body: { result: null } });
+    expect(w.evals).toHaveLength(1);
+
+    const malformed = await handleBridgeRequest(req("POST", "/eval", { code: "const = ;" }), deps([w]));
+    expect(malformed.status).toBe(422);
+    expect(malformed.body).toMatchObject({ error: expect.stringContaining("script did not parse") });
+    expect(w.evals).toHaveLength(1);
   });
 
   test("windowId selects the target and unknown routes 404", async () => {

@@ -22,7 +22,11 @@ const cleanup = () => {
   if (keep) console.error(`test temp kept: ${dir}`);
   else rmSync(dir, { recursive: true, force: true });
 };
-const child = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env: { ...process.env, TMPDIR: dir, TMP: dir, TEMP: dir } });
+const child = Bun.spawn(cmd, {
+  stdio: ["inherit", "inherit", "inherit"],
+  // A test that starts a daemon must never post product events to fabplane.com.
+  env: { ...process.env, TMPDIR: dir, TMP: dir, TEMP: dir, FABDESK_TELEMETRY_ENABLED: "false" },
+});
 for (const sig of ["SIGINT", "SIGTERM"] as const)
   process.on(sig, () => {
     child.kill(sig);

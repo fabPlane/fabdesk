@@ -8,6 +8,7 @@
  */
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { Script } from "node:vm";
 
 export type Rect = { x: number; y: number; width: number; height: number };
 export type MouseButton = "left" | "right" | "middle";
@@ -177,11 +178,11 @@ function str(v: unknown): string | undefined {
 type EvalResult = { ok: true; value: unknown } | { ok: false; error: string };
 
 /**
- * Evaluate `code` in the page: expression form (`(async () => (code))()`) first, statement form
- * (`return` allowed) when that does not parse. Runtime errors are caught inside the page so their
- * message survives the IPC round trip (Electron otherwise rejects with a generic "script failed"
- * error), which means any rejection here is a parse failure. Results are forced through JSON so
- * they are serialisable.
+ * Parse without executing in the main process: prefer the expression form, then a statement
+ * body (where `return` is allowed). Sending an invalid probe to Electron triggers the page's
+ * global error handler even when the statement fallback succeeds. Execute just the selected
+ * form in the renderer; catch runtime errors in-page so their messages survive IPC.
+ * Results are forced through JSON so they are serialisable.
  */
 export async function evalInWindow(win: AutomationWindow, code: string, timeoutMs = EVAL_TIMEOUT_MS): Promise<EvalResult> {
   if (code.length > MAX_EVAL_CHARS) throw new BridgeError(400, `code exceeds ${MAX_EVAL_CHARS} characters`);
@@ -189,18 +190,25 @@ export async function evalInWindow(win: AutomationWindow, code: string, timeoutM
   const statements = `(async () => {\n${code}\n})()`;
   const wrap = (inner: string) =>
     `(async () => { try { const __v = await ${inner}; return { ok: true, value: __v === undefined ? null : JSON.parse(JSON.stringify(__v)) }; } catch (e) { return { ok: false, error: e && e.stack ? String(e.stack) : String(e) }; } })()`;
-  let lastError: unknown = null;
+  let parseError: SyntaxError | undefined;
   for (const form of [expression, statements]) {
+    const script = wrap(form);
     try {
-      return (await withTimeout(win.executeJavaScript(wrap(form), true), timeoutMs)) as EvalResult;
+      new Script(script);
     } catch (e) {
-      lastError = e;
+      if (!(e instanceof SyntaxError)) throw e;
+      parseError = e;
+      continue;
+    }
+    try {
+      return (await withTimeout(win.executeJavaScript(script, true), timeoutMs)) as EvalResult;
+    } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/timed out/.test(msg)) throw new BridgeError(504, msg);
+      return { ok: false, error: `script execution failed: ${msg}` };
     }
   }
-  const msg = lastError instanceof Error ? lastError.message : String(lastError);
-  return { ok: false, error: `script did not parse: ${msg}` };
+  return { ok: false, error: `script did not parse: ${parseError?.message ?? "invalid JavaScript"}` };
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
