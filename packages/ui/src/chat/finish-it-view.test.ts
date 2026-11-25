@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { FinishItSession } from "@fabdesk/protocol";
-import { finishItActive, finishItDisplayedMilestoneStatus, finishItMilestoneTone, finishItSummary } from "./finish-it-view";
+import { finishItActive, finishItDisplayedMilestoneStatus, finishItMilestoneNote, finishItMilestoneTone, finishItNextStep, finishItSummary } from "./finish-it-view";
 
 const session = (patch: Partial<FinishItSession> = {}): FinishItSession => ({
   id: "fin_1",
@@ -77,5 +77,27 @@ describe("final verification display", () => {
     expect(partial.milestones.map((m) => finishItDisplayedMilestoneStatus(partial, m))).toEqual([
       "done", "done", "running", "pending",
     ]);
+  });
+
+  test("ended steps show their note; pending and running steps do not", () => {
+    const failed = session({
+      status: "failed",
+      currentMilestone: "build",
+      milestones: [
+        { id: "schematic", label: "Finish schematic", status: "done", note: "Netlist has 355 components" },
+        { id: "build", label: "Place footprints", status: "failed", note: "Board not built" },
+        { id: "route", label: "Route copper", status: "pending", note: "Not routed" },
+      ],
+    });
+    expect(failed.milestones.map((m) => finishItMilestoneNote(failed, m))).toEqual(["Netlist has 355 components", "Board not built", null]);
+    const running = session();
+    expect(finishItMilestoneNote(running, running.milestones[2]!)).toBeNull();
+  });
+
+  test("a session that ended with steps left says how to continue", () => {
+    expect(finishItNextStep(session({ status: "failed" }))).toContain("Completed steps are saved");
+    expect(finishItNextStep(session({ status: "stopped", milestones: [{ id: "build", label: "Place footprints", status: "failed" }] }))).toContain("to retry");
+    expect(finishItNextStep(session())).toBeNull();
+    expect(finishItNextStep(session({ status: "completed" }))).toBeNull();
   });
 });

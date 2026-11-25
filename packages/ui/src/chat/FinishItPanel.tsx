@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import type { FinishItSession } from "@fabdesk/protocol";
 import { Button } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { finishItActive, finishItDisplayedMilestoneStatus, finishItMilestoneTone, finishItSummary, FINISH_IT_STATUS_LABEL } from "./finish-it-view";
+import { finishItActive, finishItDisplayedMilestoneStatus, finishItMilestoneNote, finishItMilestoneTone, finishItNextStep, finishItSummary, FINISH_IT_STATUS_LABEL } from "./finish-it-view";
 
 export interface FinishItPanelProps {
   session: FinishItSession;
@@ -16,6 +16,7 @@ export function FinishItPanel({ session, onStop, stopping }: FinishItPanelProps)
   const [collapsedSession, setCollapsedSession] = useState<string | null>(null);
   const detailsId = useId();
   const collapsed = finished && collapsedSession === session.id;
+  const nextStep = finishItNextStep(session);
   if (collapsed) {
     return (
       <div className="mb-2" data-testid="finish-it-panel">
@@ -71,8 +72,9 @@ export function FinishItPanel({ session, onStop, stopping }: FinishItPanelProps)
         {session.milestones.map((m) => {
           const status = finishItDisplayedMilestoneStatus(session, m);
           const tone = finishItMilestoneTone(status);
+          const note = finishItMilestoneNote(session, m);
           return (
-            <li key={m.id} className="flex items-center gap-2 text-xs" data-milestone={m.id} data-status={status} aria-busy={tone === "running"}>
+            <li key={m.id} className="flex items-baseline gap-2 text-xs" data-milestone={m.id} data-status={status} aria-busy={tone === "running"}>
               <span
                 className={
                   tone === "done"
@@ -90,10 +92,12 @@ export function FinishItPanel({ session, onStop, stopping }: FinishItPanelProps)
                 <span className="sr-only">{tone === "running" ? "In progress: " : tone === "done" ? "Complete: " : tone === "failed" ? "Failed: " : "Pending: "}</span>
               </span>
               <span className={tone === "pending" ? "text-muted" : "text-fg"}>{m.label}</span>
+              {note && <span className="min-w-0 text-muted">· {note}</span>}
             </li>
           );
         })}
       </ol>
+      {nextStep && <p className="mt-2 text-xs text-muted">{nextStep}</p>}
     </div>
   );
 }
