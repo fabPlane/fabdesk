@@ -15,9 +15,8 @@ import { serve, type Daemon } from "../src/serve";
 import { mockServices } from "../../../packages/tools/test/mock-services";
 
 const PRE_ANON = "anon_pre_try_install";
-const PH_ID = "ph_try_landing";
-const OPEN_URL =
-  "fabplane://open?ph_id=ph_try_landing&utm_source=google&utm_medium=cpc&utm_campaign=try&utm_content=hero&utm_term=pcb&gclid=CjwTEST&referrer=https://news.example/path";
+const PH_ID = "ph_try_reddit_e2e";
+const OPEN_URL = "fabplane://open?ph_id=ph_try_reddit_e2e&utm_source=reddit&utm_campaign=test";
 
 type CaptureBody = {
   api_key?: string;
@@ -140,22 +139,16 @@ describe("funnel e2e PostHog /capture/ proof", () => {
     expect(props(identify)["distinct_id"]).toBe(LOCAL_PRINCIPAL.subject);
     expect(props(identify)["$anon_distinct_id"]).toBe(PH_ID);
     expect(props(identify)["$set_once"]).toEqual({
-      utm_source: "google",
-      utm_medium: "cpc",
-      utm_campaign: "try",
-      utm_content: "hero",
-      utm_term: "pcb",
-      gclid: "CjwTEST",
-      referrer: "https://news.example/path",
+      utm_source: "reddit",
+      utm_campaign: "test",
     });
     const snap = await snapshot();
     expect(snap.captureEnabled).toBe(true);
     expect(snap.optedIn).toBe(true);
     expect(snap.handoff).toMatchObject({
       phId: PH_ID,
-      utmSource: "google",
-      utmCampaign: "try",
-      gclid: "CjwTEST",
+      utmSource: "reddit",
+      utmCampaign: "test",
     });
     expect(snap.identifiedSubject).toBe(LOCAL_PRINCIPAL.subject);
     expect(snap.events.some((e) => e.event === "onboarding_app_launched")).toBe(true);
