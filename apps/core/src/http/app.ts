@@ -23,7 +23,9 @@ import {
   SendMessage,
   RouterCatalogId,
   Settings,
+  CLIENT_FUNNEL_EVENTS,
   funnelHandoffFromRecord,
+  type ClientFunnelEvent,
   SpeechCloudSecret,
   StartFinishIt,
   StartOrder,
@@ -347,7 +349,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
       return c.json({ error: "Choosing a parent directory requires the local desktop connection" }, 403);
     }
     const body = CreateProject.parse(input);
-    return c.json(await deps.projects.create(body.name, body.parentDirectory, body.draft), 201);
+    const created = await deps.projects.create(body.name, body.parentDirectory, body.draft);
+    if (!created.isDraft) deps.funnel?.record("onboarding_first_project");
+    return c.json(created, 201);
   });
   app.post("/projects/:id/promote", async c => {
     const id = c.req.param("id"), input = await c.req.json();
@@ -356,7 +360,9 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const body = CreateProject.omit({ draft: true }).parse(input);
     const busy = deps.runs?.projectBusyMessage(id);
     if (busy || deps.jobs.list().some(job => job.projectId === id && ["queued", "running"].includes(job.status))) return c.json({ error: "Wait for the current reply or task to finish before creating the project.", code: "precondition" }, 412);
-    return c.json(await deps.projects.promoteDraft(id, body.name, body.parentDirectory));
+    const promoted = await deps.projects.promoteDraft(id, body.name, body.parentDirectory);
+    deps.funnel?.record("onboarding_first_project");
+    return c.json(promoted);
   });
   app.get("/projects/:id", async (c) => {
     const d = await deps.projects.detail(c.req.param("id"));
@@ -784,6 +790,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
         adoptedBoard = adopted?.pcbPath ?? null;
       }
       c.req.raw.signal.throwIfAborted();
+      deps.funnel?.record("onboarding_first_project");
+      deps.funnel?.record("onboarding_first_kicad_import");
       return c.json({ project: (await deps.projects.detail(project.id)) ?? project, boards, adoptedBoard }, 201);
     } catch (error) {
       await deps.projects.delete(project.id, { purge: true });
@@ -1059,6 +1067,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
         return c.json(deps.auth.state());
       }
     }
+    deps.funnel?.record("onboarding_sign_in_started");
     // Kick off the device flow; state transitions arrive via auth.state events. Respond immediately
     // with the pending state (user code) when available within a short window.
     const first = await Promise.race([
@@ -1113,6 +1122,21 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const record = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
     deps.funnel.adopt(funnelHandoffFromRecord(record));
     return c.json(deps.funnel.snapshot());
+  });
+  app.post("/funnel/events", async (c) => {
+    if (!deps.funnel) return c.json({ error: "not found" }, 404);
+    const raw: unknown = await c.req.json().catch(() => ({}));
+    const parsed = z
+      .object({
+        event: z.string().min(1),
+        properties: z.record(z.string(), z.string()).optional(),
+      })
+      .safeParse(raw);
+    if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+    if (!CLIENT_FUNNEL_EVENTS.includes(parsed.data.event as ClientFunnelEvent)) {
+      return c.json({ recorded: false }, 400);
+    }
+    return c.json({ recorded: deps.funnel.record(parsed.data.event as ClientFunnelEvent) });
   });
   app.patch("/settings", async (c) => {
     const raw: unknown = await c.req.json();

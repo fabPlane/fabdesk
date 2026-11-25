@@ -4,7 +4,7 @@
  * Nothing here may touch the DOM — `document`, `window`, `localStorage` and friends belong to the
  * view packages.
  */
-export { appendFunnelToLoginUrl,funnelHandoffFromLoginSearch } from "./funnel-login";
+export { appendFunnelToLoginUrl,deviceLoginUrl,funnelHandoffFromLoginSearch } from "./funnel-login";
 export { acceptAuthSnapshot,cloudAccountId,hasFabplaneSession } from "./auth-cache";
 export { connectionLabel } from "./connection-label";
 export { deduplicateChatNotices } from "./chat-notices";

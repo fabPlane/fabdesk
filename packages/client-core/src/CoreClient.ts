@@ -52,6 +52,7 @@ import type {
   RouteFrameLine,
   RouteResult,
   Settings,
+  ClientFunnelEvent,
   FunnelHandoff,
   FunnelSnapshot,
   SpeechStatus,
@@ -714,6 +715,15 @@ export class CoreClient {
   }
   submitFunnelHandoff(handoff: FunnelHandoff): Promise<FunnelSnapshot> {
     return this.request("/funnel/handoff", { method: "POST", json: handoff });
+  }
+  trackFunnelEvent(
+    event: ClientFunnelEvent,
+    properties?: Record<string, string>,
+  ): Promise<{ recorded: boolean }> {
+    return this.request("/funnel/events", {
+      method: "POST",
+      json: { event, ...(properties ? { properties } : {}) },
+    });
   }
   getSettings(): Promise<Settings> {
     return this.request("/settings");

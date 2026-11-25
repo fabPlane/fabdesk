@@ -30,7 +30,14 @@ import { PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 import { systemLocaleEnv } from "./system-locales";
 import { resolveWindowTheme, titleBarOverlayFor } from "./window-theme";
 import { decideMediaPermission } from "./media-permission";
-import type { OpenCatalogIntent } from "@fabdesk/protocol";
+import {
+  collectFunnelHandoff,
+  funnelHandoffToEnv,
+  isEmptyFunnelHandoff,
+  mergeFunnelHandoff,
+  type FunnelHandoff,
+  type OpenCatalogIntent,
+} from "@fabdesk/protocol";
 import { OpenSharedProjectQueue } from "./open-shared-project";
 import { OpenCatalogQueue } from "./open-catalog";
 
@@ -38,6 +45,43 @@ const openSharedProject = new OpenSharedProjectQueue();
 openSharedProject.offer(process.argv);
 const openCatalog = new OpenCatalogQueue();
 openCatalog.offer(process.argv);
+
+let launchHandoff: FunnelHandoff = collectFunnelHandoff({ argv: process.argv, env: process.env });
+let supervisor: CoreSupervisor | null = null;
+
+function corePosthogEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of [
+    "POSTHOG_KEY", "POSTHOG_HOST", "POSTHOG_PROJECT_API_KEY",
+    "FABDESK_POSTHOG_KEY", "FABDESK_POSTHOG_HOST",
+    "FABDESK_UTM_SOURCE", "FABDESK_UTM_MEDIUM", "FABDESK_UTM_CAMPAIGN",
+    "FABDESK_UTM_CONTENT", "FABDESK_UTM_TERM", "FABDESK_REFERRER",
+    "FABDESK_PH_ID", "FABDESK_GCLID",
+  ] as const) {
+    const value = process.env[key];
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+function postFunnelHandoff(handoff: FunnelHandoff): void {
+  if (isEmptyFunnelHandoff(handoff)) return;
+  const info = supervisor?.info();
+  if (!info?.url || !info.token) return;
+  void fetch(`${info.url}/funnel/handoff`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${info.token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(handoff),
+  }).catch(() => {});
+}
+
+function deliverFunnelHandoff(next: FunnelHandoff): void {
+  launchHandoff = mergeFunnelHandoff(launchHandoff, next);
+  postFunnelHandoff(next);
+}
 
 function sendOpenCatalog(intent: OpenCatalogIntent): void {
   const win = BrowserWindow.getAllWindows()[0];
@@ -58,6 +102,7 @@ function sendOpenSharedProject(intent: import("@fabdesk/protocol").OpenSharedPro
 
 app.on("open-url", (event, url) => {
   event.preventDefault();
+  deliverFunnelHandoff(collectFunnelHandoff({ urls: [url] }));
   const shared = openSharedProject.offer(url);
   if (shared) {
     sendOpenSharedProject(shared);
@@ -104,7 +149,6 @@ app.commandLine.appendSwitch("enable-features", "WebMCP");
 if (!identity.devProfile) migrateLegacyUserData(app.getPath("userData"));
 
 const here = fileURLToPath(new URL(".", import.meta.url));
-let supervisor: CoreSupervisor | null = null;
 let pcbSupervisor: PcbSupervisor | null = null;
 let cadSupervisor: CadSupervisor | null = null;
 let automation: AppAutomation | null = null;
@@ -190,6 +234,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", (_event, argv) => {
+    deliverFunnelHandoff(collectFunnelHandoff({ argv }));
     const shared = openSharedProject.offer(argv);
     if (shared) sendOpenSharedProject(shared);
     const intent = openCatalog.offer(argv);
@@ -238,6 +283,8 @@ if (!app.requestSingleInstanceLock()) {
     }
     const coreExtraEnv = {
       ...coreSentryEnv(),
+      ...corePosthogEnv(),
+      ...funnelHandoffToEnv(launchHandoff),
       ...pcbEnv,
       ...cadEnv,
       ...systemLocaleEnv(app),
@@ -344,6 +391,7 @@ if (!app.requestSingleInstanceLock()) {
     const smokeMs = Number(process.env["FABDESK_SMOKE_MS"] ?? 0);
     if (smokeMs > 0) setTimeout(() => app.quit(), smokeMs);
     await coreStartup;
+    postFunnelHandoff(launchHandoff);
     // Optional discovery can include filesystem scans and macOS signature checks.
     // Open the window and start PCB/core first; activating verified CAD afterwards
     // restarts the ready core with its bridge environment. First CAD use shares

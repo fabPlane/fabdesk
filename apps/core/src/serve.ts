@@ -395,7 +395,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   projects.create = async (name, parentDirectory, draft = false) => {
     const created = await createProject(name, parentDirectory, draft);
     productAnalytics.track("project_created", draft ? { draft: true } : {});
-    funnel.record("onboarding_first_project");
+    if (!draft) funnel.record("onboarding_first_project");
     return created;
   };
   const promoteDraft = projects.promoteDraft.bind(projects);

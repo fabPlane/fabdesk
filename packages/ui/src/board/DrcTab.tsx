@@ -3,7 +3,7 @@ import { useAssistantSurface } from "../chat/useAssistantSurface";
 import { CheckFindingDetails, CheckFindingItem } from "./CheckFindingDetails";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Select, Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
-import { captureRootCheckFinding, rootCheckFindingRow, useCoreClient, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
+import { captureRootCheckFinding, rootCheckFindingRow, useCoreClient, useFunnelEvent, usePcbCheckRevision, useProjectJson } from "@fabdesk/client-core";
 import { useUiStore } from "../stores/ui";
 import { CheckReportStatus } from "./CheckReportStatus";
 import { Icon } from "../components/Icon";
@@ -16,6 +16,7 @@ import { AssemblyChecks } from "./AssemblyChecks";
 export { normalizeReport, type Violation, type ViolationItem } from "@fabdesk/client-core";
 
 export function DrcTab({ contextual = false, onNavigate }: { contextual?: boolean; onNavigate?: () => void } = {}) {
+  useFunnelEvent("onboarding_first_review_viewed", true, { source: "check" });
   const projectId = useUiStore(state => state.activeProjectId), sources = useBoardSources(projectId);
   if (!projectId) return <EmptyState title="No project selected" />;
   if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;

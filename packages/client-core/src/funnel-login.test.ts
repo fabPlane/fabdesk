@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CoreClient } from "./CoreClient";
-import { appendFunnelToLoginUrl, funnelHandoffFromLoginSearch } from "./funnel-login";
+import { appendFunnelToLoginUrl, deviceLoginUrl, funnelHandoffFromLoginSearch } from "./funnel-login";
 
 describe("funnel login URL", () => {
   test("appends missing first-touch keys onto the device-login URL", () => {
@@ -63,6 +63,7 @@ describe("CoreClient funnel", () => {
     });
     await client.getFunnel();
     await client.submitFunnelHandoff({ phId: "ph1", utmSource: "google" });
+    await client.trackFunnelEvent("onboarding_first_review_viewed", { source: "review" });
     expect(calls).toEqual([
       { url: "http://127.0.0.1:47831/funnel", body: null },
       {
@@ -70,6 +71,41 @@ describe("CoreClient funnel", () => {
         method: "POST",
         body: { phId: "ph1", utmSource: "google" },
       },
+      {
+        url: "http://127.0.0.1:47831/funnel/events",
+        method: "POST",
+        body: { event: "onboarding_first_review_viewed", properties: { source: "review" } },
+      },
     ]);
+  });
+
+  test("deviceLoginUrl appends funnel handoff and falls back on error", async () => {
+    const ok = new CoreClient({
+      baseUrl: "http://127.0.0.1:47831",
+      token: "tok",
+      fetch: async () =>
+        Response.json({
+          captureEnabled: false,
+          optedIn: true,
+          distinctId: "anon_x",
+          identifiedSubject: null,
+          handoff: { phId: "ph1", utmSource: "google" },
+          events: [],
+        }),
+    });
+    const decorated = await deviceLoginUrl(ok, "https://fabplane.com/device?user_code=ABCD-EFGH");
+    const url = new URL(decorated);
+    expect(url.searchParams.get("user_code")).toBe("ABCD-EFGH");
+    expect(url.searchParams.get("ph_id")).toBe("ph1");
+    expect(url.searchParams.get("utm_source")).toBe("google");
+
+    const failing = new CoreClient({
+      baseUrl: "http://127.0.0.1:47831",
+      token: "tok",
+      fetch: async () => new Response("nope", { status: 500 }),
+    });
+    expect(await deviceLoginUrl(failing, "https://fabplane.com/device?user_code=ZZ")).toBe(
+      "https://fabplane.com/device?user_code=ZZ",
+    );
   });
 });

@@ -3,6 +3,7 @@ import {
   funnelHandoffFromSearchParams,
   type FunnelHandoff,
 } from "@fabdesk/protocol";
+import type { CoreClient } from "./CoreClient";
 
 /** First-touch fields already on a device-login or return_to URL. */
 export function funnelHandoffFromLoginSearch(search: string): FunnelHandoff {
@@ -16,4 +17,13 @@ export function funnelHandoffFromLoginSearch(search: string): FunnelHandoff {
  */
 export function appendFunnelToLoginUrl(url: string, handoff: FunnelHandoff): string {
   return appendFunnelHandoffToUrl(url, handoff);
+}
+
+export async function deviceLoginUrl(client: CoreClient, verificationUriComplete: string): Promise<string> {
+  try {
+    const snap = await client.getFunnel();
+    return appendFunnelToLoginUrl(verificationUriComplete, snap.handoff);
+  } catch {
+    return verificationUriComplete;
+  }
 }

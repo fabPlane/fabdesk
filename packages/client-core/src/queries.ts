@@ -22,6 +22,7 @@ import { inspectPcbPreviewRevision } from "./pcb-preview-revision";
 import type {
   AgentId,
   ApprovalDecision,
+  ClientFunnelEvent,
   PendingRequests,
   RuntimeMode,
   Job,
@@ -382,6 +383,25 @@ export function useAuthState() {
     if (q.data) setState(q.data);
   }, [q.data, setState]);
   return q;
+}
+
+const firedFunnelEvents = new Set<string>();
+
+/** Fire a client funnel event once per mount; retries if the POST fails. */
+export function useFunnelEvent(
+  event: ClientFunnelEvent,
+  enabled = true,
+  properties?: Record<string, string>,
+): void {
+  const client = useCoreClient();
+  useEffect(() => {
+    if (!enabled) return;
+    if (firedFunnelEvents.has(event)) return;
+    firedFunnelEvents.add(event);
+    void client.trackFunnelEvent(event, properties).catch(() => {
+      firedFunnelEvents.delete(event);
+    });
+  }, [client, enabled, event, properties]);
 }
 
 export function useToolManifest() {

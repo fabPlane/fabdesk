@@ -86,6 +86,33 @@ describe("funnel HTTP", () => {
     expect(snap.handoff.gclid).toBe("Cjw");
   });
 
+  test("POST /funnel/events allow-lists client review and board events", async () => {
+    const allowed = await api("/funnel/events", {
+      method: "POST",
+      body: JSON.stringify({ event: "onboarding_first_review_viewed", properties: { source: "review" } }),
+    });
+    expect(allowed.status).toBe(200);
+    expect((await allowed.json()) as { recorded: boolean }).toEqual({ recorded: true });
+    const again = await api("/funnel/events", {
+      method: "POST",
+      body: JSON.stringify({ event: "onboarding_first_review_viewed" }),
+    });
+    expect(again.status).toBe(200);
+    expect((await again.json()) as { recorded: boolean }).toEqual({ recorded: false });
+    const denied = await api("/funnel/events", {
+      method: "POST",
+      body: JSON.stringify({ event: "onboarding_first_ai_run" }),
+    });
+    expect(denied.status).toBe(400);
+    expect((await denied.json()) as { recorded: boolean }).toEqual({ recorded: false });
+    const board = await api("/funnel/events", {
+      method: "POST",
+      body: JSON.stringify({ event: "onboarding_first_board_viewed", properties: { source: "pcb" } }),
+    });
+    expect(board.status).toBe(200);
+    expect((await board.json()) as { recorded: boolean }).toEqual({ recorded: true });
+  });
+
   test("creating a project records onboarding_first_project once", async () => {
     const created = await api("/projects", {
       method: "POST",

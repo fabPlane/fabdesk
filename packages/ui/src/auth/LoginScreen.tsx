@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Input, Spinner } from "../components/ui";
-import { acceptAuthSnapshot, useCore } from "@fabdesk/client-core";
+import { acceptAuthSnapshot, deviceLoginUrl, useCore } from "@fabdesk/client-core";
 import { useAuthStore } from "@fabdesk/client-core";
 import { isMac } from "../util";
 import { isRevealDevOptionsShortcut, showDevSignInOptions } from "./dev-options";
@@ -74,7 +74,7 @@ export function LoginScreen() {
       acceptAuthSnapshot(cache, before, next);
       const current = useAuthStore.getState().state;
       if (current?.status === "pending" && current.pending)
-        void host.openExternal(current.pending.verificationUriComplete);
+        void host.openExternal(await deviceLoginUrl(client, current.pending.verificationUriComplete));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -108,7 +108,7 @@ export function LoginScreen() {
             <div className="select-all rounded-lg border border-border bg-panel-2 py-3 text-center font-mono text-3xl tracking-[0.3em]">
               {pending.userCode}
             </div>
-            <Button variant="primary" className="w-full" onClick={() => void host.openExternal(pending.verificationUriComplete)}>
+            <Button variant="primary" className="w-full" onClick={() => void (async () => host.openExternal(await deviceLoginUrl(client, pending.verificationUriComplete)))()}>
               Open browser
             </Button>
             <Button className="w-full" disabled={busy} onClick={() => void cancelSignIn()}>

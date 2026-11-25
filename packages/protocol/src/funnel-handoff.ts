@@ -68,6 +68,7 @@ export function sanitizeFunnelReferrer(raw: string): string | undefined {
   if (!value) return undefined;
   try {
     const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
     url.username = "";
     url.password = "";
     url.search = "";
@@ -92,6 +93,8 @@ export function isEmptyFunnelHandoff(handoff: FunnelHandoff): boolean {
   return Object.keys(handoff).length === 0;
 }
 
+const MAX_RETURN_TO_DEPTH = 3;
+
 export function mergeFunnelHandoff(...parts: Array<FunnelHandoff | undefined>): FunnelHandoff {
   const out: FunnelHandoff = {};
   for (const part of parts) {
@@ -104,7 +107,7 @@ export function mergeFunnelHandoff(...parts: Array<FunnelHandoff | undefined>): 
   return out;
 }
 
-export function funnelHandoffFromSearchParams(params: URLSearchParams): FunnelHandoff {
+export function funnelHandoffFromSearchParams(params: URLSearchParams, depth = 0): FunnelHandoff {
   const out: FunnelHandoff = {};
   setField(out, "phId", params.get("ph_id"));
   for (const key of FUNNEL_UTM_KEYS) setField(out, QUERY_TO_FIELD[key], params.get(key));
@@ -113,7 +116,10 @@ export function funnelHandoffFromSearchParams(params: URLSearchParams): FunnelHa
     setField(out, "referrer", params.get(alias));
     if (out.referrer) break;
   }
-  return out;
+  if (depth >= MAX_RETURN_TO_DEPTH) return out;
+  const returnTo = params.get("return_to");
+  if (!returnTo) return out;
+  return mergeFunnelHandoff(out, handoffFromHref(returnTo, depth + 1));
 }
 
 export function funnelHandoffFromRecord(record: Record<string, unknown>): FunnelHandoff {
@@ -125,7 +131,9 @@ export function funnelHandoffFromRecord(record: Record<string, unknown>): Funnel
   return mergeFunnelHandoff(parsed.success ? parsed.data : {}, funnelHandoffFromSearchParams(params));
 }
 
-export function funnelHandoffFromEnv(env: NodeJS.ProcessEnv = process.env): FunnelHandoff {
+export type FunnelProcessEnv = Record<string, string | undefined>;
+
+export function funnelHandoffFromEnv(env: FunnelProcessEnv): FunnelHandoff {
   const out: FunnelHandoff = {};
   for (const [envKey, field] of Object.entries(ENV_TO_FIELD) as Array<
     [keyof typeof ENV_TO_FIELD, keyof FunnelHandoff]
@@ -135,12 +143,24 @@ export function funnelHandoffFromEnv(env: NodeJS.ProcessEnv = process.env): Funn
   return out;
 }
 
-function handoffFromHref(raw: string): FunnelHandoff {
+/** Map first-touch fields onto FABDESK_* env so the desktop can pass them to the core sidecar. */
+export function funnelHandoffToEnv(handoff: FunnelHandoff): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [envKey, field] of Object.entries(ENV_TO_FIELD) as Array<
+    [keyof typeof ENV_TO_FIELD, keyof FunnelHandoff]
+  >) {
+    const value = handoff[field];
+    if (value) out[envKey] = value;
+  }
+  return out;
+}
+
+function handoffFromHref(raw: string, depth = 0): FunnelHandoff {
   const value = raw.trim();
   if (!value) return {};
   try {
     const url = value.includes("://") ? new URL(value) : new URL(value, "https://fabplane.com");
-    return funnelHandoffFromSearchParams(url.searchParams);
+    return funnelHandoffFromSearchParams(url.searchParams, depth);
   } catch {
     return {};
   }
@@ -154,7 +174,7 @@ export function funnelHandoffFromArgv(argv: readonly string[]): FunnelHandoff {
 
 export function collectFunnelHandoff(opts: {
   argv?: readonly string[];
-  env?: NodeJS.ProcessEnv;
+  env?: FunnelProcessEnv;
   urls?: readonly string[];
   record?: Record<string, unknown>;
 }): FunnelHandoff {
@@ -166,7 +186,7 @@ export function collectFunnelHandoff(opts: {
     funnelHandoffFromArgv(opts.argv ?? []),
     fromUrls,
     opts.record ? funnelHandoffFromRecord(opts.record) : undefined,
-    funnelHandoffFromEnv(opts.env ?? process.env),
+    opts.env ? funnelHandoffFromEnv(opts.env) : {},
   );
 }
 
@@ -226,6 +246,13 @@ export const FUNNEL_EVENTS = [
   "onboarding_first_board_viewed",
 ] as const;
 export type FunnelEventName = (typeof FUNNEL_EVENTS)[number];
+
+/** Client-reported activation events (`POST /funnel/events`). */
+export const CLIENT_FUNNEL_EVENTS = [
+  "onboarding_first_review_viewed",
+  "onboarding_first_board_viewed",
+] as const satisfies ReadonlyArray<FunnelEventName>;
+export type ClientFunnelEvent = (typeof CLIENT_FUNNEL_EVENTS)[number];
 
 export const FunnelEventRecord = z.object({
   distinctId: z.string().min(1),

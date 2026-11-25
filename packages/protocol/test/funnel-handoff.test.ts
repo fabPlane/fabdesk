@@ -7,8 +7,10 @@ import {
   funnelHandoffFromEnv,
   funnelHandoffFromRecord,
   funnelHandoffFromSearchParams,
+  funnelHandoffToEnv,
   mergeFunnelHandoff,
   sanitizeFunnelReferrer,
+  type FunnelProcessEnv,
 } from "../src/funnel-handoff";
 
 describe("funnel handoff", () => {
@@ -64,7 +66,7 @@ describe("funnel handoff", () => {
       FABDESK_UTM_SOURCE: "env-src",
       FABDESK_GCLID: "env-gclid",
       FABDESK_REFERRER: "https://ref.example/path?x=1",
-    } as NodeJS.ProcessEnv;
+    } as FunnelProcessEnv;
     expect(funnelHandoffFromEnv(env)).toEqual({
       phId: "env-id",
       utmSource: "env-src",
@@ -116,5 +118,45 @@ describe("funnel handoff", () => {
     );
     expect(new URL(nested).searchParams.get("ph_id")).toBe("nested");
     expect(new URL(nested).searchParams.get("return_to")).toContain("ph_id=nested");
+  });
+
+  test("walks nested return_to so OAuth login URLs keep ph_id and UTMs", () => {
+    expect(
+      funnelHandoffFromSearchParams(new URLSearchParams("return_to=/device?ph_id=abc&utm_source=ad")),
+    ).toEqual({ phId: "abc", utmSource: "ad" });
+    expect(
+      collectFunnelHandoff({
+        urls: ["https://fabplane.com/login?return_to=/device?ph_id=nested&utm_campaign=try"],
+        env: {},
+      }),
+    ).toEqual({ phId: "nested", utmCampaign: "try" });
+  });
+
+  test("rejects javascript: and other non-http referrers", () => {
+    expect(sanitizeFunnelReferrer("javascript:alert(1)")).toBeUndefined();
+    expect(sanitizeFunnelReferrer("javascript:")).toBeUndefined();
+    expect(sanitizeFunnelReferrer("data:text/html,hi")).toBeUndefined();
+    expect(funnelHandoffFromSearchParams(new URLSearchParams({ referrer: "javascript:alert(1)" }))).toEqual(
+      {},
+    );
+    expect(sanitizeFunnelReferrer("https://news.example/path?q=1")).toBe("https://news.example/path");
+  });
+
+  test("funnelHandoffToEnv maps camelCase fields onto FABDESK_*", () => {
+    expect(
+      funnelHandoffToEnv({
+        phId: "ph1",
+        utmSource: "google",
+        utmCampaign: "try",
+        gclid: "Cjw",
+        referrer: "https://news.example/path",
+      }),
+    ).toEqual({
+      FABDESK_PH_ID: "ph1",
+      FABDESK_UTM_SOURCE: "google",
+      FABDESK_UTM_CAMPAIGN: "try",
+      FABDESK_GCLID: "Cjw",
+      FABDESK_REFERRER: "https://news.example/path",
+    });
   });
 });
