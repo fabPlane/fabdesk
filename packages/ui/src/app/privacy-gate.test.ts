@@ -19,14 +19,9 @@ describe("privacy gate", () => {
     expect(privacyScreenRequired({ isError: true })).toBe(true);
   });
 
-  test("analytics asks in every region, including legacy installations", () => {
-    expect(needsPrivacyScreen({ productAnalyticsChoiceComplete: false, usageArchiveChoiceComplete: true }, false)).toBe(true);
-    expect(needsPrivacyScreen({ productAnalyticsChoiceComplete: true, usageArchiveChoiceComplete: true }, false)).toBe(false);
-  });
-
   test("shows the screen only to undecided installations that need it", () => {
-    expect(needsPrivacyScreen({ productAnalyticsChoiceComplete: true, usageArchiveChoiceComplete: false }, true)).toBe(true);
-    expect(needsPrivacyScreen({ productAnalyticsChoiceComplete: true, usageArchiveChoiceComplete: true }, true)).toBe(false);
-    expect(needsPrivacyScreen({ productAnalyticsChoiceComplete: true, usageArchiveChoiceComplete: false }, false)).toBe(false);
+    expect(needsPrivacyScreen({ usageArchiveChoiceComplete: false }, true)).toBe(true);
+    expect(needsPrivacyScreen({ usageArchiveChoiceComplete: true }, true)).toBe(false);
+    expect(needsPrivacyScreen({ usageArchiveChoiceComplete: false }, false)).toBe(false);
   });
 });

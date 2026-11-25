@@ -323,12 +323,10 @@ export const Settings = z.object({
   /** Send crash/error reports to Sentry (only when a DSN is configured; see docs/sentry.md). */
   errorReporting: z.boolean().default(true),
   /**
-   * Local, device-only onboarding funnel (PostHog capture). Explicit opt-in only. Not part of Cloud Settings.
+   * Local, device-only onboarding funnel (PostHog capture). Default on. Not part of Cloud Settings.
    * Capture is still a no-op when `POSTHOG_KEY` is unset.
    */
-  productAnalytics: z.boolean().default(false),
-  /** Distinguishes an explicit choice from older releases that defaulted analytics on. */
-  productAnalyticsChoiceComplete: z.boolean().default(false),
+  productAnalytics: z.boolean().default(true),
   /**
    * Local, installation-wide consent to back up stored conversations and tool traces for analysis.
    * Only meaningful once `usageArchiveChoiceComplete` is set; read it through `usageArchiveAllowed`.
@@ -412,17 +410,6 @@ export const PrivacyStatus = z.object({
   }),
 });
 export type PrivacyStatus = z.infer<typeof PrivacyStatus>;
-
-type ProductAnalyticsChoice = Pick<Settings, "productAnalytics" | "productAnalyticsChoiceComplete">;
-
-/** Older defaults and website consent are not desktop analytics consent. */
-export function productAnalyticsAllowed(settings: ProductAnalyticsChoice): boolean {
-  return settings.productAnalyticsChoiceComplete && settings.productAnalytics;
-}
-
-export function productAnalyticsChoice(consent: boolean): ProductAnalyticsChoice {
-  return { productAnalytics: consent, productAnalyticsChoiceComplete: true };
-}
 
 type UsageArchiveChoice = Pick<Settings, "usageArchiveConsent" | "usageArchiveChoiceComplete">;
 

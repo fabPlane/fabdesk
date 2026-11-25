@@ -8,9 +8,7 @@ import { Store } from "../src/db";
 
 async function openStore(): Promise<Store> {
   const dir = await mkdtemp(join(tmpdir(), "fabdesk-funnel-"));
-  const store = Store.open(join(dir, "core.sqlite"));
-  store.settings.patch({ productAnalytics: true, productAnalyticsChoiceComplete: true });
-  return store;
+  return Store.open(join(dir, "core.sqlite"));
 }
 
 describe("posthog key pick", () => {
@@ -35,67 +33,6 @@ describe("posthog key pick", () => {
 });
 
 describe("Funnel", () => {
-  test("a fresh install or legacy default never records or sends before an explicit choice", async () => {
-    const store = await openStore();
-    store.settings.patch({ productAnalytics: false, productAnalyticsChoiceComplete: false });
-    const calls: unknown[] = [];
-    const funnel = new Funnel({ store, env: { POSTHOG_KEY: "phc_test" }, fetch: async (_url, init) => {
-      calls.push(JSON.parse(String(init?.body))); return new Response("{}", { status: 200 });
-    }});
-    try {
-      expect(funnel.record("onboarding_app_launched")).toBe(false);
-      store.settings.patch({ productAnalytics: true }); // Old release's saved default is not consent.
-      funnel.adopt({ phId: "website_visitor", utmSource: "openai" });
-      funnel.identify("account_subject");
-      expect(funnel.noteError("board_build", "exception")).toBe(false);
-      await funnel.flush();
-      expect(calls).toEqual([]);
-      expect(store.funnel.list()).toEqual([]);
-      expect(funnel.identifiedSubject()).toBeNull();
-      store.settings.patch({ productAnalytics: false, productAnalyticsChoiceComplete: true });
-      expect(funnel.record("onboarding_app_launched")).toBe(false);
-      store.settings.patch({ productAnalytics: true });
-      expect(funnel.record("onboarding_app_launched")).toBe(true);
-      await funnel.flush();
-      expect(calls).toHaveLength(1);
-    } finally { store.close(); }
-  });
-
-  test("withdrawing consent drops queued sends and stops retries", async () => {
-    const store = await openStore();
-    let calls = 0;
-    const funnel = new Funnel({ store, env: { POSTHOG_KEY: "phc_test" }, fetch: async () => {
-      calls++;
-      store.settings.patch({ productAnalytics: false });
-      return new Response("retry", { status: 503 });
-    }});
-    try {
-      funnel.record("onboarding_app_launched");
-      funnel.identify("account_subject");
-      await funnel.flush();
-      expect(calls).toBe(1);
-      expect(funnel.record("onboarding_first_board_built")).toBe(false);
-    } finally { store.close(); }
-  });
-
-  test("re-enabling analytics never sends queued work from the previous consent period", async () => {
-    const store = await openStore();
-    const events: string[] = [];
-    const funnel = new Funnel({ store, env: { POSTHOG_KEY: "phc_test" }, fetch: async (_url, init) => {
-      events.push(JSON.parse(String(init?.body)).event); return new Response("{}", { status: 200 });
-    }});
-    try {
-      funnel.record("onboarding_first_project");
-      store.settings.patch({ productAnalytics: false });
-      funnel.consentChanged();
-      store.settings.patch({ productAnalytics: true });
-      funnel.consentChanged();
-      funnel.record("onboarding_first_ai_run");
-      await funnel.flush();
-      expect(events).toEqual(["onboarding_first_ai_run"]);
-    } finally { store.close(); }
-  });
-
   test("ad handoff and sign-in keep the first successful non-empty build on the same person", async () => {
     const store = await openStore();
     const bodies: Array<{ event: string; properties: Record<string, unknown> }> = [];
@@ -183,7 +120,6 @@ describe("Funnel", () => {
       expect(funnel.noteError("tool", "tool_error", "mcp__fabdesk__route_run")).toBe(true);
       expect(funnel.noteError("tool", "tool_error", "/private/project/secret")).toBe(false);
       expect(funnel.noteError("ai_run", "failed")).toBe(true);
-      await funnel.flush();
       store.settings.patch({ productAnalytics: false });
       expect(funnel.noteError("board_build", "exception")).toBe(false);
       await funnel.flush();

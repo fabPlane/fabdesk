@@ -6,7 +6,6 @@
 import { randomUUID } from "node:crypto";
 import {
   appendFunnelHandoffToUrl,
-  productAnalyticsAllowed,
   collectFunnelHandoff,
   FunnelHandoff,
   FunnelSnapshot,
@@ -119,7 +118,6 @@ export class Funnel {
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
   private readonly env: NodeJS.ProcessEnv;
-  private consentRevision = 0;
   private queue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -135,17 +133,12 @@ export class Funnel {
     this.env = opts.env ?? process.env;
   }
 
-  /** Invalidate work queued during a previous consent period. */
-  consentChanged(): void {
-    this.consentRevision++;
-  }
-
   captureEnabled(): boolean {
     return Boolean(posthogKey(this.env));
   }
 
   optedIn(): boolean {
-    return productAnalyticsAllowed(this.opts.store.settings.get());
+    return this.opts.store.settings.get().productAnalytics !== false;
   }
 
   handoff(): FunnelHandoff {
@@ -349,18 +342,14 @@ ${handoff ? `<ul>${handoff}</ul>` : "<p>none</p>"}
   }
 
   private enqueue(work: () => Promise<void>): void {
-    const revision = this.consentRevision;
-    this.queue = this.queue.then(() => {
-      if (revision === this.consentRevision && this.optedIn()) return work();
-    }).catch((e) => {
+    this.queue = this.queue.then(work).catch((e) => {
       logger.warn("funnel capture failed", { error: errMsg(e) });
     });
   }
 
   private async capture(body: FunnelCapture): Promise<void> {
-    const revision = this.consentRevision;
     const key = posthogKey(this.env);
-    if (!key || !this.optedIn()) return;
+    if (!key) return;
     const host = posthogHost(this.env).replace(/\/$/, "");
     const properties: Record<string, unknown> = {
       $lib: "fabdesk-core",
@@ -377,8 +366,6 @@ ${handoff ? `<ul>${handoff}</ul>` : "<p>none</p>"}
     const url = `${host}/capture/`;
     let lastError: string | undefined;
     for (let attempt = 1; attempt <= 3; attempt++) {
-      // A queued event or retry must not outlive consent withdrawal.
-      if (!this.optedIn() || revision !== this.consentRevision) return;
       try {
         const res = await this.fetchImpl(url, {
           method: "POST",

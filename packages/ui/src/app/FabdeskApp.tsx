@@ -130,7 +130,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
       </div>
     );
   }
-  if (needsPrivacyScreen(settings.data, privacyScreen)) return <FirstInstallPrivacy askUsageArchive={privacyScreen && !settings.data.usageArchiveChoiceComplete} />;
+  if (needsPrivacyScreen(settings.data, privacyScreen)) return <FirstInstallPrivacy />;
   if (authState.status !== "signed_in" && enteredWorkspace.current !== client) return <><LoginScreen /><ProfileAccountDialog /></>;
   return (
     <>

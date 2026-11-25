@@ -92,7 +92,6 @@ function emitTool(id: string, name: string, result: { output: unknown; isError?:
 beforeAll(async () => {
   const home = await mkdtemp(join(tmpdir(), "fabdesk-funnel-e2e-"));
   const seed = Store.open(join(home, "fabdesk.db"));
-  seed.settings.patch({ productAnalytics: true, productAnalyticsChoiceComplete: true });
   seed.settings.writeRaw("funnel_anon_distinct_id", PRE_ANON);
   seed.close();
   process.env["FABDESK_PROJECTS_DIR"] = join(home, "Fabdesk");

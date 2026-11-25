@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Dialog, Input, Select, Spinner } from "../components/ui";
 import { useCore } from "@fabdesk/client-core";
 import { useDoctor, usePatchSettings, usePrivacy, useSettings } from "@fabdesk/client-core";
-import { productAnalyticsAllowed, productAnalyticsChoice, usageArchiveAllowed, usageArchiveChoice } from "@fabdesk/protocol";
+import { usageArchiveAllowed, usageArchiveChoice } from "@fabdesk/protocol";
 import { shortcutList } from "../hooks/useShortcuts";
 import { THEME_IDS, THEME_LABELS, useTheme } from "../hooks/useTheme";
 import { THEME_BACKGROUNDS, THEME_PANELS, THEME_FOREGROUNDS } from "../theme/resolve";
@@ -267,8 +267,8 @@ export function SettingsDialog() {
               <Row label="Share usage data" hint="Share your sessions with us so we can see where fabPlane gets stuck and make it better. This includes your conversations and agent activity, past ones too, and can include your prompts and project files. We keep it private. Turning this off stops future sharing; it doesn't remove what was already shared.">
                 <input type="checkbox" checked={usageArchiveAllowed(draft, privacyScreen ?? true)} onChange={(e) => update((s) => ({ ...s, ...usageArchiveChoice(e.target.checked) }))} />
               </Row>
-              <Row label="Product analytics" hint="Optional analytics sent to PostHog: app activation, successful board builds and limited error categories. If present, campaign tags connect your website visit to app use; signing in links this activity to your account ID. No prompts, board files, tokens, emails, project names, paths or error text. Off until you choose. Turning it off stops future analytics, not data already sent. This choice stays on this device.">
-                <input type="checkbox" checked={productAnalyticsAllowed(draft)} onChange={(e) => update((s) => ({ ...s, ...productAnalyticsChoice(e.target.checked) }))} />
+              <Row label="Product analytics" hint="Send app activation, successful board builds and limited error categories to PostHog. Campaign tags can connect website visits to app use, and signing in links activity to your account ID. No prompts, board files, tokens, emails, project names, paths or raw error text. Enabled by default; turn off to stop future analytics. This setting stays on this device.">
+                <input type="checkbox" checked={draft.productAnalytics} onChange={(e) => update((s) => ({ ...s, productAnalytics: e.target.checked }))} />
               </Row>
             </div>
           ) : (
