@@ -19,8 +19,16 @@ Operators can disable product analytics for a process without touching usage-arc
 export FABDESK_TELEMETRY_ENABLED=false
 ```
 
-`0`, `off`, and `no` are also off. Unset or any other value leaves product analytics on (still
-subject to the privacy opt-out above).
+`0`, `off`, and `no` are also off. Any other value turns product analytics on (still subject to
+the privacy opt-out above).
+
+## Builds that report
+
+Only a compiled release build reports product events. A daemon run from a checkout (tests,
+`bun run dev`) or a build launched with `FABDESK_BUILD_LABEL` sends nothing: each test's fresh
+temp home would otherwise count as a new install. With `FABDESK_TELEMETRY_ENABLED` unset,
+analytics is also off when `CI` is set, so CI smoke runs of a built binary do not report.
+`bun run test` sets `FABDESK_TELEMETRY_ENABLED=false` for every suite as a second guard.
 
 ## Ingest
 

@@ -1,6 +1,7 @@
 /** First-party product analytics: hashed install/account ids, batched to fabplane.com. No PostHog SDK. */
 import { createHash, randomUUID } from "node:crypto";
 import { FabplaneClient, isFabplaneApiError, type TelemetryEvent } from "fabplane-cli";
+import type { BuildKind } from "./build-info";
 import type { AuthMode } from "./config";
 import { logger } from "./log";
 
@@ -31,9 +32,25 @@ export type ProductAnalyticsIdentity = {
   accountSubject?: string;
 };
 
+/**
+ * The process-level switch. `FABDESK_TELEMETRY_ENABLED` decides when set (`false`/`0`/`off`/`no`
+ * are off, anything else on). Unset, analytics is off under CI (`CI=true`), so smoke runs of a
+ * built binary never count as installs.
+ */
 export function telemetryEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = env["FABDESK_TELEMETRY_ENABLED"]?.trim().toLowerCase();
-  return value !== "false" && value !== "0" && value !== "off" && value !== "no";
+  if (value) return value !== "false" && value !== "0" && value !== "off" && value !== "no";
+  const ci = env["CI"]?.trim().toLowerCase();
+  return !ci || ci === "false" || ci === "0";
+}
+
+/**
+ * Only a compiled release build reports product events. A daemon run from a checkout (`dev`:
+ * tests, `bun run dev`) or a labelled benchmark build (`candidate`) is not an install, and each
+ * test's fresh temp home would otherwise register as a new one.
+ */
+export function analyticsBuild(kind: BuildKind): boolean {
+  return kind === "release";
 }
 
 /** SHA-256 hex of the raw identifier. The raw UUID never leaves the machine. */

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import {
   ProductAnalytics,
+  analyticsBuild,
   hashTelemetryId,
   telemetryEnabled,
   telemetryOs,
@@ -87,6 +88,20 @@ describe("product analytics helpers", () => {
     expect(telemetryEnabled({ FABDESK_TELEMETRY_ENABLED: "0" })).toBe(false);
     expect(telemetryEnabled({ FABDESK_TELEMETRY_ENABLED: "off" })).toBe(false);
     expect(telemetryEnabled({ FABDESK_TELEMETRY_ENABLED: "NO" })).toBe(false);
+  });
+
+  test("CI is off unless the switch is set explicitly", () => {
+    expect(telemetryEnabled({ CI: "true" })).toBe(false);
+    expect(telemetryEnabled({ CI: "1" })).toBe(false);
+    expect(telemetryEnabled({ CI: "false" })).toBe(true);
+    expect(telemetryEnabled({ CI: "true", FABDESK_TELEMETRY_ENABLED: "true" })).toBe(true);
+    expect(telemetryEnabled({ CI: "true", FABDESK_TELEMETRY_ENABLED: "false" })).toBe(false);
+  });
+
+  test("only a compiled release build reports product events", () => {
+    expect(analyticsBuild("release")).toBe(true);
+    expect(analyticsBuild("dev")).toBe(false);
+    expect(analyticsBuild("candidate")).toBe(false);
   });
 
   test("telemetryOs maps darwin/linux/win32 and folds the rest", () => {
