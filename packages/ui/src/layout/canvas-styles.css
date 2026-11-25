@@ -1,0 +1,6 @@
+/* The canvas workspace's stylesheets, in cascade order: canvas-v6 refines the canvas-workspace
+   base, and workspace-bars refines both. They are imported here, not from a component, because an
+   import sorter reorders side-effect imports alphabetically and silently flips which rules win. */
+@import "./canvas-workspace.css";
+@import "./canvas-v6.css";
+@import "./workspace-bars.css";

@@ -23,15 +23,13 @@ import { ThreadSidebar } from "../sidebar/ThreadSidebar";
 import { newChatDraftKey,useUiStore } from "../stores/ui";
 import { WhatsNewLink } from "../whatsnew/WhatsNew";
 import type { AppShellProps } from "./AppShell";
-import "./canvas-v6.css";
-import "./canvas-workspace.css";
+import "./canvas-styles.css";
 import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
 import { ProjectActivity } from "./ProjectActivity";
 import { ProjectHome } from "./ProjectHome";
 import { ProjectOverview } from "./ProjectOverview";
 import { ProjectStatus } from "./ProjectStatus";
 import { SketchStartReference } from "./SketchStartReference";
-import "./workspace-bars.css";
 import { WorkspaceBackButton } from "./WorkspaceBackButton";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 
