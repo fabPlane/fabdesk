@@ -1,4 +1,4 @@
-import { draftConversation as latestDraftConversation,hasFabplaneSession,projectSketchImagePaths,useAuthStore,useBoardSources,useCore,useCoreIdentity,useProject,useProjects,useRunsStore,useThreads,WORKSPACE_AREAS,type WorkspaceArea } from "@fabdesk/client-core";
+import { connectionLabel,draftConversation as latestDraftConversation,projectSketchImagePaths,useAuthStore,useBoardSources,useCore,useCoreIdentity,useProject,useProjects,useRunsStore,useThreads,WORKSPACE_AREAS,type WorkspaceArea } from "@fabdesk/client-core";
 import type { ProjectDetail } from "@fabdesk/protocol";
 import { useEffect,useRef,useState } from "react";
 import { ProfileButton } from "../auth/ProfileAccountDialog";
@@ -25,7 +25,6 @@ import { WhatsNewLink } from "../whatsnew/WhatsNew";
 import type { AppShellProps } from "./AppShell";
 import "./canvas-v6.css";
 import "./canvas-workspace.css";
-import { connectionLabel } from "./connection-label";
 import { CreateIdeaProjectDialog } from "./CreateIdeaProjectDialog";
 import { ProjectActivity } from "./ProjectActivity";
 import { ProjectHome } from "./ProjectHome";
@@ -110,8 +109,8 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const home = !projectId && !threadId && !secondary;
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(client.baseUrl).hostname);
   const connected = sseStatus === "open" && (coreStatus?.state ?? "ready") === "ready";
-  const fabplaneSession = useAuthStore((s) => hasFabplaneSession(s.state));
-  const connection = connectionLabel({ connected, localCore: local, fabplaneSession });
+  const authMode = useAuthStore((s) => s.state?.mode);
+  const connection = connectionLabel({ connected, localCore: local, authMode });
   const connectionTitle = coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; events ${sseStatus}`;
 
   const destinations = projectId && !secondary && (!conversationOnly || isDraft) && <nav className="fd-canvas-destinations" aria-label="Project workspace">

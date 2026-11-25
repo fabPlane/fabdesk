@@ -5,6 +5,7 @@
  * view packages.
  */
 export { acceptAuthSnapshot,cloudAccountId,hasFabplaneSession } from "./auth-cache";
+export { connectionLabel } from "./connection-label";
 export { deduplicateChatNotices } from "./chat-notices";
 export { CoreClient,CoreHttpError,parseJsonl } from "./CoreClient";
 export type {
