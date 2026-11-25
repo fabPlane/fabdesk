@@ -1,15 +1,19 @@
 # Dev loop: what reloads when
 
-`bun run dev` (from `apps/desktop`) runs electron-vite. Three processes are involved; each reloads
+`bun run dev` runs electron-vite (through `scripts/dev.ts`, which adds the PCB backend below). Three processes are involved; each reloads
 differently.
 
-For PCB work, run `bun run dev:pcb` from the repository root. It finds the current-platform backend
-under `apps/desktop/release/**/resources/pcb/bundle.json`, starts that bundled headless backend with
-Fabdesk, and uses the isolated development profile. To use a bundle elsewhere, set
-`FABDESK_FP_PCB_BUNDLE=/absolute/path/to/bundle.json`. This is the normal fast loop; developers do
-not run the Linux image build to start Fabdesk. To iterate on the bridge/router itself while reusing
-the bundle's KiCad runtime and libraries, add `FABDESK_FP_PCB_SOURCE=/path/to/fab_pcb`; Fabdesk then
-runs the bridge from that checkout and owns its lifetime too.
+`bun run dev` from the repository root also starts the PCB backend (board editing, compiling,
+routing) when it can find a bundle for this platform: first under
+`apps/desktop/release/**/resources/pcb/bundle.json`, then inside an installed fabPlane (for example
+`/Applications/fabPlane.app/Contents/Resources/pcb`). It prints which one it chose, and starts without
+a backend when there is none. `FABDESK_DEV_PCB=0` skips this; an explicit
+`FABDESK_FP_PCB_BUNDLE=/absolute/path/to/bundle.json`, `FABDESK_FP_PCB_BRIDGE_BIN` or
+`FABDESK_FP_PCB_BRIDGE_URL` is left alone. Developers do not run the Linux image build to start
+Fabdesk. `bun run dev:pcb` is the strict form: it fails when no bundle is found and always uses the
+isolated development profile. To iterate on the bridge/router itself while reusing the bundle's
+KiCad runtime and libraries, add `FABDESK_FP_PCB_SOURCE=/path/to/fab_pcb`; Fabdesk then runs the
+bridge from that checkout and owns its lifetime too.
 
 | You edit…                                                                   | What happens                                                                                                                                                                                                                                                         | State kept                                                                                                                                                                                                     |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
