@@ -1,4 +1,4 @@
-import { CoreHttpError,outputInputsNeedReview,outputRevisionLabel,overviewBoardImages,useBoardModelRevision,useBoardSources,useEnclosureSourceRevision,useOutputRevisions,usePcbCheckRevision,usePcbPreviewRevision,useProject,useProjectOrder,useRunTool,useVideoInputRevision,videoInputsNeedReview } from "@fabdesk/client-core";
+import { CoreHttpError,outputInputsNeedReview,outputRevisionLabel,overviewBoardImages,useBoardModelRevision,useBoardSources,useEnclosureSourceRevision,useFunnelEvent,useOutputRevisions,usePcbCheckRevision,usePcbPreviewRevision,useProject,useProjectOrder,useRunTool,useVideoInputRevision,videoInputsNeedReview } from "@fabdesk/client-core";
 import { useState } from "react";
 import { askAboutSurface,useAssistantSurface } from "../chat/useAssistantSurface";
 import { DisclosureSummary } from "../components/DisclosureSummary";
@@ -16,6 +16,7 @@ type Row = { group: "outputs" | "checks"; item: string; status: string; note: st
 
 /** A review of known dependencies, not a claim that every project artifact is synchronized. */
 export function ReviewUpdates() {
+  useFunnelEvent("onboarding_first_review_viewed", true, { source: "review" });
   const projectId = useUiStore(state => state.activeProjectId), project = useProject(projectId), sources = useBoardSources(projectId);
   if (!projectId) return <EmptyState title="No project selected" />;
   if (sources.isPending) return <div className="flex h-full items-center justify-center"><Spinner /></div>;

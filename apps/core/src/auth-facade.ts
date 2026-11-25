@@ -65,6 +65,8 @@ export class FabplaneAuth implements AuthFacade {
       appOrigin?: string;
       emit: (e: CoreEvent) => void;
       openUrl?: (url: string) => void;
+      decorateLoginUrl?: (url: string) => string;
+      onLoginStart?: () => void;
     },
   ) {}
 
@@ -76,7 +78,12 @@ export class FabplaneAuth implements AuthFacade {
         mode: "fabplane",
         clientLabel: `fabdesk-core ${process.platform}`,
         onState: (s) => this.setState(s),
-        ...(this.opts.openUrl ? { openUrl: this.opts.openUrl } : {}),
+        ...(this.opts.openUrl
+          ? {
+              openUrl: (url: string) =>
+                this.opts.openUrl?.(this.decorateLoginUrl(url)),
+            }
+          : {}),
       });
       this.st = await this.client.load();
     } catch (e) {
@@ -87,16 +94,34 @@ export class FabplaneAuth implements AuthFacade {
   private withDashboard(s: AuthState): AuthState {
     return { ...s, dashboardUrl: dashboardUrlFor(this.opts.apiOrigin, this.opts.appOrigin) };
   }
+  private decorateLoginUrl(url: string): string {
+    return this.opts.decorateLoginUrl ? this.opts.decorateLoginUrl(url) : url;
+  }
+  private withPendingHandoff(s: AuthState): AuthState {
+    if (!s.pending || !this.opts.decorateLoginUrl) return s;
+    return {
+      ...s,
+      pending: {
+        ...s.pending,
+        verificationUri: this.decorateLoginUrl(s.pending.verificationUri),
+        verificationUriComplete: this.decorateLoginUrl(s.pending.verificationUriComplete),
+      },
+    };
+  }
   private setState(s: AuthState): void {
     this.st = s;
     try {
-      this.opts.emit({ ts: Date.now(), topic: "auth.state", state: this.withDashboard(s) });
+      this.opts.emit({
+        ts: Date.now(),
+        topic: "auth.state",
+        state: this.withDashboard(this.withPendingHandoff(s)),
+      });
     } catch (e) {
       logger.warn("auth.state emit failed", { error: errMsg(e) });
     }
   }
   state(): AuthState {
-    return this.withDashboard(this.client?.state() ?? this.st);
+    return this.withDashboard(this.withPendingHandoff(this.client?.state() ?? this.st));
   }
   principal(): Principal | null {
     return this.state().principal ?? null;
@@ -104,6 +129,7 @@ export class FabplaneAuth implements AuthFacade {
   async login(signal?: AbortSignal, credentials?: PasswordCredentials): Promise<AuthState> {
     if (!this.client) return this.st;
     try {
+      this.opts.onLoginStart?.();
       if (credentials) await this.client.loginWithPassword(credentials, signal);
       else await this.client.login(signal);
     } catch (e) {
@@ -129,6 +155,8 @@ export async function createAuth(o: {
   apiOrigin: string;
   appOrigin?: string;
   emit: (e: CoreEvent) => void;
+  decorateLoginUrl?: (url: string) => string;
+  onLoginStart?: () => void;
 }): Promise<AuthFacade> {
   if (o.mode === "local") {
     if (!localModeAllowed({ channel: o.channel, home: o.home })) {
@@ -146,6 +174,8 @@ export async function createAuth(o: {
     apiOrigin: o.apiOrigin,
     ...(o.appOrigin ? { appOrigin: o.appOrigin } : {}),
     emit: o.emit,
+    ...(o.decorateLoginUrl ? { decorateLoginUrl: o.decorateLoginUrl } : {}),
+    ...(o.onLoginStart ? { onLoginStart: o.onLoginStart } : {}),
   });
   await a.load();
   return a;

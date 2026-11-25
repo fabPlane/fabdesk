@@ -54,6 +54,7 @@ import {
   setSentryUser,
 } from "./sentry";
 import { ProductAnalytics, analyticsBuild } from "./product-analytics";
+import { Funnel } from "./funnel";
 import { RunTelemetry } from "./run-telemetry";
 import { buildInfo } from "./build-info";
 import { ArchiveConsentRevokedError, UsageArchive } from "./usage-archive";
@@ -133,6 +134,12 @@ export type ServeOptions = {
   relayDiscoveryFetch?: typeof fetch;
   /** Tests: inject a speech service with a fake provider. */
   speech?: import("./speech").SpeechService;
+  /** Tests: capture PostHog `/capture/` instead of reaching the ingest host. */
+  funnelFetch?: typeof fetch;
+  /** Tests: env for PostHog key/host and FABDESK_PH_ID / UTM handoff. */
+  funnelEnv?: NodeJS.ProcessEnv;
+  /** Tests: argv that would carry `fabplane://open?ph_id=…` or `/download?ph_id=…`. */
+  funnelArgv?: readonly string[];
 };
 
 export type Daemon = {
@@ -151,6 +158,7 @@ export type Daemon = {
   finishIt: FinishItManager;
   notifier: Notifier;
   relay: RelayLink;
+  funnel: Funnel;
   close(reason?: string): Promise<void>;
   closed: Promise<string>;
 };
@@ -346,6 +354,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     watch: opts.watchProjects ?? true,
   });
   await projects.init();
+  const funnel = new Funnel({
+    store,
+    ...(opts.funnelFetch ? { fetch: opts.funnelFetch } : {}),
+    ...(opts.funnelEnv ? { env: opts.funnelEnv } : {}),
+  });
+  const adopted = funnel.adoptFromProcess(opts.funnelArgv ?? process.argv, opts.funnelEnv ?? process.env);
   const auth = await createAuth({
     mode: config.authMode,
     channel: config.channel,
@@ -353,6 +367,10 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     apiOrigin: config.apiOrigin,
     ...(process.env["FABPLANE_APP_ORIGIN"]?{appOrigin:process.env["FABPLANE_APP_ORIGIN"]}:{}),
     emit: (e) => bus.emit(e),
+    decorateLoginUrl: (url) => funnel.decorateLoginUrl(url),
+    onLoginStart: () => {
+      funnel.record("onboarding_sign_in_started");
+    },
   });
   archiveBearer = () => auth.token();
   const reportsProductEvents = analyticsBuild(buildInfo().kind);
@@ -377,21 +395,47 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   projects.create = async (name, parentDirectory, draft = false) => {
     const created = await createProject(name, parentDirectory, draft);
     productAnalytics.track("project_created", draft ? { draft: true } : {});
+    if (!draft) funnel.record("onboarding_first_project");
     return created;
   };
+  const promoteDraft = projects.promoteDraft.bind(projects);
+  projects.promoteDraft = async (id, name, parentDirectory) => {
+    const promoted = await promoteDraft(id, name, parentDirectory);
+    funnel.record("onboarding_first_project");
+    return promoted;
+  };
+  const importFromGit = projects.importFromGit.bind(projects);
+  projects.importFromGit = async (opts) => {
+    const imported = await importFromGit(opts);
+    funnel.record("onboarding_first_project");
+    return imported;
+  };
+  const pendingFunnelTools = new Map<string, string>();
   const unsubscribeProductAnalytics = bus.subscribe(
-    ["agent.started", "agent.tool_use"],
+    ["agent.started", "agent.tool_use", "agent.tool_result"],
     (events) => {
       for (const ev of events) {
         if (ev.event.topic === "agent.started") {
           productAnalytics.track("ai_run", { agentId: ev.event.agentId });
+          funnel.record("onboarding_first_ai_run");
         } else if (ev.event.topic === "agent.tool_use") {
           const exportTool = ev.event.name.replace(/^mcp__.+?__/, "").replace(/^functions\./, "");
           if (exportTool.startsWith("export_")) productAnalytics.track("export", { exportTool });
+          pendingFunnelTools.set(ev.event.id, ev.event.name);
+        } else if (ev.event.topic === "agent.tool_result") {
+          const name = pendingFunnelTools.get(ev.event.id);
+          pendingFunnelTools.delete(ev.event.id);
+          if (name && ev.event.isError !== true) funnel.noteTool(name);
         }
       }
     },
   );
+  funnel.record("onboarding_app_launched");
+  if (adopted.phId) funnel.record("onboarding_landing");
+  const signedIn = auth.state();
+  if (signedIn.status === "signed_in" && signedIn.principal?.subject) {
+    funnel.identify(signedIn.principal.subject);
+  }
   // In the background: a large history over a slow link must not hold the daemon's startup.
   if (hasArchiveConsent()) void startArchiveBackfill();
   productAnalytics.start();
@@ -400,7 +444,12 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
   setSentryUser(sentryUserFromAuth(auth.state()));
   const unsubscribeAuth = bus.subscribe(["auth.state"], (events) => {
     for (const ev of events)
-      if (ev.event.topic === "auth.state") setSentryUser(sentryUserFromAuth(ev.event.state));
+      if (ev.event.topic === "auth.state") {
+        setSentryUser(sentryUserFromAuth(ev.event.state));
+        const subject = ev.event.state.principal?.subject?.trim();
+        if (ev.event.state.status === "signed_in" && subject) funnel.identify(subject);
+        else if (ev.event.state.status === "signed_out") funnel.resetIdentity();
+      }
   });
   const cloudSettings = new CloudSettingsSync({
     apiOrigin: config.apiOrigin,
@@ -652,6 +701,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     shutdown: (reason: string) => void daemon.close(reason),
     startedAt,
     privacy: () => privacy,
+    funnel,
     onSettingsChanged: () => {
       void cloudSettings.push();
       const consent = hasArchiveConsent();
@@ -881,6 +931,7 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
     finishIt,
     notifier,
     relay,
+    funnel,
     closed,
     async close(reason = "close") {
       if (closing) return;

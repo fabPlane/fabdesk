@@ -204,6 +204,30 @@ describe("CoreClient push registration (docs/mobile-notifications.md §4.1)", ()
   });
 });
 
+test("trackFunnelEvent posts allow-listed client funnel events", async () => {
+  const calls: Array<{ url: string; method?: string; body: unknown }> = [];
+  const client = new CoreClient({
+    baseUrl: "http://127.0.0.1:47831",
+    token: "tok",
+    fetch: async (url, init) => {
+      calls.push({
+        url,
+        ...(init?.method ? { method: init.method } : {}),
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      return Response.json({ recorded: true });
+    },
+  });
+  await client.trackFunnelEvent("onboarding_first_board_viewed", { source: "pcb" });
+  expect(calls).toEqual([
+    {
+      url: "http://127.0.0.1:47831/funnel/events",
+      method: "POST",
+      body: { event: "onboarding_first_board_viewed", properties: { source: "pcb" } },
+    },
+  ]);
+});
+
 test("assembly inspection encodes project identity and returns the read-only response", async () => {
   let requested = "";
   const result = { projectId: "project/one", mode: "single" as const, assembly: null, manifestSha256: null, sources: [], observedAt: new Date().toISOString(), editing: "single-board-only" as const };

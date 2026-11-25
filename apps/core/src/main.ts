@@ -31,6 +31,7 @@ Usage:
   fabpcb ipc call <operation> [--request <json> | --request-file <path>] [--project <dir>] [--bridge-url <url>] [--timeout-ms 30000] [--expected-document-revision <n>]
   fabdesk-core login | logout | whoami
   fabdesk-core login --email <email> --password <password>   # staging/local only
+  fabdesk-core funnel [--json]                    # this-machine onboarding funnel snapshot
   fabdesk-core doctor [--json]
                            [--timeout-ms 120000] [--refs U701,U702,...] [--frame-interval-ms N] [--pours polygon|omit] [--copper obstacles|omit]
                            [--label <tag>] [--json <out.json>]
@@ -52,6 +53,9 @@ Environment:
   SENTRY_ENVIRONMENT     Sentry environment tag (default production for compiled builds, else development)
   SENTRY_RELEASE         Sentry release (default fabdesk-core@<version>+<git-sha>)
   FABDESK_SENTRY_TEST    1 sends one handled test event at startup and prints its id
+  POSTHOG_KEY            onboarding funnel ingest key (off when unset; see docs/onboarding-funnel.md)
+  POSTHOG_HOST           ingest host (default https://us.i.posthog.com)
+  FABDESK_PH_ID          website PostHog distinct_id from a download / open-app link
   FABDESK_TAILSCALE_CLI  path to the tailscale binary for endpoint discovery, or "off"
 `;
 
@@ -382,6 +386,22 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         process.stderr.write(`${cmd}: ${errMsg(e)}\n`);
         return 1;
       }
+    }
+    case "funnel": {
+      const config = resolveConfig({
+        ...(str(f, "data-dir") ? { dataDir: str(f, "data-dir")! } : {}),
+      });
+      const { Store } = await import("./db");
+      const { Funnel, formatFunnelSnapshot } = await import("./funnel");
+      await mkdir(config.home, { recursive: true });
+      const store = Store.open(config.dbPath);
+      const funnel = new Funnel({ store });
+      const snap = funnel.snapshot();
+      store.close();
+      process.stdout.write(
+        flag(f, "json") ? JSON.stringify(snap, null, 2) + "\n" : formatFunnelSnapshot(snap) + "\n",
+      );
+      return 0;
     }
     case "doctor": {
       const config = resolveConfig();

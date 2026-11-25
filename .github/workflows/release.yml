@@ -228,6 +228,27 @@ jobs:
             echo "SENTRY_DESKTOP_DSN: unset (error reporting off)"
           fi
 
+      # Onboarding funnel (docs/onboarding-funnel.md). Capture is off unless POSTHOG_KEY is set.
+      - name: Onboarding funnel environment
+        shell: bash
+        env:
+          S_POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          S_POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+        run: |
+          if [ -n "$S_POSTHOG_KEY" ]; then
+            for name in POSTHOG_KEY FABDESK_POSTHOG_KEY; do
+              echo "$name=$S_POSTHOG_KEY" >> "$GITHUB_ENV"
+            done
+            echo "POSTHOG_KEY: set"
+          else
+            echo "POSTHOG_KEY: unset (onboarding funnel capture off)"
+          fi
+          if [ -n "$S_POSTHOG_HOST" ]; then
+            for name in POSTHOG_HOST FABDESK_POSTHOG_HOST; do
+              echo "$name=$S_POSTHOG_HOST" >> "$GITHUB_ENV"
+            done
+          fi
+
       - name: Build core (${{ matrix.target }})
         run: bun run --cwd apps/core build --only ${{ matrix.target }} --channel ${{ env.CHANNEL }}
 

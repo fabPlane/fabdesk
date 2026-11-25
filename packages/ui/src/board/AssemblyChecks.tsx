@@ -5,12 +5,13 @@ import { CheckFindingFilters } from "./CheckFindingFilters";
 import { AssemblySchematicSources } from "./AssemblySchematicSources";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BoardSourceSelection, ProjectBoardSources } from "@fabdesk/protocol";
-import { filterCheckFindings, assemblyCheckFindingRow, captureAssemblyCheckFinding, normalizeReport, pcbToolJson, restoreAssemblySelection, useAssemblyPcbCheck, useRunTool } from "@fabdesk/client-core";
+import { filterCheckFindings, assemblyCheckFindingRow, captureAssemblyCheckFinding, normalizeReport, pcbToolJson, restoreAssemblySelection, useAssemblyPcbCheck, useFunnelEvent, useRunTool } from "@fabdesk/client-core";
 import { Icon } from "../components/Icon";
 import { Select, Badge, Button, EmptyState, LoadError, Spinner } from "../components/ui";
 import { useUiStore } from "../stores/ui";
 
 export function AssemblyChecks({ projectId, data, checking, failed, onRetry, contextual = false, onNavigate }: { projectId: string; data: ProjectBoardSources; checking: boolean; failed: boolean; onRetry: () => void; contextual?: boolean; onNavigate?: () => void }) {
+  useFunnelEvent("onboarding_first_review_viewed", true, { source: "check" });
   const [board, setBoard] = useState<BoardSourceSelection | null>(() => {
     const restored = restoreAssemblySelection(data, useUiStore.getState().assemblyBoardByProject[projectId]);
     return restored ? { sourceId: restored.sourceId, manifestSha256: restored.manifestSha256 } : null;
