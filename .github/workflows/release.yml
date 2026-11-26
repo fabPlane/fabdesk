@@ -18,7 +18,7 @@ on:
         type: choice
         options: [public, internal]
       update_fixture:
-        description: "Internal only: stamp 0.0.1 to test a real upgrade to a published version"
+        description: "Internal only: test the candidate at the previous published desktop version"
         type: boolean
         default: false
 
@@ -98,15 +98,31 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
 
+      - name: Resolve the public release immediately before the desktop update feed
+        id: fixture
+        if: inputs.update_fixture && env.CHANNEL == 'internal'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest=$(curl -fsSL --retry 3 -A fabplane-upgrade-test https://fabplane.com/desktop/latest.json |
+            bun -e 'const m = await Bun.stdin.json(); if (m.tag !== "v" + m.version) process.exit(1); console.log(m.tag)')
+          previous=$(python3 scripts/vm/resolve-run-release.py --previous "$latest")
+          [[ "$previous" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No preceding public desktop release for $latest"; exit 1; }
+          echo "version=${previous#v}" >> "$GITHUB_OUTPUT"
+          echo "Testing PR code as $previous, upgrading to the published $latest."
+
       - id: v
         env:
           UPDATE_FIXTURE: ${{ inputs.update_fixture }}
+          FIXTURE_VERSION: ${{ steps.fixture.outputs.version }}
         run: |
           base=$(bun -p "require('./package.json').version.split('.').slice(0,2).join('.')")
           version="${base}.${{ github.run_number }}"
           if [ "${UPDATE_FIXTURE:-false}" = true ]; then
             test "$CHANNEL" = internal || { echo "::error::Update fixtures require the internal channel"; exit 1; }
-            version=0.0.1
+            [[ "${FIXTURE_VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Missing or invalid preceding release"; exit 1; }
+            version="$FIXTURE_VERSION"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"

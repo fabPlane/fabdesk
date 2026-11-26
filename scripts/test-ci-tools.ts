@@ -54,11 +54,13 @@ try {
   assert.equal(versionResult.exitCode, 0, versionResult.stderr.toString());
   assert.equal(readFileSync(output, "utf8"), "version=0.24.139\ntag=v0.24.139\n");
   writeFileSync(output, "");
-  const fixture = computeVersion({ UPDATE_FIXTURE: "true", CHANNEL: "internal" });
+  const fixture = computeVersion({ UPDATE_FIXTURE: "true", CHANNEL: "internal", FIXTURE_VERSION: "0.4.24" });
   assert.equal(fixture.exitCode, 0, fixture.stderr.toString());
-  assert.equal(readFileSync(output, "utf8"), "version=0.0.1\ntag=v0.0.1\n");
+  assert.equal(readFileSync(output, "utf8"), "version=0.4.24\ntag=v0.4.24\n");
   writeFileSync(output, "");
-  const publicFixture = computeVersion({ UPDATE_FIXTURE: "true", CHANNEL: "public" });
+  const missingFixture = computeVersion({ UPDATE_FIXTURE: "true", CHANNEL: "internal", FIXTURE_VERSION: "" });
+  assert.notEqual(missingFixture.exitCode, 0);
+  const publicFixture = computeVersion({ UPDATE_FIXTURE: "true", CHANNEL: "public", FIXTURE_VERSION: "0.4.24" });
   assert.notEqual(publicFixture.exitCode, 0);
   assert.equal(readFileSync(output, "utf8"), "");
   console.log("PASS release version metadata and internal-only update fixtures with Bun and no global Node");
