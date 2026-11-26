@@ -24,6 +24,7 @@ import { registerUpdateDownloadIpc, type UpdateTransport } from "./update-downlo
 import { createAlternateUpdateTransport, desktopInstallMode } from "./update-installation";
 import { createUpdateInstaller } from "./update-install";
 import { RestartOnQuit } from "./staged-update";
+import { deferWindowsUpdateLaunch } from "./update-windows-launch";
 import { migrateLegacyUserData } from "./user-data";
 import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
 import { CadRuntimeManager, CadRuntimeConsent } from "./cad-runtime";
@@ -259,10 +260,20 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-if (!app.requestSingleInstanceLock()) {
-  console.error(`[main] another ${identity.productName} instance holds the lock; quitting`);
-  app.quit();
-} else {
+async function startDesktop() {
+  if (process.platform === "win32" && app.isPackaged && await deferWindowsUpdateLaunch({
+    appPath: app.getAppPath(), userData: app.getPath("userData"), version: app.getVersion(),
+    exe: process.execPath, args: process.argv.slice(1), cwd: process.cwd(),
+  })) {
+    console.info("[update] Waiting for the Windows installer before opening FabDesk.");
+    app.exit(0);
+    return;
+  }
+  if (!app.requestSingleInstanceLock()) {
+    console.error(`[main] another ${identity.productName} instance holds the lock; quitting`);
+    app.quit();
+    return;
+  }
   app.on("second-instance", (_event, argv) => {
     deliverFunnelHandoff(collectFunnelHandoff({ argv }));
     const shared = openSharedProject.offer(argv);
@@ -488,3 +499,5 @@ if (!app.requestSingleInstanceLock()) {
     catch (error) { console.error("[update] could not install on exit:", error); }
   });
 }
+
+void startDesktop();

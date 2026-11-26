@@ -8,6 +8,7 @@ productName: fabPlane
 copyright: Copyright © 2026 TensorFleet
 # Lowercase stem so Windows/AppImage filenames are fabplane-*, not mixed-case fabPlane-*.
 artifactName: fabplane-${version}-${os}-${arch}.${ext}
+beforePack: scripts/before-pack.cjs
 afterPack: scripts/after-pack.cjs
 directories:
   output: release
@@ -92,6 +93,10 @@ deb:
 win:
   icon: build/icon.ico
   executableName: fabplane
+  files:
+    - from: out/native
+      to: .
+      filter: [update-windows-launch.b64]
   # NSIS only: a portable target shares the artifact name and overwrote the installer in releases
   # (a portable exe ignores /S and runs from %TEMP%).
   target: [nsis]

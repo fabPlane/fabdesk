@@ -145,6 +145,18 @@ function makeOwnerWritable(root) {
 
 module.exports = async function afterPack(context) {
   copyBundledKicad(context);
+  if (context.electronPlatformName === "win32") {
+    const { extractFile, statFile } = await import("@electron/asar");
+    const archive = join(context.appOutDir, "resources", "app.asar");
+    const entry = "update-windows-launch.b64";
+    const binary = Buffer.from(extractFile(archive, entry).toString("ascii"), "base64");
+    const peOffset = binary.readUInt32LE(0x3c);
+    // IMAGE_SUBSYSTEM_WINDOWS_GUI: a detached helper must never allocate a terminal.
+    if (statFile(archive, entry).unpacked || binary.toString("ascii", 0, 2) !== "MZ" ||
+        binary.readUInt32LE(peOffset) !== 0x4550 || binary.readUInt16LE(peOffset + 24 + 68) !== 2) {
+      throw new Error("Missing embedded Windows GUI update helper");
+    }
+  }
 
   if (context.electronPlatformName !== "darwin") return;
   const appName = `${context.packager.appInfo.productFilename}.app`;
