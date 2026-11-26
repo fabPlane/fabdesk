@@ -28,6 +28,7 @@ case "$OS" in
       BIN=/Applications/fabPlane.app/Contents/MacOS/fabPlane
       if [ "${FABDESK_TEST_MOVE:-}" != 1 ]; then
         ditto "$MNT/fabPlane.app" /Applications/fabPlane.app
+        export FABDESK_TEST_MOUNTED_APP="$MNT/fabPlane.app"
       fi
     else
       ditto -x -k "$INSTALLER" "$APPS/"

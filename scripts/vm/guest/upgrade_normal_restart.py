@@ -42,6 +42,37 @@ def screenshot(bridge, path):
         raise RuntimeError(f"Missing window screenshot: {path.name}")
 
 
+def mac_window_lifecycle(bridge, exe, old_pid, step):
+    mounted = os.environ.get("FABDESK_TEST_MOUNTED_APP")
+    if mounted:
+        # Trying to launch the disk image while the installed app is running must
+        # leave the existing workspace and pending upgrade in the same process.
+        subprocess.run(["open", "-n", "-a", mounted], check=True, timeout=30)
+        time.sleep(3)
+        if bridge.pid() != old_pid or bridge.call("GET", "/state")["app"]["pid"] != old_pid:
+            raise RuntimeError("Opening the mounted copy displaced the installed app")
+        step("opening a second copy from the DMG preserved the running installed workspace")
+
+    bridge.eval("setTimeout(() => window.close(), 0); true")
+    until = time.monotonic() + 30
+    while bridge.call("GET", "/state")["windows"]:
+        if time.monotonic() >= until:
+            raise RuntimeError("Closing the Mac window did not dismiss it")
+        time.sleep(0.5)
+    if bridge.pid() != old_pid:
+        raise RuntimeError("Closing the last Mac window unexpectedly quit")
+    subprocess.run(["open", "-a", str(exe.parents[2])], check=True, timeout=30)
+    while time.monotonic() < until:
+        try:
+            if bridge.pid() == old_pid and bridge.eval("Boolean(document.querySelector('[data-ready=true]'))"):
+                step("closing and reopening the Mac window retained the staged update without quitting")
+                return
+        except (RuntimeError, OSError, ValueError):
+            pass
+        time.sleep(0.5)
+    raise RuntimeError("Reopening the Mac window did not restore the staged update")
+
+
 def click_update(bridge, version, out):
     # Center-point hit testing catches a clipped or covered button at the user's click location.
     label = f"Update to {version}"
@@ -95,6 +126,7 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
         raise RuntimeError("Clicking Update restarted the app before the user quit")
     screenshot(bridge, out / "upgrade-ready.png")
     if sys.platform == "darwin":
+        mac_window_lifecycle(bridge, exe, old_pid, step)
         subprocess.run(["osascript", "-e", 'tell application id "com.tensorfleet.fabdesk" to quit'],
                        check=True, timeout=30)
     else:
