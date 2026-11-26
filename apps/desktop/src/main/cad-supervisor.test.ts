@@ -90,7 +90,7 @@ describe("FabPlane CAD backend", () => {
       }),
     );
     expect(
-      resolveCadBackend({ resourcesPath: resources, env: { FABDESK_PROJECTS_DIR: "/boards" } }),
+      resolveCadBackend({ resourcesPath: resources, env: { FABDESK_PROJECTS_DIR: "/boards//old/../project/./" } }),
     ).toMatchObject({
       command: join(cad, "bin", "fab-cad-bridge"),
       args: [],
@@ -98,7 +98,7 @@ describe("FabPlane CAD backend", () => {
       fixedUrl: false,
       env: {
         PORT: "4030",
-        WORKSPACE_ROOT: "/boards",
+        WORKSPACE_ROOT: resolve("/boards/project"),
         FREECAD_API_SERVER: `"${join(cad, "bin", "FreeCADApiServer")}"`,
         FREECAD_API_SERVER_ARGS: "--module Part",
         STATIC_DIR: join(cad, "web"),
@@ -130,7 +130,7 @@ describe("FabPlane CAD backend", () => {
       env: { FABDESK_FAB_CAD_SOURCE: FAB_CAD, FABDESK_PROJECTS_DIR: "/boards" },
     })!;
     expect(
-      cadIdentityMismatch({ name: "@fab-cad/bridge", workspaceRoot: "/boards" }, command),
+      cadIdentityMismatch({ name: "@fab-cad/bridge", workspaceRoot: resolve("/boards") }, command),
     ).toBeNull();
     expect(
       cadIdentityMismatch({ name: "@fab-cad/bridge", workspaceRoot: "/other" }, command),

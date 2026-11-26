@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { isCoreReady, type CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
 import { applyDesktopIdentity } from "./dev-profile";
+import { pinCustomProjectsDirectory } from "./desktop-projects";
 import { registerIpc } from "./ipc";
 import { installAppMenu } from "./app-menu";
 import { automationEnabled, startAppAutomation, type AppAutomation } from "./automation";
@@ -118,6 +119,7 @@ app.on("open-url", (event, url) => {
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
 // (Electron keys the lock on userData). Packaged production identity is left untouched.
+pinCustomProjectsDirectory(process.env);
 const identity = applyDesktopIdentity(app, {
   packaged: app.isPackaged,
   env: process.env,
