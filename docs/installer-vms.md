@@ -14,10 +14,11 @@ reports a failure. The macOS x64 build is exercised under Rosetta on the arm64 r
 `gh workflow run installer-test.yml -f upgrade_from=v0.4.21` runs the update test instead of the
 install test, on the same fresh runners (macOS arm64 zip, Linux AppImage, Windows NSIS; `platform`
 narrows it). Each job installs that older release, launches it with the automation bridge and the
-update check on, and `scripts/vm/guest/upgrade-drive.py` does what a user does: waits for the
-"Update X" badge, clicks it, waits for "Restart to update", clicks that, and requires the app to
-come back on the version `fabplane.com/desktop/latest.json` serves. It fails when the badge reports
-an error, when the app falls back to the installer file ("Install X"), or when the app does not
+update check on. `scripts/vm/guest/upgrade-drive.py` then makes the calls the update badge makes
+(a fresh profile is at the sign-in screen, where the badge is not drawn): it starts the download,
+follows the download state, asks the app to restart into the update, and requires the app to come
+back on the version `fabplane.com/desktop/latest.json` serves. It fails when the update reports an
+error, when the app falls back to the installer file, or when the app does not
 return. Artifacts hold `upgrade-report.json` (versions and a timed step log), screenshots before
 and after, the install folder listing and, on macOS, ShipIt's log. The older release must already
 contain in-place updates (0.4.21 or later).

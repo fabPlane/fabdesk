@@ -2,8 +2,10 @@
 """Drives an in-place update of a running fabPlane through the app automation bridge.
 
 The caller installs an older release and launches it with FABDESK_AUTOMATION=1 and the update
-check left on. This script then does what a user does: waits for the "Update X" badge, clicks it,
-waits for "Restart to update", clicks that, and checks that the app comes back on the new version.
+check left on. A fresh profile sits at the sign-in screen, where the update badge is not drawn, so
+this script makes the calls the badge makes (`window.fabdesk.downloadUpdate()` and `openUpdate()`,
+the preload API behind "Update X" and "Restart to update") and follows the same download state
+the badge shows, then checks that the app comes back on the new version.
 Same script on macOS, Linux and Windows (standard library only).
 
   upgrade-drive.py --user-data <dir> --out <dir> [--feed URL] [--timeout seconds]
@@ -14,7 +16,6 @@ import argparse
 import base64
 import json
 import os
-import re
 import sys
 import time
 import urllib.error
@@ -55,15 +56,9 @@ class Bridge:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode())
 
-    def badge(self):
-        """The update badge as (text, selector), or None while it is not shown."""
-        for query in ("Update", "Restart to update", "Downloading", "Verifying", "Restarting", "Install"):
-            found = self.call("GET", "/find?" + urllib.parse.urlencode({"query": query, "limit": 5}))
-            for match in found.get("matches", []):
-                text = (match.get("text") or "").strip()
-                if len(text) < 40 and re.match(r"^(Update \d+\.\d+\.\d+$|Restart to update$|Downloading|Verifying|Restarting|Install \d+\.\d+\.\d+$|Update failed)", text):
-                    return text, match.get("ref")
-        return None
+    def eval(self, code):
+        """Runs `code` in the renderer (the bridge awaits it for up to 10 s) and returns its value."""
+        return self.call("POST", "/eval", {"code": code}).get("result")
 
     def screenshot(self, path):
         try:
@@ -118,39 +113,57 @@ def main():
     if report["from"] == target:
         finish(f"the installed version is already {target}; nothing to update from")
 
-    clicked_update = clicked_restart = False
-    last = None
+    # The app checks the feed a few seconds after start; ask again until it has an answer.
+    status = None
     while time.time() < deadline:
         try:
-            badge = bridge.badge()
+            status = bridge.eval("window.fabdesk.updateStatus()") or bridge.eval("window.fabdesk.checkForUpdates()")
         except (RuntimeError, urllib.error.URLError, OSError, ValueError):
-            badge = None
-            if clicked_restart:
-                break  # the app went away to install
-        text = badge[0] if badge else None
-        if text != last:
-            step(f"badge: {text}")
-            last = text
-        if badge and text.startswith("Update failed"):
+            status = None
+        if status and status.get("latest"):
+            break
+        time.sleep(3)
+    if not status or not status.get("latest"):
+        finish(f"the app never got an answer from the update feed ({(status or {}).get('error')})")
+    offered = status["latest"].get("version")
+    step(f"app sees {offered}, updateAvailable={status.get('updateAvailable')}")
+    if not status.get("updateAvailable") or offered != target:
+        finish(f"the app offers {offered} (updateAvailable={status.get('updateAvailable')}), expected {target}")
+
+    # Not awaited: the call resolves when the download ends, far past the bridge's eval limit.
+    bridge.eval("void window.fabdesk.downloadUpdate(), null")
+    step("started the download (what clicking the badge does)")
+    last = None
+    state = {}
+    while time.time() < deadline:
+        state = bridge.eval("window.fabdesk.updateDownloadState()") or {}
+        name = state.get("state")
+        if name != last:
+            step(f"download state: {name}")
+            last = name
+        if name == "error":
             bridge.screenshot(os.path.join(args.out, "upgrade-failed.png"))
-            finish(f"the badge reports a failed update ({text})")
-        if badge and text.startswith("Install "):
-            bridge.screenshot(os.path.join(args.out, "upgrade-fallback.png"))
-            finish("the app fell back to the installer file instead of updating in place")
-        if badge and text.startswith("Update ") and not clicked_update:
-            if text != f"Update {target}":
-                finish(f"the badge offers '{text}', expected 'Update {target}'")
-            bridge.call("POST", "/click", {"selector": badge[1]})
-            clicked_update = True
-            step("clicked the update badge")
-        elif badge and text == "Restart to update" and not clicked_restart:
-            bridge.screenshot(os.path.join(args.out, "upgrade-ready.png"))
-            bridge.call("POST", "/click", {"selector": badge[1]})
-            clicked_restart = True
-            step("clicked Restart to update")
+            finish(f"the update failed: {state.get('message')}")
+        if name == "done":
+            break
         time.sleep(2)
-    if not clicked_restart:
-        finish("timed out before Restart to update appeared" if clicked_update else "the update badge never appeared")
+    if state.get("state") != "done":
+        finish("timed out while downloading the update")
+    report["downloaded"] = state.get("filename")
+    if not state.get("restart"):
+        finish(f"the app fell back to the installer file ({state.get('filename')}) instead of updating in place")
+    bridge.screenshot(os.path.join(args.out, "upgrade-ready.png"))
+    bridge.eval("void window.fabdesk.openUpdate(), null")
+    step("asked the app to restart into the update (what clicking Restart to update does)")
+    # A failed install comes back as an error state while the old app is still up.
+    for _ in range(10):
+        try:
+            state = bridge.eval("window.fabdesk.updateDownloadState()") or {}
+        except (RuntimeError, urllib.error.URLError, OSError, ValueError):
+            break  # the app went away to install
+        if state.get("state") == "error":
+            finish(f"the install failed: {state.get('message')}")
+        time.sleep(2)
 
     step("waiting for the app to come back")
     while time.time() < deadline:
