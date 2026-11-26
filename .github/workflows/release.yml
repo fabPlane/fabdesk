@@ -38,7 +38,7 @@ jobs:
     # Keep the new repository's public release handoff off until cutover.
     if: inputs.channel == 'internal' || vars.RELEASE_PUBLISHING_ENABLED == 'true'
     needs: select-version-runner
-    runs-on: ${{ fromJSON(needs.select-version-runner.outputs.runner) }}
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     outputs:
@@ -171,7 +171,7 @@ jobs:
             eb: "--mac --arm64"
           # Intel packaging runs natively on the GitHub-hosted Intel image.
           - { os: macos-15-intel, target: bun-darwin-x64, eb: "--mac --x64" }
-          - os: ${{ fromJSON(needs.select-build-linux-runner.outputs.runner) }}
+          - os: ubuntu-22.04
             target: bun-linux-x64
             eb: "--linux"
           - { os: windows-2025, target: bun-windows-x64, eb: "--win" }
