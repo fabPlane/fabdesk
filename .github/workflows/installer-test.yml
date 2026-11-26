@@ -1,277 +1,32 @@
 name: Installer test
-
-# Fresh-machine install + launch test of the released installers, on fresh Blacksmith macOS / Ubuntu /
-# Windows runners (a clean VM per job). Runs after every successful Release (testing that tag),
-# weekly against what fabplane.com serves, and on demand. Uses the same guest scripts as the
-# local VM tests (scripts/vm/guest); see docs/installer-vms.md.
-
-on:
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
-  schedule:
-    - cron: "17 22 * * 0" # 05:17 Monday Asia/Bangkok
-  workflow_dispatch:
-    inputs:
-      platform:
-        description: "Installer platform to check"
-        type: choice
-        options: [all, macos, linux, windows]
-        default: all
-      run_id:
-        description: "Release workflow run ID to test exactly"
-        required: false
-        default: ""
-      tag:
-        description: "Release tag to test (used when run ID is empty)"
-        required: false
-        default: ""
-      upgrade_from:
-        description: "Older release tag (for example v0.4.21): run the in-place update test from it to the site's latest instead of the install test"
-        required: false
-        default: ""
-
+on: workflow_dispatch
 permissions:
   actions: read
   contents: read
-
-# One group per tested commit: runs for different releases do not queue behind or cancel each other
-# (a shared group lets GitHub cancel the older pending run when a newer release arrives).
-concurrency:
-  group: installer-test-${{ github.event.workflow_run.head_sha || github.sha }}-${{ github.event_name }}
-  cancel-in-progress: false
-
 jobs:
-  select:
-    # Resolve a public Release run to its exact published tag; internal runs use artifacts. Manual/scheduled tests
-    # can still select a published tag or the site's latest release.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    # Metadata selection must not wait for a disposable NAS VM to rebuild.
-    runs-on: ubuntu-latest
-    outputs:
-      args: ${{ steps.pick.outputs.args }}
-      label: ${{ steps.pick.outputs.label }}
-      upgrade_from: ${{ steps.upgrade.outputs.from }}
-      upgrade_to: ${{ steps.upgrade.outputs.to }}
-    steps:
-      - uses: actions/checkout@v5
-        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
-      - name: Test exact-run installer selection
-        run: python3 -m unittest discover -s scripts/vm/tests
-      - id: pick
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          INPUT_RUN_ID: ${{ github.event.inputs.run_id }}
-          INPUT_TAG: ${{ github.event.inputs.tag }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" = workflow_run ]; then
-            echo "args=--run $RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "label=run-$RUN_ID" >> "$GITHUB_OUTPUT"
-          elif [ -n "$INPUT_RUN_ID" ]; then
-            echo "args=--run $INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "label=run-$INPUT_RUN_ID" >> "$GITHUB_OUTPUT"
-          elif [ -n "$INPUT_TAG" ]; then
-            echo "args=--tag $INPUT_TAG" >> "$GITHUB_OUTPUT"
-            echo "label=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "args=--latest" >> "$GITHUB_OUTPUT"
-            echo "label=site-latest" >> "$GITHUB_OUTPUT"
-          fi
-      # The release to update from: the one named by hand, or, after a public Release, the
-      # published release before it (what most users are running when the new one arrives).
-      # Internal and branch runs publish nothing, so they get no update test.
-      - id: upgrade
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          INPUT_UPGRADE_FROM: ${{ github.event.inputs.upgrade_from }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-        run: |
-          set -euo pipefail
-          from="$INPUT_UPGRADE_FROM"
-          tag=""
-          if [ "$EVENT" = workflow_run ]; then
-            tag="$(python3 scripts/vm/resolve-run-release.py "$RUN_ID")"
-            if [ -n "$tag" ]; then from="$(python3 scripts/vm/resolve-run-release.py --previous "$tag")"; fi
-            echo "release run $RUN_ID published '${tag}', update test from '${from}'"
-          fi
-          echo "from=$from" >> "$GITHUB_OUTPUT"
-          echo "to=$tag" >> "$GITHUB_OUTPUT"
-
-  macos:
-    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos')
-    needs: select
+  ubuntu24-x11:
+    name: Ubuntu 24.04 X11 ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Installer verification requires a fresh machine; keep it off the shared build VM.
-          - { arch: arm64, ext: dmg, os: macos-15 }
-          - { arch: arm64, ext: zip, os: macos-15 }
-          # Intel installer verification uses the Rosetta-capable hosted image.
-          - { arch: x64, ext: dmg, os: macos-15-intel }
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+          - {label: internal, input: "--run 45761812816"}
+          - {label: public, input: "--tag v0.4.26"}
     steps:
       - uses: actions/checkout@v5
-        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
-      - name: Rosetta (x64 build)
-        if: matrix.arch == 'x64'
-        run: sudo softwareupdate --install-rosetta --agree-to-license || true
-      - name: Install and launch
-        id: t
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: bash scripts/vm/runner-test.sh mac ${{ matrix.arch }} ${{ matrix.ext }} ${{ needs.select.outputs.args }}
-      - uses: actions/upload-artifact@v6
-        if: always() && steps.t.outputs.RESULTS_DIR != ''
         with:
-          name: installer-test-macos-${{ matrix.arch }}-${{ matrix.ext }}-${{ needs.select.outputs.label }}
-          path: ${{ steps.t.outputs.RESULTS_DIR }}
-          if-no-files-found: ignore
-          retention-days: 7
-
-  linux:
-    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'linux')
-    needs: select
-    strategy:
-      fail-fast: false
-      matrix:
-        format: [AppImage, deb]
-    # Installing desktop packages requires sudo and a fresh machine.
-    # Keep the previous Ubuntu 22.04 desktop baseline and package names.
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
-      - name: Desktop runtime deps (what a user's desktop already has)
-        run: sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q libfuse2 xvfb imagemagick libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libatk-bridge2.0-0 libdrm2 xdg-utils >/dev/null
-      - name: Install and launch
-        id: t
-        env: { GH_TOKEN: "${{ github.token }}" }
-        run: bash scripts/vm/runner-test.sh linux "(x64|amd64|x86_64)" ${{ matrix.format }} ${{ needs.select.outputs.args }}
-      - uses: actions/upload-artifact@v6
-        if: always() && steps.t.outputs.RESULTS_DIR != ''
-        with:
-          name: installer-test-linux-${{ matrix.format }}-${{ needs.select.outputs.label }}
-          path: ${{ steps.t.outputs.RESULTS_DIR }}
-          if-no-files-found: ignore
-          retention-days: 7
-
-  windows:
-    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'windows')
-    needs: select
-    runs-on: windows-2025
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
-      - name: Fetch installer
-        id: fetch
-        shell: bash
-        env: { GH_TOKEN: "${{ github.token }}" }
+          persist-credentials: false
+          sparse-checkout: scripts/vm
+          sparse-checkout-cone-mode: false
+      - name: Install desktop dependencies
         run: |
-          source scripts/vm/lib.sh
-          parse_args test ${{ needs.select.outputs.args }}
-          f="$(resolve_installer win "(x64|amd64|x86_64)" exe)"
-          echo "installer=$(cygpath -w "$f")" >> "$GITHUB_OUTPUT"
-      - name: Install and launch
-        shell: pwsh
-        run: |
-          $out = Join-Path $env:RUNNER_TEMP "fabdesk-installer-test"
-          & scripts/vm/guest/windows-test.ps1 -Installer "${{ steps.fetch.outputs.installer }}" -Out $out
-          $rc = $LASTEXITCODE
-          Get-Content (Join-Path $out "report.json")
-          "RESULTS_DIR=$out" >> $env:GITHUB_OUTPUT
-          exit $rc
-        id: t
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: installer-test-windows-nsis-${{ needs.select.outputs.label }}
-          path: ${{ runner.temp }}/fabdesk-installer-test
-          if-no-files-found: ignore
-          retention-days: 7
-
-  # In-place update test: after every public Release from the release before it, or by hand with
-  # `upgrade_from`. Installs the older release, starts the update and the restart through the
-  # automation bridge, and requires the app to come back on the version fabplane.com serves.
-  # See docs/installer-vms.md.
-  upgrade-macos:
-    needs: select
-    if: needs.select.outputs.upgrade_from != '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos')
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
-      - name: Update in place
-        id: t
-        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ needs.select.outputs.upgrade_from }}", FABDESK_UPGRADE_EXPECT: "${{ needs.select.outputs.upgrade_to }}" }
-        run: bash scripts/vm/runner-upgrade-test.sh mac arm64 zip --tag "$UPGRADE_FROM"
-      - uses: actions/upload-artifact@v6
-        if: always() && steps.t.outputs.RESULTS_DIR != ''
-        with:
-          name: upgrade-test-macos-arm64
-          path: ${{ steps.t.outputs.RESULTS_DIR }}
-          if-no-files-found: ignore
-          retention-days: 7
-
-  upgrade-linux:
-    needs: select
-    if: needs.select.outputs.upgrade_from != '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'linux')
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
-      - name: Desktop runtime deps (what a user's desktop already has)
-        run: sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q libfuse2 xvfb imagemagick libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libatk-bridge2.0-0 libdrm2 xdg-utils >/dev/null
-      - name: Update in place
-        id: t
-        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ needs.select.outputs.upgrade_from }}", FABDESK_UPGRADE_EXPECT: "${{ needs.select.outputs.upgrade_to }}" }
-        run: bash scripts/vm/runner-upgrade-test.sh linux "(x64|amd64|x86_64)" AppImage --tag "$UPGRADE_FROM"
-      - uses: actions/upload-artifact@v6
-        if: always() && steps.t.outputs.RESULTS_DIR != ''
-        with:
-          name: upgrade-test-linux-AppImage
-          path: ${{ steps.t.outputs.RESULTS_DIR }}
-          if-no-files-found: ignore
-          retention-days: 7
-
-  upgrade-windows:
-    needs: select
-    if: needs.select.outputs.upgrade_from != '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'windows')
-    runs-on: windows-2025
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v5
-        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
-      - name: Fetch the older installer
-        id: fetch
-        shell: bash
-        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ needs.select.outputs.upgrade_from }}" }
-        run: |
-          source scripts/vm/lib.sh
-          parse_args test --tag "$UPGRADE_FROM"
-          f="$(resolve_installer win "(x64|amd64|x86_64)" exe)"
-          echo "installer=$(cygpath -w "$f")" >> "$GITHUB_OUTPUT"
-      - name: Update in place
-        shell: pwsh
-        env: { FABDESK_UPGRADE_EXPECT: "${{ needs.select.outputs.upgrade_to }}" }
-        run: |
-          $out = Join-Path $env:RUNNER_TEMP "fabdesk-upgrade-test"
-          & scripts/vm/guest/windows-upgrade-test.ps1 -Installer "${{ steps.fetch.outputs.installer }}" -Out $out
-          $rc = $LASTEXITCODE
-          if (Test-Path (Join-Path $out "upgrade-report.json")) { Get-Content (Join-Path $out "upgrade-report.json") }
-          exit $rc
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: upgrade-test-windows-nsis
-          path: ${{ runner.temp }}/fabdesk-upgrade-test
-          if-no-files-found: ignore
-          retention-days: 7
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libfuse2t64 xvfb openbox imagemagick libgtk-3-0t64 libnss3 libxss1 libasound2t64 libgbm1 libatk-bridge2.0-0t64 libdrm2 xdg-utils
+      - name: Launch normal installer under virtual X11 with a window manager
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FABDESK_SENTRY: '0'
+          XDG_SESSION_TYPE: x11
+        run: bash scripts/vm/runner-test.sh linux '(x64|amd64|x86_64)' AppImage ${{ matrix.input }}

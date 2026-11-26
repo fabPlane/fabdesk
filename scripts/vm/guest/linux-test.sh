@@ -62,6 +62,9 @@ fi
 export DISPLAY=:99
 Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 &
 XPID=$!; for i in $(seq 1 30); do [ -S /tmp/.X11-unix/X99 ] && break; sleep 1; done
+openbox >"$OUT/openbox.txt" 2>&1 &
+for i in $(seq 1 15); do xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id" && break; sleep 1; done
+xprop -root _NET_SUPPORTING_WM_CHECK | grep -q "window id" || { err "Openbox never came up"; kill "$XPID"; exit 0; }
 T0=$(date +%s%3N)
 # --disable-gpu: there is no GPU behind Xvfb and Electron's SwiftShader fallback crashes the GPU
 # process intermittently ("GPU process isn't usable. Goodbye."), which is an artifact of the headless
