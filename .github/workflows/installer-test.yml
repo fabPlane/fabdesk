@@ -300,6 +300,7 @@ jobs:
     needs: select
     env:
       FABDESK_TEST_RESTART_NOW: ${{ inputs.restart_now && '1' || '0' }}
+      FABDESK_TEST_SIGNED_OUT: '1'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.candidate_matrix) }}
@@ -354,6 +355,7 @@ jobs:
               --setenv="GITHUB_ACTIONS=$GITHUB_ACTIONS" --setenv="RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT" \
               --setenv="FABDESK_TEST_ONE_CLICK=$FABDESK_TEST_ONE_CLICK" --setenv="FABDESK_UPDATE_URL=$FABDESK_UPDATE_URL" \
               --setenv="FABDESK_TEST_RESTART_NOW=$FABDESK_TEST_RESTART_NOW" \
+              --setenv="FABDESK_TEST_SIGNED_OUT=$FABDESK_TEST_SIGNED_OUT" \
               --setenv="FABDESK_UPGRADE_EXPECT=$FABDESK_UPGRADE_EXPECT" \
               /usr/bin/dbus-run-session -- bash scripts/vm/runner-upgrade-test.sh "$os" "$(uname -m)" "$EXT" --file "$TEST_INSTALLER" || {
                 rc=$?

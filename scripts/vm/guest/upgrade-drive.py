@@ -115,6 +115,17 @@ def main():
         print(("PASS" if error is None else f"FAIL: {error}"), flush=True)
         sys.exit(0 if error is None else 1)
 
+    def verify_signed_out(phase):
+        if os.environ.get("FABDESK_TEST_SIGNED_OUT") != "1":
+            return
+        try:
+            status = json.loads(core_request(bridge, "GET", "/v1/auth/state")).get("status")
+        except GONE as error:
+            finish(f"Could not check sign-in state {phase} the update: {type(error).__name__}")
+        if status != "signed_out":
+            finish(f"Expected a signed-out profile {phase} the update")
+        step(f"confirmed signed-out profile {phase} the update")
+
     # The site's CDN refuses Python's default user agent.
     feed = urllib.request.Request(args.feed, headers={"user-agent": "fabplane-upgrade-test", "accept": "application/json"})
     with urllib.request.urlopen(feed, timeout=30) as response:
@@ -158,6 +169,7 @@ def main():
     step(f"app sees {offered}, updateAvailable={status.get('updateAvailable')}")
     if not status.get("updateAvailable") or offered != target:
         finish(f"the app offers {offered} (updateAvailable={status.get('updateAvailable')}), expected {target}")
+    verify_signed_out("before")
 
     # Keep testing the historical download/restart contract for older published versions.
     # Candidate tests require the real control; they cannot fall back to a preload call.
@@ -294,6 +306,7 @@ def main():
                             if app_version != target:
                                 finish(f"desktop reports {app_version}; expected {target}")
                             verify_saved_project(bridge, project)
+                            verify_signed_out("after")
                             step(f"desktop and core are both {target}; saved project recovered")
                         step(f"window is back (app pid {bridge.pid()})")
                         bridge.screenshot(os.path.join(args.out, "upgrade-after.png"))

@@ -13,7 +13,9 @@ OUT="$(new_result_dir "upgrade-$OS-${TAG:-candidate}")"
 echo "RESULTS_DIR=$OUT" >> "${GITHUB_OUTPUT:-/dev/null}"
 log "updating from: $INSTALLER"; log "results: $OUT"
 # The app replaces itself where it is installed, so it must live somewhere writable that is its own.
-APPS="$(mktemp -d "${TMPDIR:-/tmp}/fabplane-upgrade-test.XXXXXX")"
+fixture_parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+APPS="$(mktemp -d "${fixture_parent%/}/fabplane-upgrade-test.XXXXXX")"
+APPS="$(cd "$APPS" && pwd -P)"
 XPID=""
 MNT=""
 EXTRA=()
