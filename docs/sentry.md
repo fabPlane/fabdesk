@@ -127,8 +127,8 @@ ships in the binaries (it does nothing without a DSN).
 
 - Desktop main: uncaught exceptions and unhandled rejections in the main process; renderer
   uncaught errors, unhandled rejections and React render failures (via the error boundary), tagged
-  `process=renderer`. Native crash minidumps are deliberately disabled (`ElectronMinidump`
-  integration filtered out) because raw process memory may contain prompts or tokens; screenshots
+  `process=renderer`. Native crash minidumps are deliberately disabled (both `SentryMinidump` and
+  `ElectronMinidump` integrations filtered out) because raw process memory may contain prompts or tokens; screenshots
   are off.
 - Core: unhandled route exceptions in the Hono `onError` (tags `http.method`, `http.route` with the
   route pattern, not the concrete path), job runner failures (tags `job.kind`, `job.class`; expected

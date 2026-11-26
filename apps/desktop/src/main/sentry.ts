@@ -14,6 +14,7 @@ import type { CoreInfo } from "../shared/core-info";
 import { scrubBreadcrumb, scrubEvent } from "../shared/sentry-scrub";
 import type { SentryUser } from "../shared/sentry-user";
 import { readPrefs, writePrefs } from "./local-mode";
+import { withoutNativeMinidumps } from "./sentry-integrations";
 
 export interface SentryConfig {
   dsn: string | undefined;
@@ -21,9 +22,6 @@ export interface SentryConfig {
   release: string;
   channel: string;
 }
-
-/** Native crash minidumps are raw process memory and may contain prompts or tokens; keep them off. */
-const DISABLED_INTEGRATIONS = new Set(["ElectronMinidump"]);
 
 let active = false;
 let initialized = false;
@@ -87,7 +85,7 @@ export function initSentry(): boolean {
       sendDefaultPii: false,
       tracesSampleRate: 0,
       attachScreenshot: false,
-      integrations: (defaults) => defaults.filter((i) => !DISABLED_INTEGRATIONS.has(i.name)),
+      integrations: withoutNativeMinidumps,
       initialScope: { tags: { service: "desktop-main", process: "main", channel: cfg.channel } },
       beforeSend: (event) => scrubEvent(event),
       beforeBreadcrumb: (breadcrumb) => scrubBreadcrumb(breadcrumb),
