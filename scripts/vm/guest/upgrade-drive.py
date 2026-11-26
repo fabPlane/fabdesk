@@ -136,11 +136,14 @@ def main():
     if report["from"] == target:
         finish(f"the installed version is already {target}; nothing to update from")
 
-    # The app checks the feed a few seconds after start; ask again until it has an answer.
+    # The candidate must discover the offer automatically. Observe its normal startup
+    # check without forcing it on behalf of a user who has not opened Settings.
     status = None
     while time.time() < deadline:
         try:
-            status = bridge.eval("window.fabdesk.updateStatus()") or bridge.eval("window.fabdesk.checkForUpdates()")
+            status = bridge.eval("window.fabdesk.updateStatus()")
+            if not args.one_click and not status:
+                status = bridge.eval("window.fabdesk.checkForUpdates()")
         except GONE:
             status = None
         if status and status.get("latest"):
