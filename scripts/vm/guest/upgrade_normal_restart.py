@@ -93,6 +93,15 @@ def click_update(bridge, version, out):
             screenshot(bridge, out / "upgrade-missing-button.png")
             raise RuntimeError(f"No visible, clickable Update to {version} button")
         time.sleep(0.5)
+    # The first capture of a newly shown Mac window can return the compositor's
+    # previous startup frame even after DOM hit testing succeeds. Wake capturePage
+    # before waiting for a fresh paint, and confirm the same control is still visible.
+    if sys.platform == "darwin":
+        bridge.call("POST", "/screenshot", {"format": "png", "scale": 0.25})
+        bridge.eval("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))")
+        time.sleep(1)
+        if not bridge.eval(probe):
+            raise RuntimeError("Update control moved or disappeared before the screenshot")
     screenshot(bridge, out / "upgrade-offered.png")
     bridge.call("POST", "/click", {"selector": selector})
 
