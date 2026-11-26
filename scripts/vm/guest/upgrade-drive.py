@@ -100,7 +100,9 @@ def main():
         print(("PASS" if error is None else f"FAIL: {error}"), flush=True)
         sys.exit(0 if error is None else 1)
 
-    with urllib.request.urlopen(args.feed, timeout=30) as response:
+    # The site's CDN refuses Python's default user agent.
+    feed = urllib.request.Request(args.feed, headers={"user-agent": "fabplane-upgrade-test", "accept": "application/json"})
+    with urllib.request.urlopen(feed, timeout=30) as response:
         target = json.loads(response.read().decode())["version"]
     report["target"] = target
     bridge = Bridge(args.user_data)
