@@ -23,6 +23,7 @@ assert payload.stat().st_size==asset["size"]==531530096
 events=[]
 lock=threading.Lock()
 began=time.monotonic()
+fault="503" if os.environ["EXPECTATION"]=="unavailable" else "reset"
 def tick(): return round(time.monotonic()-began,3)
 class Server(BaseHTTPRequestHandler):
     protocol_version="HTTP/1.1"
@@ -38,6 +39,12 @@ class Server(BaseHTTPRequestHandler):
         with lock:
             evt={"number":len(events)+1,"started":tick(),"bytesSent":0}
             events.append(evt)
+        if evt["number"]==1 and fault=="503":
+            self.send_response(503,"Service Unavailable")
+            self.send_header("Content-Length","0")
+            self.end_headers()
+            evt.update(fault="HTTP 503",ended=tick())
+            return
         self.send_response(200)
         self.send_header("Content-Type","application/zip")
         self.send_header("Content-Length",str(asset["size"]))
@@ -103,13 +110,14 @@ try:
     report["stateAfterClick"]=result["state"]
     if result["state"]=="error": report["error"]=result["message"]
     report["updaterLog"]=[line[:450] for line in log.read_text(errors="replace").splitlines() if "[update]" in line and ("net::" in line or "aborted" in line or "status 50" in line)]
-    assert events and events[0].get("fault")=="TCP reset during body"
+    assert events and events[0].get("fault")==("HTTP 503" if fault=="503" else "TCP reset during body")
     if os.environ["EXPECTATION"]=="baseline":
         assert result["state"]=="error" and len(events)==1,("baseline",result["state"],len(events))
         b.screenshot(str(out/"02-fault.png"))
     else:
         assert result["state"]=="done" and len(events)==2,(result.get("message"),result["state"],len(events))
-        assert events[1]["bytesSent"]==asset["size"] and events[0]["bytesSent"]==4*1024*1024
+        assert events[1]["bytesSent"]==asset["size"]
+        assert events[0]["bytesSent"]==(0 if fault=="503" else 4*1024*1024)
         assert result["sha256"]==asset["sha256"]
         assert digest(Path(result["path"]))==asset["sha256"],"Downloaded ZIP differs from public release"
         report["cachedZipVerified"]=True
