@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Security.AccessControl;
 using System.Threading;
 
@@ -13,6 +14,31 @@ internal static class UpdateLaunch {
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
     [DllImport("user32.dll")] private static extern bool AllowSetForegroundWindow(uint pid);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StartupInfo {
+        public uint Size;
+        public IntPtr Reserved, Desktop, Title;
+        public uint X, Y, Width, Height, Columns, Rows, Fill, Flags;
+        public ushort Show, ReservedSize;
+        public IntPtr ReservedPointer, Stdin, Stdout, Stderr;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessInfo { public IntPtr Process, Thread; public uint Pid, Tid; }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateProcessW(string exe, StringBuilder command, IntPtr processAttributes,
+        IntPtr threadAttributes, bool inheritHandles, uint flags, IntPtr env, string cwd, ref StartupInfo startup, out ProcessInfo process);
+    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
+
+    private static void LaunchInactive(string executable, string arguments, string cwd) {
+        // STARTF_USESHOWWINDOW, SW_SHOWNOACTIVATE. Keep the caller's exact environment.
+        var startup = new StartupInfo { Size = (uint)Marshal.SizeOf(typeof(StartupInfo)), Flags = 1, Show = 4 };
+        ProcessInfo info;
+        if (!CreateProcessW(executable, new StringBuilder("\"" + executable + "\" " + arguments), IntPtr.Zero,
+            IntPtr.Zero, false, 0, IntPtr.Zero, cwd, ref startup, out info))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        CloseHandle(info.Thread);
+        CloseHandle(info.Process);
+    }
 
     private static uint? InputTick() {
         var input = new LastInput { Size = (uint)Marshal.SizeOf(typeof(LastInput)) };
@@ -40,13 +66,17 @@ internal static class UpdateLaunch {
         }
     }
 
-    private static void Launch(string executable, string workingDirectory, uint? foregroundTick = null) {
+    private static void Launch(string executable, string workingDirectory, uint? foregroundTick = null, bool explicitRestart = false) {
         string arguments = Environment.GetEnvironmentVariable("FABDESK_NSIS_START_ARGS") ?? "";
         Environment.SetEnvironmentVariable("FABDESK_NSIS_START_ARGS", null);
         var launch = new ProcessStartInfo(executable, arguments) {
             UseShellExecute = false,
             WorkingDirectory = Directory.Exists(workingDirectory) ? workingDirectory : Path.GetDirectoryName(executable)
         };
+        if (explicitRestart && (!foregroundTick.HasValue || InputTick() != foregroundTick)) {
+            LaunchInactive(executable, arguments, launch.WorkingDirectory);
+            return;
+        }
         using (var child = Process.Start(launch)) {
             // Windows revokes this permission on subsequent user input. A user who
             // switched applications during installation keeps their foreground window.
@@ -93,7 +123,7 @@ internal static class UpdateLaunch {
             // An installer may appear after the parent exits. Its target PE can appear
             // well before the remaining resources are extracted and the mutex closes.
             if (TargetInstalled(executable, expected) && !Installing(installer)) {
-                Launch(executable, cwd, foregroundTick);
+                Launch(executable, cwd, foregroundTick, true);
                 return 0;
             }
             Thread.Sleep(250);
