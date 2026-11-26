@@ -75,6 +75,9 @@ jobs:
         run: |
           if [ -z "$CANDIDATE_RUN" ]; then echo "::error::A one-click test requires the candidate release run_id"; exit 1; fi
           matrix=$(python3 scripts/vm/candidate-matrix.py "$PLATFORM")
+          if [ "$PLATFORM" = windows ]; then
+            matrix=$(printf '%s' "$matrix" | python3 -c 'import json,sys; row=json.load(sys.stdin)["include"][0]; print(json.dumps({"include":[dict(row, label=row["label"]+" "+case, focus=case) for case in ("idle","working")]}))')
+          fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       - id: pick
         env:
@@ -302,6 +305,7 @@ jobs:
       FABDESK_TEST_RESTART_NOW: ${{ inputs.restart_now && '1' || '0' }}
       FABDESK_TEST_SIGNED_OUT: '1'
       FABDESK_TEST_WINDOWS_FOCUS: '1'
+      FABDESK_TEST_FOCUS_CASE: ${{ matrix.focus }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.candidate_matrix) }}
@@ -377,7 +381,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: one-click-${{ matrix.target }}-${{ matrix.ext }}
+          name: one-click-${{ matrix.target }}-${{ matrix.ext }}-${{ matrix.focus || 'baseline' }}
           path: |
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/*.png
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/upgrade-report.json

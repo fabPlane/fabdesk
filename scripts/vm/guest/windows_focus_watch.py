@@ -1,4 +1,4 @@
-"""Local-session QA diagnostics; no input or focus operations after Restart now."""
+"""Check idle restart foreground and a real intervening click in a second Windows app."""
 import ctypes
 from ctypes import wintypes as w
 import json
@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import threading
 import time
+import uuid
 
 
 user=ctypes.WinDLL("user32",use_last_error=True)
@@ -41,6 +42,21 @@ close=api(kernel,"CloseHandle",[w.HANDLE],w.BOOL)
 process_name=api(kernel,"QueryFullProcessImageNameW",[w.HANDLE,w.DWORD,w.LPWSTR,ctypes.POINTER(w.DWORD)],w.BOOL)
 get_session=api(kernel,"ProcessIdToSessionId",[w.DWORD,ctypes.POINTER(w.DWORD)],w.BOOL)
 active_session=api(kernel,"WTSGetActiveConsoleSessionId",[],w.DWORD)
+wait_handle=api(kernel,"WaitForSingleObject",[w.HANDLE,w.DWORD],w.DWORD)
+open_mutex=api(kernel,"OpenMutexW",[w.DWORD,w.BOOL,w.LPCWSTR],w.HANDLE)
+mutex=str(uuid.uuid5(uuid.UUID("50e065bc-3134-11e6-9bab-38c9862bdaf3"),"com.tensorfleet.fabdesk"))
+
+def installer_running():
+    handle=open_mutex(0x100000,False,mutex)
+    if handle: close(handle)
+    return bool(handle)
+
+def click_at(point):
+    assert set_cursor(point.x,point.y)
+    events=(Input*2)()
+    events[0].mouse.flags=2
+    events[1].mouse.flags=4
+    assert send(2,events,ctypes.sizeof(Input))==2, "Windows rejected native mouse input"
 class LastInput(ctypes.Structure):
     _fields_=[("size",w.UINT),("tick",w.DWORD)]
 last_input=api(user,"GetLastInputInfo",[ctypes.POINTER(LastInput)],w.BOOL)
@@ -87,12 +103,15 @@ def native_click(bridge,label,out):
 class Watch:
     def __init__(self,out):
         self.path=out/"windows-focus-report.json"
+        self.case=os.environ.get("FABDESK_TEST_FOCUS_CASE")
+        assert self.case in ("working","idle")
+        self.other=None
         self.started=time.monotonic()
         self.done=threading.Event()
         self.lock=threading.RLock()
         sid=w.DWORD()
         get_session(os.getpid(),ctypes.byref(sid))
-        self.data={"observerSessionId":sid.value,"activeConsoleSessionId":active_session(),"clicks":[],"events":[]}
+        self.data={"case":self.case,"observerSessionId":sid.value,"activeConsoleSessionId":active_session(),"clicks":[],"events":[]}
         self.last=None
         self.thread=threading.Thread(target=self.loop,daemon=True)
         self.thread.start()
@@ -131,22 +150,52 @@ class Watch:
                 checked=True
                 break
         before=input_tick()
-        if checked:
-            assert get_ancestor(window_from_point(point),2)==h and hwnd()==h
-            inp=(Input*2)()
-            inp[0].mouse.flags=2
-            inp[1].mouse.flags=4
-            assert send(2,inp,ctypes.sizeof(Input))==2,"Native input did not insert both events"
-            method="Win32 SendInput at renderer- and HWNDowner-verified point"
-        else:
-            assert hwnd()==h and bridge.eval(dom+".checkVisibility()")
-            bridge.call("POST","/click",{"selector":selector})
-            method="Visible Electron button via bridge (native position unavailable)"
+        assert checked and get_ancestor(window_from_point(point),2)==h and hwnd()==h, "Native FabDesk button unavailable"
+        switch=self.case=="working" and label=="Restart now"
+        source=open_process(0x100000,False,pid) if switch else None
+        assert not switch or source, "Cannot track original FabDesk process"
+        click_at(point)
+        method="Win32 SendInput at renderer- and HWND-owner-verified point"
         time.sleep(.12)
         rec=dict(pid=pid,window=h,label=label,method=method,nativeHoverVerified=checked,
             foregroundImmediatelyBeforeClick=True,inputBeforeClick=before,inputAfterClick=input_tick())
         with self.lock:
             self.data["clicks"].append(dict(seconds=self.elapsed(),**rec))
+            self.persist()
+        if switch:
+            try: self.switch_to_other_app(source)
+            finally: close(source)
+    def switch_to_other_app(self,source):
+        assert os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_ACTIONS")=="true"
+        assert wait_handle(source,90000)==0, "Source process did not close"
+        deadline=time.monotonic()+45
+        while not installer_running():
+            assert time.monotonic()<deadline,"Source exited but installer mutex never appeared"
+            time.sleep(.05)
+        marker=self.path.parent/"other-window.json"
+        script=Path(__file__).with_name("windows-other-app.ps1")
+        self.other=subprocess.Popen(["powershell.exe","-NoProfile","-STA","-WindowStyle","Hidden","-File",str(script),str(marker)],creationflags=subprocess.CREATE_NO_WINDOW)
+        deadline=time.monotonic()+20
+        while True:
+            assert self.other.poll() is None and time.monotonic()<deadline, "Companion GUI unavailable"
+            try: info=json.loads(marker.read_text("utf-8-sig"))
+            except (FileNotFoundError,json.JSONDecodeError):
+                time.sleep(.05)
+                continue
+            assert info["pid"]==self.other.pid
+            p=w.POINT(info["x"],info["y"])
+            if window_pid(window_from_point(p))==self.other.pid: break
+            time.sleep(.05)
+        assert installer_running(),"Second action must happen during the real NSIS install"
+        click_at(p)
+        deadline=time.monotonic()+5
+        while not Path(str(marker)+".clicked").exists() or window_pid(hwnd())!=self.other.pid:
+            assert time.monotonic()<deadline, "Companion did not receive native click and foreground"
+            time.sleep(.05)
+        assert installer_running(),"Second action must finish before installer completes"
+        with self.lock:
+            self.data["interveningInput"]=dict(seconds=self.elapsed(),pid=self.other.pid,
+                sourceExited=True,installerMutexObserved=True,companionReceivedClick=True,**snapshot())
             self.persist()
     def finish(self,pid):
         observed=[]
@@ -164,3 +213,15 @@ class Watch:
             last=observed[-1])
         self.persist()
         print("Windows foreground evidence",json.dumps(self.data["result"]),flush=True)
+        assert self.data["result"]["windowPresent"] and all(any(not w["minimized"] for w in s["newWindows"]) for s in observed)
+        if self.case=="idle":
+            assert stable,"Unexpected input after source restart click in idle test"
+            assert self.data["result"]["foregroundThroughoutFinal10Seconds"],"Relaunched FabDesk did not own foreground"
+        else:
+            try:
+                action=self.data["interveningInput"]
+                assert not stable and action["inputTick"]!=click["inputAfterClick"]
+                assert all(s["foregroundPid"]==action["pid"] for s in observed),"FabDesk displaced the other app"
+                assert all(s["foregroundPid"]!=pid for s in later if s["seconds"]>=action["seconds"]),"FabDesk briefly took focus"
+            finally:
+                if self.other and self.other.poll() is None: self.other.terminate()
