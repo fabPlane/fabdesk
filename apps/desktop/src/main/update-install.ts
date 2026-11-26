@@ -3,6 +3,7 @@ import * as electronUpdater from "electron-updater";
 import type { ProviderRuntimeOptions } from "electron-updater/out/providers/Provider";
 import type { UpdateChecker } from "./updates";
 import { inPlaceAsset, toUpdateInfo } from "./update-feed";
+import { retryUpdateDownload } from "./update-download-retry";
 import { StagedUpdate, type StagedUpdateHost, type UpdateOffer } from "./staged-update";
 import { installAppImage, stageAppImage } from "./update-appimage";
 import { macUpdateRelaunch, updateRelaunchArgs } from "./update-relaunch";
@@ -92,7 +93,7 @@ export function createUpdateInstaller(checker: UpdateChecker, recordPath: string
         const check = await native.checkForUpdates();
         signal.throwIfAborted();
         if (!check?.isUpdateAvailable || check.updateInfo.version !== offer.version) throw new Error("This release cannot be installed over the current version.");
-        const [path] = await native.downloadUpdate(token);
+        const [path] = await retryUpdateDownload(() => native.downloadUpdate(token), signal);
         signal.throwIfAborted();
         verifying();
         if (process.platform === "darwin") {
