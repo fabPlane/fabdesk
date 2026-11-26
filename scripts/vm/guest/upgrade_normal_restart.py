@@ -86,12 +86,16 @@ def mac_window_lifecycle(bridge, exe, old_pid, step):
 
 
 def click_update(bridge, version, out):
-    # Center-point hit testing catches a clipped or covered button at the user's click location.
     label = f"Update to {version}"
     if os.environ.get("FABDESK_TEST_MOVE") == "1":
         label = "Move to Applications"
     elif os.environ.get("FABDESK_TEST_DEB_NAME"):
         label = "Update with package manager"
+    click_update_button(bridge, label, out, "upgrade-offered.png")
+
+
+def click_update_button(bridge, label, out, image):
+    # Center-point hit testing catches a clipped or covered button at the user's click location.
     selector = f'[aria-label="FabDesk update"] button[aria-label="{label}"]'
     probe = """(() => {
       const button = document.querySelector(SELECTOR);
@@ -103,7 +107,7 @@ def click_update(bridge, version, out):
     while not bridge.eval(probe):
         if time.monotonic() >= until:
             screenshot(bridge, out / "upgrade-missing-button.png")
-            raise RuntimeError(f"No visible, clickable Update to {version} button")
+            raise RuntimeError(f"No visible, clickable {label!r} button")
         time.sleep(0.5)
     # The first capture of a newly shown Mac window can return the compositor's
     # previous startup frame even after DOM hit testing succeeds. Wake capturePage
@@ -114,7 +118,7 @@ def click_update(bridge, version, out):
         time.sleep(1)
         if not bridge.eval(probe):
             raise RuntimeError("Update control moved or disappeared before the screenshot")
-    screenshot(bridge, out / "upgrade-offered.png")
+    screenshot(bridge, out / image)
     bridge.call("POST", "/click", {"selector": selector})
 
 

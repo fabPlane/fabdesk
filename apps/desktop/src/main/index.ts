@@ -24,6 +24,7 @@ import { registerUpdateDownloadIpc, type UpdateTransport } from "./update-downlo
 import { createAlternateUpdateTransport, desktopInstallMode } from "./update-installation";
 import { createUpdateInstaller } from "./update-install";
 import { RestartOnQuit } from "./staged-update";
+import { updateRelaunchArgs } from "./update-relaunch";
 import { deferWindowsUpdateLaunch } from "./update-windows-launch";
 import { migrateLegacyUserData } from "./user-data";
 import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
@@ -494,7 +495,9 @@ async function startDesktop() {
   app.on("quit", (_e, exitCode) => {
     try {
       installer?.finishQuit(exitCode);
-      if (exitCode === 0 && debRestart.relaunch && systemUpdater?.state().state === "done") app.relaunch();
+      if (exitCode === 0 && debRestart.relaunch && systemUpdater?.state().state === "done") {
+        app.relaunch({ execPath: process.execPath, args: updateRelaunchArgs(app.getPath("userData")) });
+      }
     }
     catch (error) { console.error("[update] could not install on exit:", error); }
   });

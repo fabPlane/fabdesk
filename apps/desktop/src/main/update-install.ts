@@ -5,6 +5,8 @@ import type { UpdateChecker } from "./updates";
 import { inPlaceAsset, toUpdateInfo } from "./update-feed";
 import { StagedUpdate, type StagedUpdateHost, type UpdateOffer } from "./staged-update";
 import { installAppImage, stageAppImage } from "./update-appimage";
+import { macUpdateRelaunch, updateRelaunchArgs } from "./update-relaunch";
+import { restartAfterWindowsUpdate } from "./update-windows-launch";
 
 /** Squirrel checks the signed bundle and prepares ShipIt to replace it when the app exits.
  * downloadUpdate alone only sets up the local ZIP server when autoInstallOnAppQuit is false. */
@@ -108,16 +110,23 @@ export function createUpdateInstaller(checker: UpdateChecker, recordPath: string
         if (!win.isDestroyed()) win.webContents.send("fabdesk:update-download", state);
       }
     },
-    install(_job, restart) {
+    install(job, restart) {
       if (process.platform === "darwin") {
-        // On normal Quit, the already-staged ShipIt installation waits for the app to exit.
-        if (restart) squirrel.quitAndInstall();
+        // ShipIt installs on exit. Its own relaunch delegates to Launch Services,
+        // which drops the calling profile and environment. Let Electron own the single relaunch.
+        if (restart) app.relaunch(macUpdateRelaunch(process.execPath, job.version, updateRelaunchArgs(app.getPath("userData"))));
       } else if (process.platform === "linux") {
         if (!stagedImage) throw new Error("The verified AppImage could not be located.");
         installAppImage(stagedImage);
-        if (restart) app.relaunch({ execPath: stagedImage.destination });
+        if (restart) app.relaunch({ execPath: stagedImage.destination, args: updateRelaunchArgs(app.getPath("userData")) });
       } else {
-        engine().quitAndInstall(true, restart);
+        if (restart) restartAfterWindowsUpdate({
+          appPath: app.getAppPath(), userData: app.getPath("userData"), version: job.version,
+          exe: process.execPath, cwd: process.cwd(),
+        });
+        // Explorer's --force-run opens the default profile. The staged install
+        // still uses the native updater; only the explicit relaunch is ours.
+        engine().quitAndInstall(true, false);
       }
     },
   };

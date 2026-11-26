@@ -53,10 +53,21 @@ case "$OS" in
     ARGS=(--disable-gpu --disable-gpu-compositing --disable-software-rasterizer --disable-dev-shm-usage) ;;
   *) die "os must be mac or linux (Windows runners call guest/windows-upgrade-test.ps1)" ;;
 esac
+if [ "${FABDESK_TEST_RESTART_NOW:-}" = 1 ]; then
+  # Model a desktop launched with process-local settings. A shell/installer relaunch
+  # that drops these arguments must not pass by finding a bridge in the default profile.
+  UD="$APPS/Custom user data"
+  export FABDESK_HOME="$APPS/Custom core home"
+  export FABDESK_PROJECTS_DIR="$APPS/Custom projects"
+  ARGS+=("--user-data-dir=$UD")
+  EXTRA+=(--restart-now)
+fi
 if [ -e "$UD" ]; then die "fresh test profile required at $UD"; fi
 # ShipIt reopens the updated app through launchd, which does not pass this shell's environment on.
-[ "$OS" = mac ] && launchctl setenv FABDESK_AUTOMATION 1
-[ "$OS" = mac ] && [ -n "${FABDESK_UPDATE_URL:-}" ] && launchctl setenv FABDESK_UPDATE_URL "$FABDESK_UPDATE_URL"
+if [ "$OS" = mac ] && [ "${FABDESK_TEST_RESTART_NOW:-}" != 1 ]; then
+  launchctl setenv FABDESK_AUTOMATION 1
+  [ -z "${FABDESK_UPDATE_URL:-}" ] || launchctl setenv FABDESK_UPDATE_URL "$FABDESK_UPDATE_URL"
+fi
 export FABDESK_AUTOMATION=1
 LAUNCH="$BIN"
 if [ "${FABDESK_TEST_MOVE:-}" = 1 ]; then LAUNCH="$MNT/fabPlane.app/Contents/MacOS/fabPlane"; fi
@@ -67,8 +78,10 @@ ls -la "$APPS" >"$OUT/install-dir.txt" 2>&1 || true
 cp "$UD"/*.log "$UD"/update-install.json "$OUT/" 2>/dev/null || true
 [ "$OS" = mac ] && cp "$HOME/Library/Caches/com.tensorfleet.fabdesk.ShipIt/ShipIt_stderr.log" "$OUT/" 2>/dev/null || true
 [ "$OS" = linux ] && import -window root "$OUT/screen.png" 2>/dev/null || true
-[ "$OS" = mac ] && launchctl unsetenv FABDESK_AUTOMATION || true
-[ "$OS" = mac ] && launchctl unsetenv FABDESK_UPDATE_URL || true
+if [ "$OS" = mac ] && [ "${FABDESK_TEST_RESTART_NOW:-}" != 1 ]; then
+  launchctl unsetenv FABDESK_AUTOMATION || true
+  launchctl unsetenv FABDESK_UPDATE_URL || true
+fi
 [ -n "$MNT" ] && hdiutil detach "$MNT" -quiet || true
 pkill -f "$APPS" 2>/dev/null || true; pkill -f "/tmp/\.mount_" 2>/dev/null || true
 [ -n "$XPID" ] && kill "$XPID" 2>/dev/null || true

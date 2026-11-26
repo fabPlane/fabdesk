@@ -34,6 +34,10 @@ on:
         description: "Test visible Update in the internal build from run_id against this published tag (e.g. v0.4.26)"
         required: false
         default: ""
+      restart_now:
+        description: "Click Restart now and wait for automatic relaunch with a custom profile (one_click_target only)"
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -294,6 +298,8 @@ jobs:
     name: One-click upgrade · ${{ matrix.label }}
     if: github.event_name == 'workflow_dispatch' && inputs.one_click_target != '' && inputs.run_id != ''
     needs: select
+    env:
+      FABDESK_TEST_RESTART_NOW: ${{ inputs.restart_now && '1' || '0' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.candidate_matrix) }}
@@ -329,12 +335,12 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q libfuse2 xvfb imagemagick libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libatk-bridge2.0-0 libdrm2 xdg-utils policykit-1 python3-pexpect >/dev/null
-      - name: Click Update, quit normally, reopen the original installed app
+      - name: Exercise the visible Update and selected restart path
         id: posix
         if: runner.os != 'Windows'
         env:
           FABDESK_TEST_ONE_CLICK: '1'
-          FABDESK_TEST_MOVE: ${{ matrix.move }}
+          FABDESK_TEST_MOVE: ${{ !inputs.restart_now && matrix.move || '' }}
           EXT: ${{ matrix.ext }}
         run: |
           os=linux; [ "$RUNNER_OS" != macOS ] || os=mac
@@ -347,6 +353,7 @@ jobs:
               --setenv="HOME=$HOME" --setenv="GITHUB_OUTPUT=$GITHUB_OUTPUT" \
               --setenv="GITHUB_ACTIONS=$GITHUB_ACTIONS" --setenv="RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT" \
               --setenv="FABDESK_TEST_ONE_CLICK=$FABDESK_TEST_ONE_CLICK" --setenv="FABDESK_UPDATE_URL=$FABDESK_UPDATE_URL" \
+              --setenv="FABDESK_TEST_RESTART_NOW=$FABDESK_TEST_RESTART_NOW" \
               --setenv="FABDESK_UPGRADE_EXPECT=$FABDESK_UPGRADE_EXPECT" \
               /usr/bin/dbus-run-session -- bash scripts/vm/runner-upgrade-test.sh "$os" "$(uname -m)" "$EXT" --file "$TEST_INSTALLER" || {
                 rc=$?
@@ -358,12 +365,12 @@ jobs:
           else
             bash scripts/vm/runner-upgrade-test.sh "$os" "$(uname -m)" "$EXT" --file "$TEST_INSTALLER"
           fi
-      - name: Click Update, quit normally, reopen the installed Windows app
+      - name: Exercise the visible Update and selected Windows restart path
         if: runner.os == 'Windows'
         shell: bash
         run: |
           export TEST_INSTALLER="$(cygpath -w "$TEST_INSTALLER")"
-          pwsh -NoProfile -Command '& scripts/vm/guest/windows-upgrade-test.ps1 -Installer $env:TEST_INSTALLER -Out (Join-Path $env:RUNNER_TEMP "fabdesk-upgrade-test") -OneClick -Incoming; exit $LASTEXITCODE'
+          pwsh -NoProfile -Command '& scripts/vm/guest/windows-upgrade-test.ps1 -Installer $env:TEST_INSTALLER -Out (Join-Path $env:RUNNER_TEMP "fabdesk-upgrade-test") -OneClick -Incoming:($env:FABDESK_TEST_RESTART_NOW -ne "1"); exit $LASTEXITCODE'
       - uses: actions/upload-artifact@v6
         if: always()
         with:

@@ -13,6 +13,13 @@ function IsApp($path) { $path -and (Test-Path (Join-Path (Split-Path $path) "res
 
 $installer = (Resolve-Path $Installer).Path
 $ud = Join-Path $env:APPDATA "fabPlane"
+$restartNow = $env:FABDESK_TEST_RESTART_NOW -eq "1"
+if ($restartNow) {
+  if (!$OneClick -or $Incoming) { throw "Restart now requires a separately launched one-click candidate" }
+  $ud = Join-Path $Out "Custom user data"
+  $env:FABDESK_HOME = Join-Path $Out "Custom core home"
+  $env:FABDESK_PROJECTS_DIR = Join-Path $Out "Custom projects"
+}
 if (Test-Path -LiteralPath $ud) { throw "Fresh FabDesk test profile required at $ud" }
 Unblock-File $installer
 $stdout = Join-Path $Out "native-stdout.txt"
@@ -45,12 +52,15 @@ if ($Incoming) {
   Start-Sleep 3
   Remove-Item -Force (Join-Path $ud "daemon.json"), (Join-Path $ud "app-bridge.json") -ErrorAction SilentlyContinue
   $env:FABDESK_AUTOMATION = "1"
-  [Environment]::SetEnvironmentVariable("FABDESK_AUTOMATION", "1", "User")
+  if (!$restartNow) { [Environment]::SetEnvironmentVariable("FABDESK_AUTOMATION", "1", "User") }
   Remove-Item Env:FABDESK_UPDATE_CHECK -ErrorAction SilentlyContinue
-  Start-Process -FilePath $exe -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
+  $launch = @{}
+  if ($restartNow) { $launch.ArgumentList = '"--user-data-dir=' + $ud + '"' }
+  Start-Process -FilePath $exe @launch -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
 }
 $extra = @()
 if ($OneClick) { $extra += '--one-click' }
+if ($restartNow) { $extra += '--restart-now' }
 python (Join-Path $PSScriptRoot "upgrade-drive.py") --user-data $ud --out $Out --timeout $Timeout --executable $exe @extra
 $rc = $LASTEXITCODE
 # Report only native installation milestones, never the complete process output.

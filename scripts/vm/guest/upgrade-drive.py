@@ -25,7 +25,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from upgrade_normal_restart import click_update, core_request, save_test_project, normal_restart, verify_saved_project
+from upgrade_normal_restart import click_update, click_update_button, core_request, save_test_project, normal_restart, verify_saved_project
 
 FEED = "https://fabplane.com/desktop/latest.json"
 # What a bridge call raises when the app is not there (yet, or any more).
@@ -87,8 +87,11 @@ def main():
     parser.add_argument("--feed", default=os.environ.get("FABDESK_UPDATE_URL", FEED))
     parser.add_argument("--executable", help="Original installed path to reopen after ordinary Quit")
     parser.add_argument("--one-click", action="store_true", help="Require the visible Update button and normal restart")
+    parser.add_argument("--restart-now", action="store_true", help="Click Restart now and require the same profile to reopen itself")
     parser.add_argument("--timeout", type=int, default=900)
     args = parser.parse_args()
+    if args.restart_now and not args.one_click:
+        parser.error("--restart-now requires --one-click")
     os.makedirs(args.out, exist_ok=True)
     report = {"ok": False, "from": None, "to": None, "target": None, "steps": [], "error": None}
     started = time.time()
@@ -240,9 +243,13 @@ def main():
     bridge.screenshot(os.path.join(args.out, "upgrade-ready.png"))
     if one_click:
         try:
-            normal_restart(bridge, args.executable, target, state, old_bridge_pid, deadline, step, Path(args.out))
+            if args.restart_now:
+                click_update_button(bridge, "Restart now", Path(args.out), "upgrade-restart.png")
+                step("clicked Restart now; waiting for automatic relaunch in the original profile")
+            else:
+                normal_restart(bridge, args.executable, target, state, old_bridge_pid, deadline, step, Path(args.out))
         except Exception as error:
-            finish(f"normal restart failed: {error}")
+            finish(f"update restart failed: {error}")
     else:
         try:
             bridge.eval("void window.fabdesk.openUpdate(), null")

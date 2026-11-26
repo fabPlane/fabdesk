@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { compareVersions } from "@fabdesk/updates";
+import { updateRelaunchArgs } from "./update-relaunch";
 
 // electron-builder's NSIS APP_GUID is UUIDv5(com.tensorfleet.fabdesk, its NSIS namespace).
 export const WINDOWS_INSTALL_MUTEX = "3cb6c505-6478-5a72-8cb4-30ea679d4758";
@@ -19,7 +20,7 @@ function hasUpdateReceipt(userData: string, version: string): boolean {
   } catch { return false; }
 }
 
-// Windows PowerShell 5.1 uses the native command-line string on ProcessStartInfo.
+// .NET Framework uses the native command-line string on ProcessStartInfo.
 // Escape according to CommandLineToArgvW; none of these arguments are shell code.
 function windowsArgument(arg: string): string {
   return '"' + arg.replace(/(\\*)"/g, '$1$1\\"').replace(/\\+$/, "$&$&") + '"';
@@ -54,6 +55,21 @@ interface WindowsLaunch {
   exe: string;
   args: readonly string[];
   cwd: string;
+}
+
+/** NSIS normally relaunches via Explorer, which drops Electron's profile switch and
+ * the environment inherited by its core. Keep that context in a separate GUI process
+ * outside the installation directory while NSIS replaces the application. */
+export function restartAfterWindowsUpdate(launch: Omit<WindowsLaunch, "args">, installer = WINDOWS_INSTALL_MUTEX, parent = process.pid): void {
+  const helper = extractHelper(launch.appPath);
+  const args = ["--updated", ...updateRelaunchArgs(launch.userData)];
+  const child = spawn(helper, ["restart", installer, String(parent), launch.exe, launch.cwd, launch.version], {
+    cwd: tmpdir(), detached: true, windowsHide: true, stdio: "ignore",
+    env: { ...process.env, FABDESK_NSIS_START_ARGS: args.map(windowsArgument).join(" ") },
+  });
+  child.on("error", error => console.error("[update] Windows restart helper failed:", error));
+  if (!child.pid) throw new Error("Could not start the Windows update restart helper.");
+  child.unref();
 }
 
 /** Hand an actual mid-NSIS launch off to one hidden process, releasing the EXE, ASAR and Electron locks. */

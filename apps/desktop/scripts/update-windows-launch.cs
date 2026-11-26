@@ -18,9 +18,49 @@ internal static class UpdateLaunch {
         }
     }
 
+    private static void Launch(string executable, string workingDirectory) {
+        string arguments = Environment.GetEnvironmentVariable("FABDESK_NSIS_START_ARGS") ?? "";
+        Environment.SetEnvironmentVariable("FABDESK_NSIS_START_ARGS", null);
+        var launch = new ProcessStartInfo(executable, arguments) {
+            UseShellExecute = false,
+            WorkingDirectory = Directory.Exists(workingDirectory) ? workingDirectory : Path.GetDirectoryName(executable)
+        };
+        using (Process.Start(launch)) {}
+    }
+
+    private static bool TargetInstalled(string executable, Version expected) {
+        try {
+            var v = FileVersionInfo.GetVersionInfo(executable);
+            return v.ProductMajorPart == expected.Major && v.ProductMinorPart == expected.Minor && v.ProductBuildPart == expected.Build;
+        } catch (IOException) { return false; } // NSIS may be between removing and extracting the EXE.
+          catch (UnauthorizedAccessException) { return false; }
+          catch (System.ComponentModel.Win32Exception) { return false; }
+    }
+
+    private static int Restart(string installer, string parentId, string executable, string cwd, string targetVersion) {
+        var expected = new Version(targetVersion);
+        try {
+            using (var parent = Process.GetProcessById(Int32.Parse(parentId))) {
+                if (!parent.WaitForExit(60000)) return 1;
+            }
+        } catch (ArgumentException) { /* The old Electron already exited. */ }
+        var elapsed = Stopwatch.StartNew();
+        while (elapsed.Elapsed < TimeSpan.FromMinutes(15)) {
+            // An installer may appear after the parent exits. Its target PE can appear
+            // well before the remaining resources are extracted and the mutex closes.
+            if (TargetInstalled(executable, expected) && !Installing(installer)) {
+                Launch(executable, cwd);
+                return 0;
+            }
+            Thread.Sleep(250);
+        }
+        return 1;
+    }
+
     private static int Main(string[] args) {
         if (args.Length != 6) return 1;
         try {
+            if (args[0] == "restart") return Restart(args[1], args[2], args[3], args[4], args[5]);
             if (!Installing(args[0])) return 0;
             bool first;
             using (var waiter = new Mutex(true, args[1], out first)) {
@@ -35,13 +75,7 @@ internal static class UpdateLaunch {
                 }
                 // Leave no handle to the installation mutex between checks.
                 while (Installing(args[0])) Thread.Sleep(200);
-                string arguments = Environment.GetEnvironmentVariable("FABDESK_NSIS_START_ARGS") ?? "";
-                Environment.SetEnvironmentVariable("FABDESK_NSIS_START_ARGS", null);
-                var launch = new ProcessStartInfo(args[4], arguments) {
-                    UseShellExecute = false,
-                    WorkingDirectory = Directory.Exists(args[5]) ? args[5] : Path.GetDirectoryName(args[4])
-                };
-                using (Process.Start(launch)) {}
+                Launch(args[4], args[5]);
             }
             return 0;
         } catch (Exception) { return 1; }
