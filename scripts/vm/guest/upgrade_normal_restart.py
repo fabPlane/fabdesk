@@ -7,6 +7,7 @@ import plistlib
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -53,15 +54,26 @@ def mac_window_lifecycle(bridge, exe, old_pid, step):
             raise RuntimeError("Opening the mounted copy displaced the installed app")
         step("opening a second copy from the DMG preserved the running installed workspace")
 
+    step("closing the last Mac window without quitting the installed app")
     bridge.eval("setTimeout(() => window.close(), 0); true")
-    until = time.monotonic() + 30
-    while bridge.call("GET", "/state")["windows"]:
-        if time.monotonic() >= until:
-            raise RuntimeError("Closing the Mac window did not dismiss it")
+    until = time.monotonic() + 45
+    while time.monotonic() < until:
+        try:
+            if not bridge.call("GET", "/state")["windows"]:
+                break
+        except urllib.error.HTTPError as error:
+            # /state can be inspecting window bounds while Electron destroys
+            # that window. Require a subsequent successful empty-window response.
+            if error.code != 500:
+                raise
+            step(f"window close in progress: {error.read(512).decode(errors='replace')}")
         time.sleep(0.5)
+    else:
+        raise RuntimeError("Closing the Mac window did not dismiss it")
     if bridge.pid() != old_pid:
         raise RuntimeError("Closing the last Mac window unexpectedly quit")
     subprocess.run(["open", "-a", str(exe.parents[2])], check=True, timeout=30)
+    until = time.monotonic() + 45
     while time.monotonic() < until:
         try:
             if bridge.pid() == old_pid and bridge.eval("Boolean(document.querySelector('[data-ready=true]'))"):
