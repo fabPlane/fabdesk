@@ -1,9 +1,53 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/db";
 import { FORGOTTEN_MANIFEST, ProjectStore } from "../src/projects";
+
+test("a SQLite I/O failure updating recency does not stop project file notifications", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "fabdesk-watch-io-"));
+  const store = Store.open(join(dir, "db.sqlite"));
+  const events: Array<{ topic: string; paths?: string[] }> = [];
+  const projects = new ProjectStore(
+    store.projects,
+    join(dir, "projects"),
+    (event) => events.push(event as { topic: string; paths?: string[] }),
+    { watch: false, debounceMs: 10 },
+  );
+  const originalTouch = store.projects.touch.bind(store.projects);
+  const touch = spyOn(store.projects, "touch");
+  try {
+    await projects.init();
+    const project = await projects.create("Watch I/O");
+    touch.mockImplementation(() => {
+      throw Object.assign(new Error("disk I/O error"), { code: "SQLITE_IOERR_WRITE" });
+    });
+    const expectChange = async (file: string) => {
+      // Exercise the real debounce callback without relying on platform fs.watch timing.
+      projects["queueChange"](project.id, file);
+      const sawChange = () =>
+        events.some((e) => e.topic === "project.changed" && e.paths?.includes(file));
+      for (let i = 0; i < 100 && !sawChange(); i++) await Bun.sleep(20);
+      expect(sawChange()).toBe(true);
+    };
+    const before = store.projects.get(project.id)?.updatedAt;
+    await expectChange("first.txt");
+    expect(touch).toHaveBeenCalledWith(project.id);
+    expect(store.projects.get(project.id)?.updatedAt).toBe(before);
+
+    touch.mockClear();
+    touch.mockImplementation(originalTouch);
+    await expectChange("second.txt");
+    expect(touch).toHaveBeenCalledWith(project.id);
+    expect(store.projects.get(project.id)?.updatedAt).not.toBe(before);
+  } finally {
+    projects.close();
+    touch.mockRestore();
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 describe("ProjectStore.delete", () => {
   let dir = "";

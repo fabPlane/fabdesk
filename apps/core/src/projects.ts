@@ -567,7 +567,16 @@ export class ProjectStore implements ProjectResolver {
       this.pendingChanges.delete(id);
       this.handles.get(id); // keep handle cache; manifest edits are re-read lazily below
       if (paths.has(PROJECT_FILES.manifest)) this.handles.delete(id);
-      this.repo.touch(id);
+      // This updates list recency only. A disk I/O failure must not kill the
+      // daemon or prevent the client from refreshing files that already changed.
+      try {
+        this.repo.touch(id);
+      } catch (error) {
+        const code = error instanceof Error && "code" in error ? error.code : undefined;
+        if (typeof code !== "string" || (code !== "SQLITE_IOERR" && !code.startsWith("SQLITE_IOERR_")))
+          throw error;
+        logger.warn("project watch could not update recency", { code });
+      }
       try {
         this.emit({
           ts: Date.now(),
