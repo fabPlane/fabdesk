@@ -46,13 +46,22 @@ try {
   writeFileSync(join(versionDir, "package.json"), JSON.stringify({ version: "0.24.3" }));
   const output = join(versionDir, "output");
   const versionScript = release.jobs.version!.steps!.find((step) => step.id === "v")!.run!;
-  const versionResult = Bun.spawnSync(
+  const computeVersion = (extra: Record<string, string> = {}) => Bun.spawnSync(
     ["/bin/bash", "-e", "-c", versionScript.replaceAll("${{ github.run_number }}", "139")],
-    { cwd: versionDir, env: { ...baseEnv, GITHUB_OUTPUT: output }, stdout: "pipe", stderr: "pipe" },
+    { cwd: versionDir, env: { ...baseEnv, GITHUB_OUTPUT: output, ...extra }, stdout: "pipe", stderr: "pipe" },
   );
+  const versionResult = computeVersion({ UPDATE_FIXTURE: "false" });
   assert.equal(versionResult.exitCode, 0, versionResult.stderr.toString());
   assert.equal(readFileSync(output, "utf8"), "version=0.24.139\ntag=v0.24.139\n");
-  console.log("PASS version metadata with Bun and no global Node");
+  writeFileSync(output, "");
+  const fixture = computeVersion({ UPDATE_FIXTURE: "true", CHANNEL: "internal" });
+  assert.equal(fixture.exitCode, 0, fixture.stderr.toString());
+  assert.equal(readFileSync(output, "utf8"), "version=0.0.1\ntag=v0.0.1\n");
+  writeFileSync(output, "");
+  const publicFixture = computeVersion({ UPDATE_FIXTURE: "true", CHANNEL: "public" });
+  assert.notEqual(publicFixture.exitCode, 0);
+  assert.equal(readFileSync(output, "utf8"), "");
+  console.log("PASS release version metadata and internal-only update fixtures with Bun and no global Node");
 
   // Download once through the actual workflow shell and verify its pinned digest.
   const scan = run(setup(security.jobs.scan!), "security");

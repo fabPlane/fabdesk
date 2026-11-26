@@ -128,6 +128,7 @@ the bridge on, same checks, GDI screen capture. Results are uploaded to the host
   `vm:windows console` to look around. `destroy` removes base images and clones.
 - Runner-side checks (`scripts/verify-installers.ts`) still run in CI on every release; the VMs are
   for the user-facing path the runners cannot exercise.
+
 ## Verify the visible Update button before publishing
 
 Use **Release → Run workflow** on the candidate branch. Select **internal** and enable **update_fixture**. The four native installer artifacts use version **0.0.1** so the tested code can accept a real, newer signed package. This creates downloadable artifacts without updating the website or creating a release.

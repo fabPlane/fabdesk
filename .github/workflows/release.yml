@@ -99,10 +99,12 @@ jobs:
       - run: bun run typecheck
 
       - id: v
+        env:
+          UPDATE_FIXTURE: ${{ inputs.update_fixture }}
         run: |
           base=$(bun -p "require('./package.json').version.split('.').slice(0,2).join('.')")
           version="${base}.${{ github.run_number }}"
-          if [ "${{ inputs.update_fixture }}" = true ]; then
+          if [ "${UPDATE_FIXTURE:-false}" = true ]; then
             test "$CHANNEL" = internal || { echo "::error::Update fixtures require the internal channel"; exit 1; }
             version=0.0.1
           fi
