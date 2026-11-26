@@ -13,8 +13,12 @@ const prompt = "make me a simple blinking light board";
 const model = "gemini-4-neon-high";
 const project = { id: "blinky", name: "Blinky", path: "/projects/blinky", createdAt: "", updatedAt: "", isDraft: false };
 
-test.each(["home", "draft thread", "prepared Home draft", "prepared Home draft with default model"] as const)("Antigravity project setup preserves the model and message from %s", async (entry) => {
-  const existingDraft = entry === "draft thread";
+test.each(["home", "draft thread", "prepared Home draft", "prepared Home draft with default model", "Home without CLI", "draft thread without CLI"] as const)("Antigravity project setup preserves the model and message from %s", async (entry) => {
+  const existingDraft = entry.startsWith("draft thread");
+  const startsWithoutCli = entry.endsWith("without CLI");
+  let cliInstalled = !startsWithoutCli;
+  let doctorRequests = 0;
+  const doctorReport = () => ({ agents: [{ id: "antigravity", installed: cliInstalled, displayName: "Antigravity", installHint: "Install the Antigravity CLI", models: cliInstalled ? [model] : [] }] });
   const useDefaultModel = entry === "prepared Home draft with default model";
   const preparedHomeDraft = entry === "prepared Home draft" || useDefaultModel;
   const claudeModel = "claude-opus-5-5";
@@ -77,6 +81,7 @@ test.each(["home", "draft thread", "prepared Home draft", "prepared Home draft w
       return Response.json(persistedThread);
     }
     if (path === "/settings/agent-preference" && init?.method === "PUT") return Response.json(agySettings);
+    if (path === "/doctor") { doctorRequests++; return Response.json(doctorReport()); }
     if (path === "/projects/blinky") return Response.json(activeProject);
     if (path === "/projects/blinky/finish-it") return Response.json({ session: null });
     if (path === "/threads/t") return Response.json(persistedThread);
@@ -84,7 +89,7 @@ test.each(["home", "draft thread", "prepared Home draft", "prepared Home draft w
   } });
   const agySettings = Settings.parse({ defaultAgent: "antigravity", agents: { antigravity: { model: selectedModel }, claude: { model: claudeModel } } });
   qc.setQueryData(["settings"], preparedHomeDraft ? Settings.parse({ ...agySettings, defaultAgent: "claude" }) : agySettings);
-  qc.setQueryData(["doctor"], { agents: [{ id: "antigravity", installed: true, displayName: "Antigravity", models: [model] }] });
+  qc.setQueryData(["doctor"], doctorReport());
   if (existingDraft) {
     qc.setQueryData(["project", project.id], activeProject);
     qc.setQueryData(["thread", thread.id], thread);
@@ -99,6 +104,23 @@ test.each(["home", "draft thread", "prepared Home draft", "prepared Home draft w
       <ThreadView presentation={existingDraft ? "chat" : "start"} />
     </CoreProvider>));
     const send = () => (w.document.querySelector('[aria-label="Send message"]') as HTMLButtonElement).click();
+    if (startsWithoutCli) {
+      expect((w.document.querySelector('[aria-label="Send message"]') as HTMLButtonElement).disabled).toBe(true);
+      expect(composerHandlers.canSend?.()).toBe(false);
+      expect(w.document.querySelector(".fd-setup-notice")?.textContent).toContain("Antigravity CLI not found");
+      await act(async () => { send(); composerHandlers.send?.(); });
+      expect(w.document.querySelector('[role="dialog"]')).toBeNull();
+      expect(writes).toHaveLength(0);
+      expect(useUiStore.getState().drafts[draftKey]).toBe(prompt);
+      expect(useUiStore.getState().attachments[draftKey]).toHaveLength(1);
+      cliInstalled = true;
+      const beforeRecheck = doctorRequests;
+      const recheck = [...w.document.querySelectorAll(".fd-setup-notice button")].find((button: HTMLButtonElement) => button.textContent === "Recheck installation") as HTMLButtonElement;
+      await act(async () => { recheck.click(); await Bun.sleep(25); });
+      expect(doctorRequests).toBe(beforeRecheck + 1);
+      expect(w.document.querySelector(".fd-setup-notice")).toBeNull();
+      expect(composerHandlers.canSend?.()).toBe(true);
+    }
     if (preparedHomeDraft) {
       await act(async () => { send(); await Bun.sleep(25); });
       expect(writes.map(x => x.path)).toEqual(["/projects", "/threads", "/threads/t/messages?queue=1"]);
