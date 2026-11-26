@@ -1,6 +1,7 @@
 """Fault a real packaged update on loopback inside a disposable Apple Silicon runner."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib, json, os, platform, plistlib, runpy, socket, struct, subprocess, sys, threading, time
+from http.client import RemoteDisconnected
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -125,7 +126,10 @@ try:
         assert "Ready for next launch" in ready
         b.screenshot(str(out/"02-staged-after-retry.png"))
         sel2='[aria-label="FabDesk update"] button[aria-label="Restart now"]'
-        b.call("POST","/click",{"selector":sel2})
+        try:
+            b.call("POST","/click",{"selector":sel2})
+        except (ConnectionResetError,RemoteDisconnected):
+            report["restartResponse"]="the old app closed before it replied"
         def reopened():
             s=b.call("GET","/state")["app"]
             return s if s["version"]=="0.4.26" and s["pid"]!=report["sourceDesktopPid"] else None
