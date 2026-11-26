@@ -42,7 +42,7 @@ permissions:
 # One group per tested commit: runs for different releases do not queue behind or cancel each other
 # (a shared group lets GitHub cancel the older pending run when a newer release arrives).
 concurrency:
-  group: installer-test-${{ github.event.workflow_run.head_sha || github.sha }}-${{ github.event_name }}
+  group: installer-test-${{ github.event.workflow_run.head_sha || github.sha }}-${{ github.event_name }}-${{ inputs.platform || 'all' }}
   cancel-in-progress: false
 
 jobs:
@@ -57,11 +57,21 @@ jobs:
       label: ${{ steps.pick.outputs.label }}
       upgrade_from: ${{ steps.upgrade.outputs.from }}
       upgrade_to: ${{ steps.upgrade.outputs.to }}
+      candidate_matrix: ${{ steps.candidate.outputs.matrix }}
     steps:
       - uses: actions/checkout@v5
         with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
       - name: Test exact-run installer selection
         run: python3 -m unittest discover -s scripts/vm/tests
+      - id: candidate
+        if: inputs.one_click_target != ''
+        env:
+          PLATFORM: ${{ inputs.platform || 'all' }}
+          CANDIDATE_RUN: ${{ inputs.run_id }}
+        run: |
+          if [ -z "$CANDIDATE_RUN" ]; then echo "::error::A one-click test requires the candidate release run_id"; exit 1; fi
+          matrix=$(python3 scripts/vm/candidate-matrix.py "$PLATFORM")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
@@ -286,13 +296,7 @@ jobs:
     needs: select
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { label: Mac Apple Silicon, os: macos-15, target: darwin-arm64, ext: dmg }
-          - { label: Mac Intel from mounted DMG, os: macos-15-intel, target: darwin-x64, ext: dmg, move: '1' }
-          - { label: Linux AppImage, os: ubuntu-22.04, target: linux-x64, ext: AppImage }
-          - { label: Linux Debian, os: ubuntu-22.04, target: linux-x64, ext: deb }
-          - { label: Windows NSIS, os: windows-2025, target: windows-x64, ext: exe }
+      matrix: ${{ fromJSON(needs.select.outputs.candidate_matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
