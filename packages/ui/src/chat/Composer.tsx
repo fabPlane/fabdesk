@@ -215,6 +215,10 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const pickerAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
   const selectedAgent = agents.find((a) => a.id === agentId);
   const agentMissing = selectedAgent ? !selectedAgent.installed : false;
+  const antigravitySetupRequired = agentId === "antigravity" && agentMissing;
+  useEffect(() => {
+    if (antigravitySetupRequired) setAntigravityProjectStart(null);
+  }, [antigravitySetupRequired]);
   const displayedModel = model || settings.data?.agents[agentId]?.model || selectedAgent?.defaultModel || "";
   const modelLabel = displayedModel ? modelDisplayName(displayedModel, selectedAgent?.modelAliases) : "Choose model";
   const effortLevels = selectedAgent?.modelEfforts?.[displayedModel] ?? EMPTY;
@@ -239,7 +243,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
   const finishItBusy = finishItActive(finishItSession) || startFinishIt.isPending || stopFinishIt.isPending || saveEffort.isPending;
 
   const beginFinishIt = useCallback(async () => {
-    if (!projectId || finishItBusy || alreadyFinished || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
+    if (!projectId || antigravitySetupRequired || finishItBusy || alreadyFinished || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
     if (!rootAutomation) { setError("Finish it currently supports single-board projects. Ask about the selected board instead."); return; }
     setError(null);
     try {
@@ -254,11 +258,11 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [projectId, rootAutomation, finishItBusy, alreadyFinished, loadingThread, settings.data, savePreference.isPending, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
+  }, [projectId, rootAutomation, antigravitySetupRequired, finishItBusy, alreadyFinished, loadingThread, settings.data, savePreference.isPending, startFinishIt, thread?.id, agentId, model, setActiveThread, qc]);
 
   const send = useCallback(async (confirmedProjectName?: string) => {
     const typed = draft.trim();
-    if (!typed || sending || submitting.current || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
+    if (!typed || antigravitySetupRequired || sending || submitting.current || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || savingEffort.current) return;
     if (!thread && !projectId && !startMode) {
       setProjectPickerOpen(true);
       return;
@@ -362,7 +366,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       submitting.current = false;
       setSending(false);
     }
-  }, [client, ideaDraft, project.data?.id, antigravityProjectStart, draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
+  }, [client, ideaDraft, project.data?.id, antigravityProjectStart, antigravitySetupRequired, draft, rootAutomation, matchingContexts, boardSources.data, boardSources.isFetching, boardSources.isError, setDraftBoardContext, sending, saveEffort.isPending, loadingThread, settings.data, savePreference.isPending, startMode, projectId, setProjectPickerOpen, thread, onCreateThread, agentId, model, pending, setDraft, draftKey, addAttachment, qc, queueMessage, voice.reset, beginFinishIt]);
 
   const stop = useCallback(async () => {
     if (!run || stopping) return;
@@ -375,7 +379,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
 
   useEffect(() => {
     composerHandlers.send = () => void send();
-    composerHandlers.canSend = () => !!draft.trim() && !antigravityProjectStart && !sending && !saveEffort.isPending && !loadingThread && !!settings.data && !savePreference.isPending && !savingEffort.current && !!(thread || projectId || startMode);
+    composerHandlers.canSend = () => !!draft.trim() && !antigravityProjectStart && !antigravitySetupRequired && !sending && !saveEffort.isPending && !loadingThread && !!settings.data && !savePreference.isPending && !savingEffort.current && !!(thread || projectId || startMode);
     composerHandlers.canSelectAgent = () => !!settings.data && !antigravityProjectStart && !loadingThread && !savePreference.isPending && !savingEffort.current && !run && queued.length === 0;
     composerHandlers.abort = run ? () => void stop() : null;
     composerHandlers.voiceToggle = () => voice.toggle();
@@ -397,7 +401,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
       composerHandlers.setAgent = null;
       composerHandlers.voiceToggle = null;
     };
-  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length, draft, sending, saveEffort.isPending, thread, projectId, startMode, antigravityProjectStart]);
+  }, [send, stop, run, doctor.data, settings.data, loadingThread, voice.toggle, beginFinishIt, selectAgent, savePreference.isPending, queued.length, draft, sending, saveEffort.isPending, thread, projectId, startMode, antigravityProjectStart, antigravitySetupRequired]);
 
   const showStop = !!run && !draft.trim() && !sending;
 
@@ -609,7 +613,7 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
                 aria-label={showStop ? "Stop current run; queued messages stay scheduled" : sending ? "Sending message" : run ? "Queue message" : "Send message"}
                 aria-busy={showStop ? stopping : sending}
                 onClick={() => void (showStop ? stop() : send())}
-                disabled={showStop ? stopping : !draft.trim() || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || (!thread && !projectId && !startMode)}
+                disabled={showStop ? stopping : !draft.trim() || antigravitySetupRequired || sending || saveEffort.isPending || loadingThread || !settings.data || savePreference.isPending || (!thread && !projectId && !startMode)}
                 title={showStop ? "Stop current run. Queued messages stay scheduled." : run ? "Queue message (Enter). Stop current run with " + mod + " + ." : "Send message (Enter)"}
               >
                 <Icon name={showStop ? "stop" : run ? "queue" : "arrowUp"} width={18} height={18} {...(showStop ? { fill: "currentColor" } : {})} />
@@ -618,15 +622,28 @@ export function Composer({ thread, loadingThread = false, onCreateThread, startM
           </div>
         </div>
         {!loadingThread && agentMissing && selectedAgent && (
-          <details className="fd-setup-notice mt-2 rounded-lg border border-warning/25 bg-warning/5 text-xs leading-5 text-warning">
-            <summary className="flex cursor-pointer items-center gap-2 px-3 py-2">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
-              <span className="min-w-0 flex-1 truncate">{selectedAgent.displayName} is not installed</span>
-              <span className="shrink-0 font-medium">Setup instructions</span>
-              <Icon name="chevronDown" width={14} height={14} className="fd-setup-chevron shrink-0 transition-transform" />
-            </summary>
-            <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
-          </details>
+          antigravitySetupRequired ? (
+            <div className="fd-setup-notice mt-2 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-xs leading-5 text-warning">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <strong>Antigravity CLI not found on this host</strong>
+                <Button variant="ghost" size="sm" disabled={doctor.isFetching} onClick={() => void refreshAgentModels({ cancelRefetch: false })}>
+                  {doctor.isFetching ? "Checking installation…" : "Recheck installation"}
+                </Button>
+              </div>
+              <InstallHint text={selectedAgent.installHint} />
+              <p>Your draft stays here. Install the CLI on the host running FabDesk, or select another agent.</p>
+            </div>
+          ) : (
+            <details className="fd-setup-notice mt-2 rounded-lg border border-warning/25 bg-warning/5 text-xs leading-5 text-warning">
+              <summary className="flex cursor-pointer items-center gap-2 px-3 py-2">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                <span className="min-w-0 flex-1 truncate">{selectedAgent.displayName} is not installed</span>
+                <span className="shrink-0 font-medium">Setup instructions</span>
+                <Icon name="chevronDown" width={14} height={14} className="fd-setup-chevron shrink-0 transition-transform" />
+              </summary>
+              <div className="border-t border-warning/20 px-3 py-2"><InstallHint text={selectedAgent.installHint} /></div>
+            </details>
+          )
         )}
         {error != null && !antigravityProjectStart && <ErrorNotice error={error} agentId={agentId} onDismiss={() => setError(null)} />}
         {selectionNotice && <ErrorNotice error={selectionNotice.error} agentId={selectionNotice.agentId}
