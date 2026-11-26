@@ -31,6 +31,8 @@ case "$OS" in
   *) die "os must be mac or linux (Windows runners call guest/windows-upgrade-test.ps1)" ;;
 esac
 rm -rf "$UD"
+# ShipIt reopens the updated app through launchd, which does not pass this shell's environment on.
+[ "$OS" = mac ] && launchctl setenv FABDESK_AUTOMATION 1
 FABDESK_AUTOMATION=1 "$BIN" ${ARGS[@]+"${ARGS[@]}"} >"$OUT/app-stdout.txt" 2>&1 &
 rc=0
 python3 "$VM_SCRIPTS/guest/upgrade-drive.py" --user-data "$UD" --out "$OUT" --timeout "$TIMEOUT" || rc=$?
@@ -38,6 +40,7 @@ ls -la "$APPS" >"$OUT/install-dir.txt" 2>&1 || true
 cp "$UD"/*.log "$UD"/update-install.json "$OUT/" 2>/dev/null || true
 [ "$OS" = mac ] && cp "$HOME/Library/Caches/com.tensorfleet.fabdesk.ShipIt/ShipIt_stderr.log" "$OUT/" 2>/dev/null || true
 [ "$OS" = linux ] && import -window root "$OUT/screen.png" 2>/dev/null || true
+[ "$OS" = mac ] && launchctl unsetenv FABDESK_AUTOMATION || true
 pkill -f "$APPS" 2>/dev/null || true; pkill -f "/tmp/\.mount_" 2>/dev/null || true
 [ -n "$XPID" ] && kill "$XPID" 2>/dev/null || true
 cat "$OUT/upgrade-report.json" 2>/dev/null || true

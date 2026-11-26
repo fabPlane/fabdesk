@@ -36,6 +36,8 @@ Start-Sleep 3
 Remove-Item -Force (Join-Path $ud "daemon.json"), (Join-Path $ud "app-bridge.json") -ErrorAction SilentlyContinue
 
 $env:FABDESK_AUTOMATION = "1"
+# The silent installer starts the updated app itself; a user-level variable reaches it either way.
+[Environment]::SetEnvironmentVariable("FABDESK_AUTOMATION", "1", "User")
 Remove-Item Env:FABDESK_UPDATE_CHECK -ErrorAction SilentlyContinue
 Start-Process -FilePath $exe | Out-Null
 python (Join-Path $PSScriptRoot "upgrade-drive.py") --user-data $ud --out $Out --timeout $Timeout

@@ -59,6 +59,10 @@ class Bridge:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode())
 
+    def pid(self):
+        """Process id of the app that wrote the current bridge file, or None."""
+        return (read_json(os.path.join(self.user_data, "app-bridge.json")) or {}).get("pid")
+
     def eval(self, code):
         """Runs `code` in the renderer (the bridge awaits it for up to 10 s) and returns its value."""
         return self.call("POST", "/eval", {"code": code}).get("result")
@@ -112,6 +116,7 @@ def main():
         finish("the old version never started (no daemon.json)")
     report["from"] = daemon.get("version")
     old_pid = daemon.get("pid")
+    old_bridge_pid = bridge.pid()
     step(f"running {report['from']} (core pid {old_pid}); feed offers {target}")
     if report["from"] == target:
         finish(f"the installed version is already {target}; nothing to update from")
@@ -185,13 +190,22 @@ def main():
             except (urllib.error.URLError, OSError, ValueError, KeyError):
                 time.sleep(2)
                 continue
-            step(f"app is back on {report['to']} (core pid {daemon.get('pid')})")
-            time.sleep(5)
-            try:
-                bridge.screenshot(os.path.join(args.out, "upgrade-after.png"))
-            except RuntimeError:
-                pass
-            finish(None if report["to"] == target else f"the app came back on {report['to']}, expected {target}")
+            step(f"core is back on {report['to']} (core pid {daemon.get('pid')})")
+            if report["to"] != target:
+                finish(f"the app came back on {report['to']}, expected {target}")
+            # A core alone is not the app: the new window must answer through a new bridge too.
+            # The launch scripts put FABDESK_AUTOMATION where the relaunched app inherits it.
+            window_deadline = min(deadline, time.time() + 180)
+            while time.time() < window_deadline:
+                try:
+                    if bridge.pid() != old_bridge_pid and bridge.eval("document.readyState") == "complete":
+                        step(f"window is back (app pid {bridge.pid()})")
+                        bridge.screenshot(os.path.join(args.out, "upgrade-after.png"))
+                        finish(None)
+                except GONE:
+                    pass
+                time.sleep(2)
+            finish(f"the core came back on {target} but the app window never answered through the automation bridge")
         time.sleep(2)
     finish("the app did not come back after Restart to update")
 
