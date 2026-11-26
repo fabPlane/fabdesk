@@ -139,8 +139,8 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
         windows_snapshot()
     if sys.platform == "darwin":
         mac_window_lifecycle(bridge, exe, old_pid, step)
-        subprocess.run(["osascript", "-e", 'tell application id "com.tensorfleet.fabdesk" to quit'],
-                       check=True, timeout=30)
+        subprocess.run(["/usr/bin/swift", str(Path(__file__).with_name("quit-mac-app.swift")),
+                        str(old_pid), str(exe.parents[2])], check=True, timeout=90)
     else:
         # Closing the last application window follows the installed app's normal Quit path.
         try:
@@ -150,6 +150,16 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
     step("quit normally with no Install or Restart button click")
     next_snapshot = time.monotonic()
     while time.time() < deadline:
+        if sys.platform == "darwin" and time.monotonic() >= next_snapshot:
+            try:
+                with (exe.parents[1] / "Info.plist").open("rb") as info:
+                    installed = plistlib.load(info)["CFBundleShortVersionString"]
+            except (OSError, plistlib.InvalidFileException):
+                installed = "being replaced"
+            processes = subprocess.run(["ps", "-p", str(old_pid), "-o", "pid=,stat=,comm="],
+                                       capture_output=True, text=True).stdout.strip() or "exited"
+            step(f"Mac quit check: source={processes}, bridge PID={bridge.pid()}, installed={installed}")
+            next_snapshot = time.monotonic() + 30
         if os.name == "nt" and time.monotonic() >= next_snapshot:
             windows_snapshot()
             next_snapshot = time.monotonic() + 30
