@@ -1,14 +1,33 @@
-name: Packaged macOS transfer interruption
+name: Installer test
 on:
   workflow_dispatch:
     inputs:
-      run_id:
-        required: true
-        type: string
-      tag:
-        required: true
+      platform:
+        description: "Installer platform to check"
         type: choice
-        options: [baseline, recovered]
+        options: [all, macos, linux, windows]
+        default: all
+      run_id:
+        description: "Release workflow run ID to test exactly"
+        required: false
+        default: ""
+      tag:
+        description: "Release tag to test (used when run ID is empty)"
+        required: false
+        default: ""
+      upgrade_from:
+        description: "Older release tag (for example v0.4.21): run the in-place update test from it to the site's latest instead of the install test"
+        required: false
+        default: ""
+      one_click_target:
+        description: "Test visible Update in the internal build from run_id against this published tag (e.g. v0.4.26)"
+        required: false
+        default: ""
+      restart_now:
+        description: "Click Restart now and wait for automatic relaunch with a custom profile (one_click_target only)"
+        type: boolean
+        default: false
+
 permissions:
   actions: read
   contents: read
