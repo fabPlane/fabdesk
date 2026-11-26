@@ -102,11 +102,14 @@ def disk_updated(exe, version, state):
         with (exe.parents[1] / "Info.plist").open("rb") as handle:
             return plistlib.load(handle)["CFBundleShortVersionString"] == version
     if os.name == "nt":
-        ps = "(Get-Item -LiteralPath $env:FABDESK_TEST_INSTALLED_EXE).VersionInfo.ProductVersion"
+        # Windows PE versions have a fourth, build-specific component (e.g. 0.4.26.0).
+        # The release manifest and the running desktop/core use major.minor.patch.
+        ps = ("$v = (Get-Item -LiteralPath $env:FABDESK_TEST_INSTALLED_EXE -ErrorAction Stop).VersionInfo; "
+              "($v.ProductMajorPart, $v.ProductMinorPart, $v.ProductBuildPart) -join '.'")
         result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
                                 env={**os.environ, "FABDESK_TEST_INSTALLED_EXE": str(exe)},
                                 capture_output=True, text=True, timeout=20)
-        return result.returncode == 0 and result.stdout.strip().split("+")[0] == version
+        return result.returncode == 0 and result.stdout.strip() == version
     if state["filename"].lower().endswith(".deb"):
         result = subprocess.run(["dpkg-query", "-W", "-f=${Version}", os.environ["FABDESK_TEST_DEB_NAME"]], capture_output=True, text=True)
         return result.returncode == 0 and result.stdout.strip() == version
