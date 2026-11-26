@@ -16,6 +16,7 @@ import {
 } from "@fabdesk/protocol";
 import { VERSION } from "./config";
 import type { Store } from "./db";
+import type { DesignService } from "@fabdesk/tools";
 import { logger, errMsg } from "./log";
 
 declare const FABDESK_POSTHOG_KEY: string | undefined;
@@ -60,7 +61,6 @@ function toolName(raw: string): string {
 
 const TOOL_EVENTS: Record<string, FunnelEventName[]> = {
   project_import_kicad: ["onboarding_first_project", "onboarding_first_kicad_import"],
-  circuit_build: ["onboarding_first_board_built"],
   route_run: ["onboarding_first_route"],
   board_review: ["onboarding_first_review_viewed"],
   pcb_inspect: ["onboarding_first_board_viewed"],
@@ -72,6 +72,47 @@ export type FunnelCapture = {
   distinct_id: string;
   properties?: Record<string, unknown>;
 };
+
+const FAILURE_KINDS = ["build_failed", "empty_board", "exception", "failed", "tool_error"] as const;
+type FailureKind = (typeof FAILURE_KINDS)[number];
+const TOOL_GROUPS = ["build", "route", "review", "import", "other"] as const;
+type ToolGroup = (typeof TOOL_GROUPS)[number];
+const ERROR_EVENTS = {
+  board_build: "onboarding_first_board_build_error",
+  ai_run: "onboarding_first_ai_run_error",
+  tool: "onboarding_first_tool_error",
+} as const satisfies Record<string, FunnelEventName>;
+
+/** Observe the actual build, including calls made over external MCP/HTTP clients.
+ * Agent tool_result messages alone are not evidence that a board was built.
+ * This is a generated non-empty board, not a DRC pass or manufacturing approval.
+ */
+export function trackBoardBuilds(design: Pick<DesignService, "build">, funnel: Funnel): void {
+  const build = design.build.bind(design);
+  design.build = async (options) => {
+    let result;
+    try {
+      result = await build(options);
+    } catch (error) {
+      // User cancellation is not a product failure. Never send exception text.
+      const cancelled = options.signal?.aborted ||
+        (error instanceof Error && (error.name === "AbortError" || "code" in error && error.code === "cancelled"));
+      if (!cancelled) funnel.noteError("board_build", "exception");
+      throw error;
+    }
+    if (!result.ok && !options.signal?.aborted) funnel.noteError("board_build", "build_failed");
+    else if (result.ok && result.counts.components <= 0) funnel.noteError("board_build", "empty_board");
+    if (result.ok && result.counts.components > 0) {
+      try {
+        funnel.record("onboarding_first_board_built");
+      } catch (error) {
+        // Analytics must not turn a successfully generated board into a tool failure.
+        logger.warn("board activation recording failed", { error: errMsg(error) });
+      }
+    }
+    return result;
+  };
+}
 
 export class Funnel {
   private readonly fetchImpl: typeof fetch;
@@ -173,6 +214,26 @@ export class Funnel {
     for (const event of events) this.record(event);
   }
 
+  /** First error at each stage, on the same attributed person as activation.
+   * Counts affected people, not total errors; detailed diagnostics stay in Sentry.
+   */
+  noteError(stage: keyof typeof ERROR_EVENTS, kind: FailureKind, tool?: string): boolean {
+    const name = toolName(tool ?? "");
+    const group: ToolGroup = name === "circuit_build" ? "build"
+      : name.startsWith("route_") || name === "board_route" ? "route"
+      : name === "board_review" ? "review"
+      : name === "project_import_kicad" ? "import" : "other";
+    try {
+      return this.record(ERROR_EVENTS[stage], {
+        failure_kind: kind,
+        ...(stage === "tool" ? { tool_group: group } : {}),
+      });
+    } catch (error) {
+      logger.warn("onboarding error recording failed", { error: errMsg(error) });
+      return false;
+    }
+  }
+
   async flush(): Promise<void> {
     await this.queue;
   }
@@ -260,6 +321,10 @@ ${handoff ? `<ul>${handoff}</ul>` : "<p>none</p>"}
     if (handoff.referrer) props.referrer = handoff.referrer;
     const source = extra?.["source"];
     if (source === "review" || source === "check" || source === "pcb") props.source = source;
+    const failureKind = extra?.["failure_kind"];
+    if (FAILURE_KINDS.includes(failureKind as FailureKind)) props.failure_kind = failureKind!;
+    const toolGroup = extra?.["tool_group"];
+    if (TOOL_GROUPS.includes(toolGroup as ToolGroup)) props.tool_group = toolGroup!;
     return props;
   }
 
