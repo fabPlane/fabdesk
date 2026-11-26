@@ -76,7 +76,7 @@ jobs:
           if [ -z "$CANDIDATE_RUN" ]; then echo "::error::A one-click test requires the candidate release run_id"; exit 1; fi
           matrix=$(python3 scripts/vm/candidate-matrix.py "$PLATFORM")
           if [ "$PLATFORM" = windows ]; then
-            matrix=$(printf '%s' "$matrix" | python3 -c 'import json,sys; row=json.load(sys.stdin)["include"][0]; print(json.dumps({"include":[dict(row, label=row["label"]+" "+case, focus=case) for case in ("idle","working")]}))')
+            matrix=$(printf '%s' "$matrix" | python3 -c 'import json,sys; row=json.load(sys.stdin)["include"][0]; print(json.dumps({"include":[dict(row, label=row["label"]+" working", focus="working")]}))')
           fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       - id: pick

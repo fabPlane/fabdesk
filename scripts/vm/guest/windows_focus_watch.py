@@ -223,5 +223,14 @@ class Watch:
                 assert not stable and action["inputTick"]!=click["inputAfterClick"]
                 assert all(s["foregroundPid"]==action["pid"] for s in observed),"FabDesk displaced the other app"
                 assert all(s["foregroundPid"]!=pid for s in later if s["seconds"]>=action["seconds"]),"FabDesk briefly took focus"
+                before=snapshot()
+                assert before["foregroundPid"]==action["pid"]
+                shot=self.path.parent/"other-app-still-foreground.png"
+                subprocess.run(["powershell.exe","-NoProfile","-NonInteractive","-File",str(Path(__file__).with_name("windows-foreground-screen.ps1")),str(shot)],
+                               check=True,timeout=20,creationflags=subprocess.CREATE_NO_WINDOW)
+                after=snapshot()
+                assert after["foregroundPid"]==action["pid"] and after["inputTick"]==before["inputTick"] and shot.stat().st_size>512
+                self.data["concurrentScreenshot"]={"filename":shot.name,"before":before,"after":after}
+                self.persist()
             finally:
                 if self.other and self.other.poll() is None: self.other.terminate()
