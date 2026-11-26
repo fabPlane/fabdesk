@@ -113,7 +113,12 @@ def disk_updated(exe, version, state):
     if os.name == "nt":
         # Windows PE versions have a fourth, build-specific component (e.g. 0.4.26.0).
         # The release manifest and the running desktop/core use major.minor.patch.
-        ps = ("$v = (Get-Item -LiteralPath $env:FABDESK_TEST_INSTALLED_EXE -ErrorAction Stop).VersionInfo; "
+        # The EXE can change minutes before NSIS finishes extracting the PCB libraries.
+        # Electron-builder gives this installation mutex the UUIDv5 of FabDesk's app ID.
+        guid = uuid.uuid5(uuid.UUID("50e065bc-3134-11e6-9bab-38c9862bdaf3"), "com.tensorfleet.fabdesk")
+        ps = (f"$installer = $null; if ([Threading.Mutex]::TryOpenExisting('{guid}', "
+              "[Security.AccessControl.MutexRights]::Synchronize, [ref]$installer)) { $installer.Dispose(); exit 1 }; "
+              "$v = (Get-Item -LiteralPath $env:FABDESK_TEST_INSTALLED_EXE -ErrorAction Stop).VersionInfo; "
               "($v.ProductMajorPart, $v.ProductMinorPart, $v.ProductBuildPart) -join '.'")
         result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
                                 env={**os.environ, "FABDESK_TEST_INSTALLED_EXE": str(exe)},
