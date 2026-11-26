@@ -26,6 +26,10 @@ on:
         description: "Release tag to test (used when run ID is empty)"
         required: false
         default: ""
+      upgrade_from:
+        description: "Older release tag (for example v0.4.21): run the in-place update test from it to the site's latest instead of the install test"
+        required: false
+        default: ""
 
 permissions:
   actions: read
@@ -41,7 +45,7 @@ jobs:
   select:
     # Resolve a public Release run to its exact published tag; internal runs use artifacts. Manual/scheduled tests
     # can still select a published tag or the site's latest release.
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: inputs.upgrade_from == '' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     # Metadata selection must not wait for a disposable NAS VM to rebuild.
     runs-on: ubuntu-latest
     outputs:
@@ -76,7 +80,7 @@ jobs:
           fi
 
   macos:
-    if: inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos'
+    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos')
     needs: select
     strategy:
       fail-fast: false
@@ -108,7 +112,7 @@ jobs:
           retention-days: 7
 
   linux:
-    if: inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'linux'
+    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'linux')
     needs: select
     strategy:
       fail-fast: false
@@ -136,7 +140,7 @@ jobs:
           retention-days: 7
 
   windows:
-    if: inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'windows'
+    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'windows')
     needs: select
     runs-on: windows-2025
     timeout-minutes: 30
@@ -167,5 +171,80 @@ jobs:
         with:
           name: installer-test-windows-nsis-${{ needs.select.outputs.label }}
           path: ${{ runner.temp }}/fabdesk-installer-test
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # In-place update test (manual, `upgrade_from` set): install the older release, click the update
+  # badge and "Restart to update" through the automation bridge, and require the app to come back
+  # on the version fabplane.com serves. See docs/installer-vms.md.
+  upgrade-macos:
+    if: inputs.upgrade_from != '' && (inputs.platform == 'all' || inputs.platform == 'macos')
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
+      - name: Update in place
+        id: t
+        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ inputs.upgrade_from }}" }
+        run: bash scripts/vm/runner-upgrade-test.sh mac arm64 zip --tag "$UPGRADE_FROM"
+      - uses: actions/upload-artifact@v6
+        if: always() && steps.t.outputs.RESULTS_DIR != ''
+        with:
+          name: upgrade-test-macos-arm64
+          path: ${{ steps.t.outputs.RESULTS_DIR }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+  upgrade-linux:
+    if: inputs.upgrade_from != '' && (inputs.platform == 'all' || inputs.platform == 'linux')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
+      - name: Desktop runtime deps (what a user's desktop already has)
+        run: sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q libfuse2 xvfb imagemagick libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libatk-bridge2.0-0 libdrm2 xdg-utils >/dev/null
+      - name: Update in place
+        id: t
+        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ inputs.upgrade_from }}" }
+        run: bash scripts/vm/runner-upgrade-test.sh linux "(x64|amd64|x86_64)" AppImage --tag "$UPGRADE_FROM"
+      - uses: actions/upload-artifact@v6
+        if: always() && steps.t.outputs.RESULTS_DIR != ''
+        with:
+          name: upgrade-test-linux-AppImage
+          path: ${{ steps.t.outputs.RESULTS_DIR }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+  upgrade-windows:
+    if: inputs.upgrade_from != '' && (inputs.platform == 'all' || inputs.platform == 'windows')
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
+      - name: Fetch the older installer
+        id: fetch
+        shell: bash
+        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ inputs.upgrade_from }}" }
+        run: |
+          source scripts/vm/lib.sh
+          parse_args test --tag "$UPGRADE_FROM"
+          f="$(resolve_installer win "(x64|amd64|x86_64)" exe)"
+          echo "installer=$(cygpath -w "$f")" >> "$GITHUB_OUTPUT"
+      - name: Update in place
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "fabdesk-upgrade-test"
+          & scripts/vm/guest/windows-upgrade-test.ps1 -Installer "${{ steps.fetch.outputs.installer }}" -Out $out
+          $rc = $LASTEXITCODE
+          if (Test-Path (Join-Path $out "upgrade-report.json")) { Get-Content (Join-Path $out "upgrade-report.json") }
+          exit $rc
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: upgrade-test-windows-nsis
+          path: ${{ runner.temp }}/fabdesk-upgrade-test
           if-no-files-found: ignore
           retention-days: 7

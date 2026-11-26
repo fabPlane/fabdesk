@@ -9,6 +9,19 @@ serves, and on demand (`gh workflow run installer-test.yml -f tag=v0.1.42`). Eac
 `report.json`, `app.png`, `screen.png` and logs as a seven-day artifact, and fails when the guest
 reports a failure. The macOS x64 build is exercised under Rosetta on the arm64 runner.
 
+### In-place update test
+
+`gh workflow run installer-test.yml -f upgrade_from=v0.4.21` runs the update test instead of the
+install test, on the same fresh runners (macOS arm64 zip, Linux AppImage, Windows NSIS; `platform`
+narrows it). Each job installs that older release, launches it with the automation bridge and the
+update check on, and `scripts/vm/guest/upgrade-drive.py` does what a user does: waits for the
+"Update X" badge, clicks it, waits for "Restart to update", clicks that, and requires the app to
+come back on the version `fabplane.com/desktop/latest.json` serves. It fails when the badge reports
+an error, when the app falls back to the installer file ("Install X"), or when the app does not
+return. Artifacts hold `upgrade-report.json` (versions and a timed step log), screenshots before
+and after, the install folder listing and, on macOS, ShipIt's log. The older release must already
+contain in-place updates (0.4.21 or later).
+
 ## Daily job on agent1 (OpenClaw)
 
 `scripts/vm/install-agent.sh agent1` copies `scripts/vm` to `/home/openclaw/fabdesk-vm` on agent1
