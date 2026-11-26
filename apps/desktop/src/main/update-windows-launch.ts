@@ -59,7 +59,10 @@ interface WindowsLaunch {
 /** Hand an actual mid-NSIS launch off to one hidden process, releasing the EXE, ASAR and Electron locks. */
 export async function deferWindowsUpdateLaunch(launch: WindowsLaunch, installer = WINDOWS_INSTALL_MUTEX, parent = process.pid): Promise<boolean> {
   if (!hasUpdateReceipt(launch.userData, launch.version)) return false;
-  const scope = createHash("sha256").update(resolve(launch.exe).toLowerCase() + "\0" + resolve(launch.userData).toLowerCase()).digest("hex");
+  // Identical shortcut clicks share one waiter. A distinct file or protocol
+  // launch still reaches Electron's ordinary second-instance handler after NSIS.
+  const scope = createHash("sha256").update(JSON.stringify([resolve(launch.exe).toLowerCase(),
+    resolve(launch.userData).toLowerCase(), launch.args.length ? resolve(launch.cwd).toLowerCase() : "", launch.args])).digest("hex");
   let directory: string | undefined;
   try {
     const helper = extractHelper(launch.appPath);

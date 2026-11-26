@@ -20,7 +20,7 @@ test("ordinary starts and stale or invalid receipts do not start a helper", asyn
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test.skipIf(process.platform !== "win32")("a real Windows installer mutex defers two launches and resumes the original command once", async () => {
+test.skipIf(process.platform !== "win32")("a real Windows installer mutex coalesces duplicate opens and forwards each distinct command", async () => {
   const directory = mkdtempSync(join(tmpdir(), "fabdesk-launch with spaces-"));
   const mutex = "Local\\fabdesk-qa-" + randomUUID();
   const output = join(directory, "result.jsonl");
@@ -46,11 +46,19 @@ test.skipIf(process.platform !== "win32")("a real Windows installer mutex defers
       writeFileSync(join(directory, "update-install.json"), JSON.stringify(receipt));
       expect(await deferWindowsUpdateLaunch(launch, mutex, holder.pid!)).toBe(true);
     }
+    const other = ["fabplane://open?catalog=foostan/crkbd"];
+    expect(await deferWindowsUpdateLaunch({ ...launch, args: [script, output, ...other] }, mutex, holder.pid!)).toBe(true);
     expect(existsSync(output)).toBe(false);
     holder.stdin.end("\n");
-    for (let i = 0; i < 100 && !existsSync(output); i++) await Bun.sleep(100);
+    for (let i = 0; i < 100; i++) {
+      if (existsSync(output) && readFileSync(output, "utf8").trim().split("\n").length === 2) break;
+      await Bun.sleep(100);
+    }
     await Bun.sleep(300);
-    expect(readFileSync(output, "utf8").trim().split("\n").map(line => JSON.parse(line))).toEqual([{ args: argv, cwd: directory }]);
+    const calls = readFileSync(output, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    expect(calls).toHaveLength(2);
+    expect(calls).toContainEqual({ args: argv, cwd: directory });
+    expect(calls).toContainEqual({ args: other, cwd: directory });
     expect(await deferWindowsUpdateLaunch(launch, mutex)).toBe(false);
   } finally {
     holder.kill();
