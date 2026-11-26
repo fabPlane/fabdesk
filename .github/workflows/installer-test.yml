@@ -338,7 +338,24 @@ jobs:
           EXT: ${{ matrix.ext }}
         run: |
           os=linux; [ "$RUNNER_OS" != macOS ] || os=mac
-          bash scripts/vm/runner-upgrade-test.sh "$os" "$(uname -m)" "$EXT" --file "$TEST_INSTALLER"
+          if [ "$EXT" = deb ]; then
+            # The hosted runner is a system service. Give the desktop, pkexec and its
+            # real authentication agent one PAM/logind session, like a user login.
+            loginctl show-session self -p Name -p Active -p Type || echo 'The Actions service has no login session.'
+            sudo -n systemd-run --quiet --wait --collect --pipe --uid="$(id -u)" \
+              --working-directory="$PWD" --property=PAMName=login \
+              --setenv="HOME=$HOME" --setenv="GITHUB_OUTPUT=$GITHUB_OUTPUT" \
+              --setenv="GITHUB_ACTIONS=$GITHUB_ACTIONS" --setenv="RUNNER_ENVIRONMENT=$RUNNER_ENVIRONMENT" \
+              --setenv="FABDESK_TEST_ONE_CLICK=$FABDESK_TEST_ONE_CLICK" --setenv="FABDESK_UPDATE_URL=$FABDESK_UPDATE_URL" \
+              --setenv="FABDESK_UPGRADE_EXPECT=$FABDESK_UPGRADE_EXPECT" \
+              /usr/bin/dbus-run-session -- bash scripts/vm/runner-upgrade-test.sh "$os" "$(uname -m)" "$EXT" --file "$TEST_INSTALLER" || {
+                rc=$?
+                sudo -n journalctl -u polkit.service --since '5 minutes ago' --no-pager -o cat
+                exit "$rc"
+              }
+          else
+            bash scripts/vm/runner-upgrade-test.sh "$os" "$(uname -m)" "$EXT" --file "$TEST_INSTALLER"
+          fi
       - name: Click Update, quit normally, reopen the installed Windows app
         if: runner.os == 'Windows'
         shell: bash

@@ -38,6 +38,9 @@ case "$OS" in
   linux)
     UD="$HOME/.config/fabPlane"
     if [[ "$INSTALLER" == *.deb ]]; then
+      if [ "${FABDESK_TEST_ONE_CLICK:-}" = 1 ]; then
+        loginctl show-session "${XDG_SESSION_ID:?A Debian update test requires a PAM login session}" -p Active -p State -p Type -p Name
+      fi
       sudo apt-get install -y "$INSTALLER"
       export FABDESK_TEST_DEB_NAME="$(dpkg-deb -f "$INSTALLER" Package)"
       BIN="$(command -v fabplane)"

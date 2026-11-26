@@ -93,6 +93,7 @@ def main():
     report = {"ok": False, "from": None, "to": None, "target": None, "steps": [], "error": None}
     started = time.time()
     deadline = started + args.timeout
+    deb_auth = None
 
     def step(message):
         line = f"{int(time.time() - started):4d}s {message}"
@@ -100,6 +101,9 @@ def main():
         report["steps"].append(line)
 
     def finish(error=None):
+        if deb_auth is not None and deb_auth.poll() is None:
+            deb_auth.terminate()
+            deb_auth.wait(timeout=10)
         report["error"] = error
         report["ok"] = error is None
         report["seconds"] = int(time.time() - started)
@@ -164,7 +168,15 @@ def main():
                 if not json.loads(core_request(bridge, "GET", "/settings")).get("keepCoreRunning"):
                     finish("Could not enable the persistent core on the mounted copy")
             if os.environ.get("FABDESK_TEST_DEB_NAME"):
-                deb_auth = subprocess.Popen(["/usr/bin/python3", str(Path(__file__).with_name("deb-ci-auth.py")), str(old_bridge_pid)])
+                agent_ready = Path(args.out) / "polkit-ready"
+                deb_auth = subprocess.Popen(["/usr/bin/python3", str(Path(__file__).with_name("deb-ci-auth.py")),
+                                             str(old_bridge_pid), str(agent_ready)])
+                until = time.monotonic() + 25
+                while not agent_ready.exists() and deb_auth.poll() is None and time.monotonic() < until:
+                    time.sleep(0.1)
+                if not agent_ready.exists() or deb_auth.poll() is not None:
+                    finish("Polkit could not register an authentication agent; the update was never clicked")
+                step("Polkit registered an interactive authentication agent for the desktop process")
             click_update(bridge, target, Path(args.out))
             if test_move:
                 # macOS relaunches the installed copy as part of first-time relocation.
