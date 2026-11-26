@@ -6,6 +6,7 @@ import { inPlaceAsset, toUpdateInfo } from "./update-feed";
 import { StagedUpdate, type StagedUpdateHost, type UpdateOffer } from "./staged-update";
 import { installAppImage, stageAppImage } from "./update-appimage";
 import { macUpdateRelaunch, updateRelaunchArgs } from "./update-relaunch";
+import { restartLinuxAfterUpdate } from "./update-linux-relaunch";
 import { restartAfterWindowsUpdate } from "./update-windows-launch";
 
 /** Squirrel checks the signed bundle and prepares ShipIt to replace it when the app exits.
@@ -118,7 +119,7 @@ export function createUpdateInstaller(checker: UpdateChecker, recordPath: string
       } else if (process.platform === "linux") {
         if (!stagedImage) throw new Error("The verified AppImage could not be located.");
         installAppImage(stagedImage);
-        if (restart) app.relaunch({ execPath: stagedImage.destination, args: updateRelaunchArgs(app.getPath("userData")) });
+        if (restart) restartLinuxAfterUpdate(stagedImage.destination, updateRelaunchArgs(app.getPath("userData")));
       } else {
         if (restart) restartAfterWindowsUpdate({
           appPath: app.getAppPath(), userData: app.getPath("userData"), version: job.version,

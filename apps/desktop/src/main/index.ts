@@ -25,6 +25,7 @@ import { createAlternateUpdateTransport, desktopInstallMode } from "./update-ins
 import { createUpdateInstaller } from "./update-install";
 import { RestartOnQuit } from "./staged-update";
 import { updateRelaunchArgs } from "./update-relaunch";
+import { restartLinuxAfterUpdate } from "./update-linux-relaunch";
 import { deferWindowsUpdateLaunch } from "./update-windows-launch";
 import { migrateLegacyUserData } from "./user-data";
 import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
@@ -496,7 +497,7 @@ async function startDesktop() {
     try {
       installer?.finishQuit(exitCode);
       if (exitCode === 0 && debRestart.relaunch && systemUpdater?.state().state === "done") {
-        app.relaunch({ execPath: process.execPath, args: updateRelaunchArgs(app.getPath("userData")) });
+        restartLinuxAfterUpdate(process.execPath, updateRelaunchArgs(app.getPath("userData")));
       }
     }
     catch (error) { console.error("[update] could not install on exit:", error); }
