@@ -1,4 +1,5 @@
 import { Button, Spinner } from "../components/ui";
+import type { ReactNode } from "react";
 import type { CoreStatusInfo } from "./types";
 
 /** Shown while the core daemon is starting, restarting or has crashed (no client available yet). */
@@ -6,15 +7,17 @@ export function CoreStatusScreen({
   status,
   onRestart,
   onOpenLogs,
+  updateNotice,
 }: {
   status: CoreStatusInfo | null;
   onRestart?: (() => void) | undefined;
   onOpenLogs?: (() => void) | undefined;
+  updateNotice?: ReactNode;
 }) {
   const state = status?.state ?? "starting";
   const crashed = state === "crashed" || state === "stopped";
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto bg-bg p-6" style={{ alignItems: "safe center" }}>
+    <div className="fd-update-screen flex h-full flex-col items-center gap-4 overflow-y-auto bg-bg p-6" style={{ justifyContent: "safe center" }}>
       <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-6 text-center shadow-xl">
         <div className="mb-2 text-lg font-semibold">fabPlane</div>
         {crashed ? (
@@ -39,6 +42,7 @@ export function CoreStatusScreen({
           </>
         )}
       </div>
+      {updateNotice}
     </div>
   );
 }

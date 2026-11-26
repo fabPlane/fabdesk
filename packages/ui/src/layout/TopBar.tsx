@@ -2,7 +2,6 @@ import { ProfileButton } from "../auth/ProfileAccountDialog";
 import { WorkspaceBackButton } from "./WorkspaceBackButton";
 import { Badge, Button, IconButton } from "../components/ui";
 import { Icon } from "../components/Icon";
-import { UpdateBadge } from "../components/UpdateBadge";
 import { WhatsNewLink } from "../whatsnew/WhatsNew";
 import { useCore } from "@fabdesk/client-core";
 import { useProjects } from "@fabdesk/client-core";
@@ -73,7 +72,6 @@ export function TopBar({ coreStatus }: { coreStatus?: CoreStatusInfo | undefined
         {projectId && <Button variant="ghost" size="sm" onClick={() => useUiStore.getState().goHome(client.baseUrl)}>Home</Button>}
         <Button variant="ghost" size="sm" onClick={() => useUiStore.getState().setCanvasMode(true)} title="Return to the canvas workspace"><Icon name="pcb" width={16} height={16} />Canvas</Button>
         <WhatsNewLink />
-        <UpdateBadge />
         <Badge
           tone={connected ? "success" : coreStatus?.state === "crashed" ? "danger" : "warning"}
           title={coreStatus?.message ?? `Core ${coreStatus?.state ?? "ready"}; SSE ${sseStatus}${port ? `; port ${port}` : ""}`}

@@ -3,7 +3,7 @@
 # upgrade-drive.py click "Update X" and "Restart to update" like a user. Passes when the app comes
 # back on the version the site serves.
 #   windows-upgrade-test.ps1 -Installer <older fabplane-*.exe> -Out <dir> [-Timeout seconds]
-param([Parameter(Mandatory = $true)][string]$Installer, [Parameter(Mandatory = $true)][string]$Out, [int]$Timeout = 1200)
+param([Parameter(Mandatory = $true)][string]$Installer, [Parameter(Mandatory = $true)][string]$Out, [int]$Timeout = 1200, [switch]$OneClick)
 $ErrorActionPreference = "Continue"
 New-Item -ItemType Directory -Force $Out | Out-Null
 $log = Join-Path $Out "log.txt"
@@ -13,7 +13,7 @@ function IsApp($path) { $path -and (Test-Path (Join-Path (Split-Path $path) "res
 
 $installer = (Resolve-Path $Installer).Path
 $ud = Join-Path $env:APPDATA "fabPlane"
-Remove-Item -Recurse -Force $ud -ErrorAction SilentlyContinue | Out-Null
+if (Test-Path -LiteralPath $ud) { throw "Fresh FabDesk test profile required at $ud" }
 Unblock-File $installer
 Log "installing $(Split-Path -Leaf $installer)"
 $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru
@@ -40,7 +40,9 @@ $env:FABDESK_AUTOMATION = "1"
 [Environment]::SetEnvironmentVariable("FABDESK_AUTOMATION", "1", "User")
 Remove-Item Env:FABDESK_UPDATE_CHECK -ErrorAction SilentlyContinue
 Start-Process -FilePath $exe | Out-Null
-python (Join-Path $PSScriptRoot "upgrade-drive.py") --user-data $ud --out $Out --timeout $Timeout
+$extra = @()
+if ($OneClick) { $extra += '--one-click' }
+python (Join-Path $PSScriptRoot "upgrade-drive.py") --user-data $ud --out $Out --timeout $Timeout --executable $exe @extra
 $rc = $LASTEXITCODE
 Get-ChildItem (Split-Path $exe) -ErrorAction SilentlyContinue | Select-Object Name, Length, LastWriteTime | Out-File (Join-Path $Out "install-dir.txt")
 Get-ChildItem $ud -Include *.log, update-install.json -Recurse -Depth 0 -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -ErrorAction SilentlyContinue

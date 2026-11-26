@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { ProfileAccountDialog } from "../auth/ProfileAccountDialog";
 import { LoginScreen } from "../auth/LoginScreen";
 import { Button, Spinner } from "../components/ui";
+import { UpdateBadge } from "../components/UpdateBadge";
 import { useCore, usePrivacy, useSettings, type HostAdapter } from "@fabdesk/client-core";
 import { CoreProvider } from "../core/CoreProvider";
 import { browserHost } from "../core/host";
@@ -114,7 +115,7 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
 
   if (!authState || !settings.data || privacyScreen === null) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-bg text-sm text-muted">
+      <div className="fd-update-screen flex h-full flex-col items-center justify-center gap-3 bg-bg text-sm text-muted">
         <Spinner />
         {auth.isError || settings.isError ? (
           <div className="text-center">
@@ -127,10 +128,13 @@ function AppInner({ coreStatus, onRestartCore }: { coreStatus?: CoreStatusInfo |
         ) : (
           "Connecting to core..."
         )}
+        <UpdateBadge />
       </div>
     );
   }
-  if (needsPrivacyScreen(settings.data, privacyScreen)) return <FirstInstallPrivacy />;
+  if (needsPrivacyScreen(settings.data, privacyScreen)) return <div className="flex h-full flex-col">
+    <div className="min-h-0 flex-1"><FirstInstallPrivacy /></div><UpdateBadge />
+  </div>;
   if (authState.status !== "signed_in" && enteredWorkspace.current !== client) return <><LoginScreen /><ProfileAccountDialog /></>;
   return (
     <>

@@ -112,23 +112,21 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-async function healthOk(
+async function coreHealth(
   url: string,
   token: string,
-  expectedRuntimeId?: string,
   timeoutMs = 1500,
-): Promise<boolean> {
+): Promise<{ pid: number; runtimeId?: string; parentPid?: number } | null> {
   try {
     const res = await fetch(`${url}/health`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return false;
-    if (!expectedRuntimeId) return true;
-    const health = (await res.json()) as { runtimeId?: string | null; parentPid?: number | null };
-    return health.runtimeId === expectedRuntimeId && health.parentPid === process.pid;
+    if (!res.ok) return null;
+    const health = await res.json() as { pid: number; runtimeId?: string; parentPid?: number } | null;
+    return typeof health?.pid === "number" ? health : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -138,6 +136,7 @@ export class CoreSupervisor extends EventEmitter {
   private token: string | null = null;
   private pid: number | null = null;
   private attached = false;
+  private previousCore: { url: string; token: string; pid: number } | null = null;
   private stopping = false;
   private restartTimes: number[] = [];
   private restartTimer: NodeJS.Timeout | null = null;
@@ -216,7 +215,14 @@ export class CoreSupervisor extends EventEmitter {
       return false;
     if (!pidAlive(hs.pid)) return false;
     const url = `http://${hs.host ?? "127.0.0.1"}:${hs.port}`;
-    if (!(await healthOk(url, hs.token, this.opts.runtimeId))) return false;
+    const health = await coreHealth(url, hs.token);
+    if (!health || health.pid !== hs.pid) return false;
+    if (this.opts.runtimeId && (health.runtimeId !== this.opts.runtimeId || health.parentPid !== process.pid)) {
+      // A daemon kept alive by an earlier desktop can still be using the installed binary.
+      // Starting our own daemon overwrites daemon.json; remember the other one for update preflight.
+      this.previousCore = { url, token: hs.token, pid: hs.pid };
+      return false;
+    }
     this.port = hs.port;
     this.token = hs.token;
     this.pid = hs.pid;
@@ -428,7 +434,35 @@ export class CoreSupervisor extends EventEmitter {
     }
   }
 
-  /** `before-quit`: POST /shutdown unless settings.keepCoreRunning, then make sure our own child is gone. */
+  async assertCanUpdate(): Promise<void> {
+    const previous = this.previousCore;
+    const shared = this.attached && !this.child && this.pid && pidAlive(this.pid);
+    if (shared || (previous && pidAlive(previous.pid) && (await coreHealth(previous.url, previous.token))?.pid === previous.pid)) {
+      throw new Error("Another FabDesk core is running. Stop that core, then retry the update.");
+    }
+  }
+
+  /** Only a confirmed installation overrides keepCoreRunning. Wait for our own process to
+   * exit after shutdown, including when Windows needs the forced-kill fallback. */
+  async stopForUpdate(): Promise<void> {
+    await this.assertCanUpdate();
+    const owned = this.child;
+    await this.stop({ shutdown: true, force: true });
+    if (!owned?.pid || owned.exitCode !== null || owned.signalCode !== null) return;
+    const pid = owned.pid;
+    const timedOut = await new Promise<boolean>(resolve => {
+      const exited = () => { clearTimeout(timer); resolve(false); };
+      const timer = setTimeout(() => { owned.removeListener("exit", exited); resolve(true); }, SHUTDOWN_GRACE_MS);
+      owned.once("exit", exited);
+      if (owned.exitCode !== null || owned.signalCode !== null || !pidAlive(pid)) {
+        owned.removeListener("exit", exited);
+        exited();
+      }
+    });
+    if (timedOut && pidAlive(pid)) throw new Error("The FabDesk core is still running. Close its active work, then retry the update.");
+  }
+
+  /** On ordinary quit, keep the daemon alive if the user enabled keepCoreRunning. */
   async stop(opts: { shutdown: boolean; force?: boolean }): Promise<void> {
     this.stopping = true;
     if (this.restartTimer) clearTimeout(this.restartTimer);

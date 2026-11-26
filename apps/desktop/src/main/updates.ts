@@ -5,13 +5,14 @@
 import { checkForUpdate, DEFAULT_CHECK_INTERVAL_MS, DEFAULT_UPDATE_URL } from "@fabdesk/updates";
 import type { UpdateCheckResult } from "@fabdesk/protocol";
 import { app, BrowserWindow, ipcMain } from "electron";
+import { assetForInstallMode, type AlternateInstallMode } from "./update-feed";
 
 export class UpdateChecker {
   #last: UpdateCheckResult | null = null;
   #timer: ReturnType<typeof setInterval> | null = null;
   #inFlight: Promise<UpdateCheckResult> | null = null;
 
-  constructor(private readonly opts: { url?: string | undefined; intervalMs?: number | undefined; enabled?: boolean | undefined } = {}) {}
+  constructor(private readonly opts: { url?: string | undefined; intervalMs?: number | undefined; enabled?: boolean | undefined; installMode?: AlternateInstallMode | null } = {}) {}
 
   start(): void {
     if (this.opts.enabled === false) return;
@@ -35,7 +36,12 @@ export class UpdateChecker {
       currentVersion: app.getVersion(),
       url: this.opts.url ?? DEFAULT_UPDATE_URL,
     })
-      .then((result) => {
+      .then((checked) => {
+        const mode = this.opts.installMode ?? null;
+        const result: UpdateCheckResult = { ...checked,
+          asset: assetForInstallMode(checked, mode, process.platform, process.arch, process.env["APPIMAGE"]),
+          ...(mode ? { installMode: mode } : {}),
+        };
         this.#last = result;
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) win.webContents.send("fabdesk:update-status", result);

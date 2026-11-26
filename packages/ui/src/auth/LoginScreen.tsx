@@ -99,7 +99,7 @@ export function LoginScreen() {
     }
   };
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 overflow-y-auto bg-bg p-6" style={{ justifyContent: "safe center" }}>
+    <div className="fd-update-screen flex h-full flex-col items-center justify-center gap-4 overflow-y-auto bg-bg p-6" style={{ justifyContent: "safe center" }}>
       <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-6 shadow-xl">
         <div className="mb-1 text-lg font-semibold">fabPlane</div>
         <div className="mb-5 text-xs text-muted">Sign in with your fabPlane account to start designing boards.</div>

@@ -128,7 +128,7 @@ export { CoreStatusScreen } from "./app/CoreStatusScreen";
 export { useAppActions } from "./app/useAppActions";
 export type { AppActions } from "./app/useAppActions";
 export type { CoreState, CoreStatusInfo, CoreInfo } from "./app/types";
-export { UpdateBadge } from "./components/UpdateBadge";
+export { DesktopUpdateNotice, UpdateBadge } from "./components/UpdateBadge";
 
 // Hosted web pairing (docs/mobile.md, "Pairing a browser"): the /pair route and the saved computers.
 export { BrowserApp } from "./app/BrowserApp";

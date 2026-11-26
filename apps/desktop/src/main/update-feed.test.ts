@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ReleaseAsset, UpdateCheckResult } from "@fabdesk/protocol";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { inPlaceAsset, inPlaceUnsupportedReason, notAppliedVersion, toUpdateInfo } from "./update-feed";
+import { alternateInstallMode, assetForInstallMode, inPlaceAsset, toUpdateInfo } from "./update-feed";
 
 function asset(platform: ReleaseAsset["platform"], arch: ReleaseAsset["arch"], kind: ReleaseAsset["kind"], ext: string): ReleaseAsset {
   const filename = `fabplane-0.4.20-${platform}-${arch}.${ext}`;
@@ -42,21 +39,28 @@ describe("inPlaceAsset", () => {
   });
 });
 
-describe("inPlaceUnsupportedReason", () => {
+describe("alternateInstallMode", () => {
   const mac = { platform: "darwin", packaged: true, exePath: "/Applications/fabPlane.app/Contents/MacOS/fabPlane" };
 
   test("an installed, packaged app updates in place", () => {
-    expect(inPlaceUnsupportedReason(mac)).toBeNull();
-    expect(inPlaceUnsupportedReason({ platform: "win32", packaged: true, exePath: "C:\\Program Files\\fabPlane\\fabplane.exe" })).toBeNull();
-    expect(inPlaceUnsupportedReason({ platform: "linux", packaged: true, exePath: "/tmp/.mount_x/fabplane", appImage: "/home/u/fabplane.AppImage" })).toBeNull();
+    expect(alternateInstallMode(mac)).toBeNull();
+    expect(alternateInstallMode({ platform: "win32", packaged: true, exePath: "C:\\Program Files\\fabPlane\\fabplane.exe" })).toBeNull();
+    expect(alternateInstallMode({ platform: "linux", packaged: true, exePath: "/tmp/.mount_x/fabplane", appImage: "/home/u/fabplane.AppImage" })).toBeNull();
   });
 
   test("read-only macOS locations, .deb installs, dev builds and the opt-out do not", () => {
-    expect(inPlaceUnsupportedReason({ ...mac, exePath: "/Volumes/fabPlane 0.4.19/fabPlane.app/Contents/MacOS/fabPlane" })).toContain("Applications");
-    expect(inPlaceUnsupportedReason({ ...mac, exePath: "/private/var/folders/x/AppTranslocation/ABC/d/fabPlane.app/Contents/MacOS/fabPlane" })).toContain("Applications");
-    expect(inPlaceUnsupportedReason({ platform: "linux", packaged: true, exePath: "/opt/fabPlane/fabplane" })).not.toBeNull();
-    expect(inPlaceUnsupportedReason({ ...mac, packaged: false })).not.toBeNull();
-    expect(inPlaceUnsupportedReason({ ...mac, disabled: true })).not.toBeNull();
+    expect(alternateInstallMode({ ...mac, exePath: "/Volumes/fabPlane 0.4.19/fabPlane.app/Contents/MacOS/fabPlane" })).toBe("move-to-applications");
+    expect(alternateInstallMode({ ...mac, exePath: "/private/var/folders/x/AppTranslocation/ABC/d/fabPlane.app/Contents/MacOS/fabPlane" })).toBe("move-to-applications");
+    expect(alternateInstallMode({ platform: "linux", packaged: true, exePath: "/opt/fabPlane/fabplane" })).toBe("installer");
+    expect(alternateInstallMode({ ...mac, packaged: false })).toBe("installer");
+    expect(alternateInstallMode({ ...mac, disabled: true })).toBe("installer");
+  });
+  test("writable secondary Mac volumes can stage a normal update; deb ownership requires a package marker", () => {
+    expect(alternateInstallMode({ ...mac, exePath: "/Volumes/Work/fabPlane.app/Contents/MacOS/fabPlane", volumeWritable: true })).toBeNull();
+    const system = { platform: "linux", packaged: true, exePath: "/opt/fabPlane/fabplane", packageType: "deb" };
+    expect(alternateInstallMode(system)).toBe("system-package");
+    expect(alternateInstallMode({ ...system, appImage: "/home/me/fabplane.AppImage" })).toBeNull();
+    expect(alternateInstallMode({ ...system, disabled: true })).toBe("installer");
   });
 });
 
@@ -88,31 +92,10 @@ describe("toUpdateInfo", () => {
       files: [{ url: zip.url, sha2: zip.sha256, size: 1234 }],
     });
     expect(toUpdateInfo({ ...result, latest: null }, zip)).toBeNull();
-  });
-});
-
-describe("notAppliedVersion", () => {
-  const record = (content: string): string => {
-    const path = join(mkdtempSync(join(tmpdir(), "fabdesk-update-")), "update-install.json");
-    writeFileSync(path, content);
-    return path;
-  };
-
-  test("still on the old version: the recorded install did not apply, and the record stays", () => {
-    const path = record(JSON.stringify({ version: "0.4.20" }));
-    expect(notAppliedVersion(path, "0.4.19")).toBe("0.4.20");
-    expect(existsSync(path)).toBe(true);
-  });
-
-  test("running the recorded version: it applied, and the record is cleared", () => {
-    const path = record(JSON.stringify({ version: "0.4.20" }));
-    expect(notAppliedVersion(path, "0.4.20")).toBeNull();
-    expect(existsSync(path)).toBe(false);
-  });
-
-  test("no record, or an unreadable one, blocks nothing", () => {
-    expect(notAppliedVersion(join(tmpdir(), "fabdesk-update-missing.json"), "0.4.19")).toBeNull();
-    expect(notAppliedVersion(record("not json"), "0.4.19")).toBeNull();
-    expect(notAppliedVersion(record(JSON.stringify({ version: 7 })), "0.4.19")).toBeNull();
+    expect(assetForInstallMode(result, "system-package", "linux", "x64")?.kind).toBe("deb");
+    expect(assetForInstallMode(result, "system-package", "linux", "arm64")).toBeNull();
+    expect(assetForInstallMode(result, "installer", "linux", "x64")?.kind).toBe("deb");
+    expect(assetForInstallMode(result, "move-to-applications", "darwin", "arm64")).toBe(zip);
+    expect(assetForInstallMode({ ...result, latest: { ...result.latest!, assets: assets.filter(a => a.kind !== "deb") } }, "system-package", "linux", "x64")).toBeNull();
   });
 });

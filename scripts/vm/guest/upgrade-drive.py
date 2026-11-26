@@ -18,10 +18,14 @@ import http.client
 import json
 import os
 import sys
+import subprocess
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
+
+from upgrade_normal_restart import click_update, save_test_project, normal_restart, verify_saved_project
 
 FEED = "https://fabplane.com/desktop/latest.json"
 # What a bridge call raises when the app is not there (yet, or any more).
@@ -80,7 +84,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-data", required=True)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--feed", default=FEED)
+    parser.add_argument("--feed", default=os.environ.get("FABDESK_UPDATE_URL", FEED))
+    parser.add_argument("--executable", help="Original installed path to reopen after ordinary Quit")
+    parser.add_argument("--one-click", action="store_true", help="Require the visible Update button and normal restart")
     parser.add_argument("--timeout", type=int, default=900)
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)
@@ -143,9 +149,43 @@ def main():
     if not status.get("updateAvailable") or offered != target:
         finish(f"the app offers {offered} (updateAvailable={status.get('updateAvailable')}), expected {target}")
 
-    # Not awaited: the call resolves when the download ends, far past the bridge's eval limit.
-    bridge.eval("void window.fabdesk.downloadUpdate(), null")
-    step("started the download (what clicking the badge does)")
+    # Keep testing the historical download/restart contract for older published versions.
+    # Candidate tests require the real control; they cannot fall back to a preload call.
+    one_click = args.one_click or (args.executable and bridge.eval(
+        "Boolean(document.querySelector('[aria-label=\"FabDesk update\"] button[aria-label^=\"Update to\"]'))"))
+    project = None
+    if one_click:
+        if not args.executable:
+            finish("one-click test requires the original installed executable")
+        try:
+            if os.environ.get("FABDESK_TEST_DEB_NAME"):
+                deb_auth = subprocess.Popen(["/usr/bin/python3", str(Path(__file__).with_name("deb-ci-auth.py")), str(old_bridge_pid)])
+            click_update(bridge, target, Path(args.out))
+            if os.environ.get("FABDESK_TEST_MOVE") == "1":
+                # macOS relaunches the installed copy as part of first-time relocation.
+                # The accepted update must resume there without another click.
+                move_deadline = min(deadline, time.time() + 120)
+                while time.time() < move_deadline:
+                    try:
+                        if (bridge.pid() and bridge.pid() != old_bridge_pid and
+                            bridge.call("GET", "/state")["app"]["version"] == report["from"]):
+                            break
+                    except GONE:
+                        pass
+                    time.sleep(1)
+                else:
+                    finish("Move to Applications did not open the installed copy")
+                if not Path(args.executable).is_file():
+                    finish("The relocated app is missing from Applications")
+                old_pid, old_bridge_pid = bridge.daemon()["pid"], bridge.pid()
+                step("the mounted copy moved to Applications and resumed the authorized update")
+            project = save_test_project(bridge)
+        except Exception as error:
+            finish(f"visible update or project save failed: {error}")
+        step("clicked the visible Update control once and saved a project using the running core")
+    else:
+        bridge.eval("void window.fabdesk.downloadUpdate(), null")
+        step("started the legacy download")
     last = None
     state = {}
     while time.time() < deadline:
@@ -162,17 +202,25 @@ def main():
         time.sleep(2)
     if state.get("state") != "done":
         finish("timed out while downloading the update")
+    if one_click and os.environ.get("FABDESK_TEST_DEB_NAME") and deb_auth.wait(timeout=20) != 0:
+        finish("the test did not complete normal Debian package-manager authorization")
     report["downloaded"] = state.get("filename")
     if not state.get("restart"):
         finish(f"the app fell back to the installer file ({state.get('filename')}) instead of updating in place")
     bridge.screenshot(os.path.join(args.out, "upgrade-ready.png"))
-    try:
-        bridge.eval("void window.fabdesk.openUpdate(), null")
-    except GONE:
-        pass  # Windows and the AppImage quit before the bridge can answer
-    step("asked the app to restart into the update (what clicking Restart to update does)")
+    if one_click:
+        try:
+            normal_restart(bridge, args.executable, target, state, old_bridge_pid, deadline, step, Path(args.out))
+        except Exception as error:
+            finish(f"normal restart failed: {error}")
+    else:
+        try:
+            bridge.eval("void window.fabdesk.openUpdate(), null")
+        except GONE:
+            pass  # Windows and the AppImage quit before the bridge can answer
+        step("asked the legacy updater to restart")
     # A failed install comes back as an error state while the old app is still up.
-    for _ in range(10):
+    for _ in range(0 if one_click else 10):
         try:
             state = bridge.eval("window.fabdesk.updateDownloadState()") or {}
         except GONE:
@@ -204,6 +252,12 @@ def main():
             while time.time() < window_deadline:
                 try:
                     if bridge.pid() != old_bridge_pid and bridge.eval("document.readyState") == "complete":
+                        if one_click:
+                            app_version = bridge.call("GET", "/state")["app"]["version"]
+                            if app_version != target:
+                                finish(f"desktop reports {app_version}; expected {target}")
+                            verify_saved_project(bridge, project)
+                            step(f"desktop and core are both {target}; saved project recovered")
                         step(f"window is back (app pid {bridge.pid()})")
                         bridge.screenshot(os.path.join(args.out, "upgrade-after.png"))
                         finish(None)

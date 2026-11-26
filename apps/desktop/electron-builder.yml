@@ -85,6 +85,10 @@ linux:
       filter: ["fabdesk-core*", "open-catalog/**"]
     - from: ../../dist/pcb/linux-${arch}/
       to: pcb
+deb:
+  # Preserve electron-builder's default tray recommendation. pkexec uses the desktop's
+  # own authentication agent when updating the installed package.
+  recommends: ["libappindicator3-1", "pkexec | policykit-1"]
 win:
   icon: build/icon.ico
   executableName: fabplane

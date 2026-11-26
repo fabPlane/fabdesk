@@ -20,9 +20,9 @@ import {
   syncErrorReportingFromCore,
 } from "./sentry";
 import { registerUpdateIpc, UpdateChecker } from "./updates";
-import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
-import { inPlaceUnsupportedReason } from "./update-feed";
-import { UpdateInstaller } from "./update-install";
+import { registerUpdateDownloadIpc } from "./update-download";
+import { createAlternateUpdateTransport, desktopInstallMode } from "./update-installation";
+import { createUpdateInstaller } from "./update-install";
 import { migrateLegacyUserData } from "./user-data";
 import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
 import { CadRuntimeManager, CadRuntimeConsent } from "./cad-runtime";
@@ -153,18 +153,28 @@ let pcbSupervisor: PcbSupervisor | null = null;
 let cadSupervisor: CadSupervisor | null = null;
 let automation: AppAutomation | null = null;
 let quitting = false;
+let backendsStopped = false;
+let canApplyOnExit = true;
+let installer: ReturnType<typeof createUpdateInstaller> | undefined;
 
 /**
- * Stops the core and the bridges and marks the app as quitting, so the next quit goes straight
- * through. Shared by a normal quit and by an in-place update, which must not replace the app
- * while its child processes still run from it.
+ * Release backend files before the final app quit can replace the installed binaries.
  */
 async function stopBackendsForQuit(): Promise<void> {
   if (quitting) return;
   quitting = true;
   void automation?.stop();
   try {
-    await supervisor?.stop({ shutdown: true }).catch(() => {});
+    if (installer?.state().state === "done") {
+      try { await supervisor?.stopForUpdate(); }
+      catch (error) {
+        canApplyOnExit = false;
+        console.error("[update] core could not stop:", error);
+        dialog.showErrorBox("FabDesk update postponed", error instanceof Error ? error.message : String(error));
+      }
+    } else {
+      await supervisor?.stop({ shutdown: true }).catch(() => {});
+    }
     await Promise.all([pcbSupervisor?.stop(), cadSupervisor?.stop()]);
     await flushSentry();
   } catch {
@@ -397,31 +407,25 @@ if (!app.requestSingleInstanceLock()) {
         postFunnelHandoff(launchHandoff, info);
       }
     });
+    const installMode = desktopInstallMode();
     const updates = new UpdateChecker({
+      installMode,
       url: process.env["FABDESK_UPDATE_URL"],
       enabled: process.env["FABDESK_UPDATE_CHECK"] !== "0",
     });
     registerUpdateIpc(updates);
-    const downloader = new UpdateDownloader(updates);
-    const inPlaceBlocked = inPlaceUnsupportedReason({
-      platform: process.platform,
-      packaged: app.isPackaged,
-      exePath: app.getPath("exe"),
-      appImage: process.env["APPIMAGE"],
-      disabled: process.env["FABDESK_UPDATE_INPLACE"] === "0",
-    });
-    if (inPlaceBlocked) console.log(`[update] installer downloads only: ${inPlaceBlocked}`);
-    registerUpdateDownloadIpc(
-      inPlaceBlocked
-        ? downloader
-        : new UpdateInstaller(updates, {
-            prepareQuit: stopBackendsForQuit,
-            fallback: downloader,
-            installRecordPath: join(app.getPath("userData"), "update-install.json"),
-          }),
-    );
+    const alternate = createAlternateUpdateTransport(installMode, updates);
+    if (alternate) registerUpdateDownloadIpc(alternate);
+    else {
+      installer = createUpdateInstaller(updates, join(app.getPath("userData"), "update-install.json"), async () => {
+        await coreStartup;
+        await sup.assertCanUpdate();
+      });
+      registerUpdateDownloadIpc(installer);
+    }
     updates.start();
     coreStartup = supervisor.start();
+    void installer?.restore().catch(error => console.error("[update] could not restore the pending update:", error));
     createWindow();
     // Startup deep links stay queued for take() after the renderer mounts.
     // Sending here is always lost because webContents has not loaded yet.
@@ -448,9 +452,21 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== "darwin") app.quit();
   });
 
-  app.on("before-quit", (e) => {
-    if (quitting || !supervisor) return;
+  app.on("before-quit", () => {
+    if (!quitting) installer?.beforeQuit();
+  });
+  // All windows have accepted closing by will-quit. A veto leaves the current core,
+  // bridges and staged update intact. Coalesce repeated quit requests during shutdown.
+  app.on("will-quit", (e) => {
+    if (backendsStopped || !supervisor) return;
     e.preventDefault();
-    void stopBackendsForQuit().finally(() => app.quit());
+    if (!quitting) void stopBackendsForQuit().finally(() => {
+      backendsStopped = true;
+      app.quit();
+    });
+  });
+  app.on("quit", (_e, exitCode) => {
+    try { if (canApplyOnExit) installer?.finishQuit(exitCode); }
+    catch (error) { console.error("[update] could not install on exit:", error); }
   });
 }

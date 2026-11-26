@@ -17,6 +17,10 @@ on:
         default: "public"
         type: choice
         options: [public, internal]
+      update_fixture:
+        description: "Internal only: stamp 0.0.1 to test a real upgrade to a published version"
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ inputs.channel || 'public' }}-${{ github.ref }}
@@ -98,6 +102,10 @@ jobs:
         run: |
           base=$(bun -p "require('./package.json').version.split('.').slice(0,2).join('.')")
           version="${base}.${{ github.run_number }}"
+          if [ "${{ inputs.update_fixture }}" = true ]; then
+            test "$CHANNEL" = internal || { echo "::error::Update fixtures require the internal channel"; exit 1; }
+            version=0.0.1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "Release version $version"

@@ -30,6 +30,10 @@ on:
         description: "Older release tag (for example v0.4.21): run the in-place update test from it to the site's latest instead of the install test"
         required: false
         default: ""
+      one_click_target:
+        description: "Test visible Update in the internal build from run_id against this published tag (e.g. v0.4.26)"
+        required: false
+        default: ""
 
 permissions:
   actions: read
@@ -102,7 +106,7 @@ jobs:
           echo "to=$tag" >> "$GITHUB_OUTPUT"
 
   macos:
-    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos')
+    if: inputs.one_click_target == '' && inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos')
     needs: select
     strategy:
       fail-fast: false
@@ -134,7 +138,7 @@ jobs:
           retention-days: 7
 
   linux:
-    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'linux')
+    if: inputs.one_click_target == '' && inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'linux')
     needs: select
     strategy:
       fail-fast: false
@@ -162,7 +166,7 @@ jobs:
           retention-days: 7
 
   windows:
-    if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'windows')
+    if: inputs.one_click_target == '' && inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'windows')
     needs: select
     runs-on: windows-2025
     timeout-minutes: 30
@@ -275,3 +279,76 @@ jobs:
           path: ${{ runner.temp }}/fabdesk-upgrade-test
           if-no-files-found: ignore
           retention-days: 7
+
+  candidate-upgrade:
+    name: One-click upgrade · ${{ matrix.label }}
+    if: github.event_name == 'workflow_dispatch' && inputs.one_click_target != '' && inputs.run_id != ''
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: Mac Apple Silicon, os: macos-15, target: darwin-arm64, ext: dmg }
+          - { label: Mac Intel from mounted DMG, os: macos-15-intel, target: darwin-x64, ext: dmg, move: '1' }
+          - { label: Linux AppImage, os: ubuntu-22.04, target: linux-x64, ext: AppImage }
+          - { label: Linux Debian, os: ubuntu-22.04, target: linux-x64, ext: deb }
+          - { label: Windows NSIS, os: windows-2025, target: windows-x64, ext: exe }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false, persist-credentials: false }
+      - uses: actions/download-artifact@v6
+        with:
+          name: installers-bun-${{ matrix.target }}
+          path: ${{ runner.temp }}/upgrade-source
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Choose the exact installed candidate and target manifest
+        shell: bash
+        env:
+          TARGET_TAG: ${{ inputs.one_click_target }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          temp="$RUNNER_TEMP"
+          if [ "$RUNNER_OS" = Windows ]; then temp=$(cygpath -u "$temp"); fi
+          shopt -s nullglob
+          files=("$temp"/upgrade-source/fabplane-*."$EXT")
+          test "${#files[@]}" = 1
+          echo "TEST_INSTALLER=${files[0]}" >> "$GITHUB_ENV"
+          echo "FABDESK_UPDATE_URL=https://github.com/$GITHUB_REPOSITORY/releases/download/$TARGET_TAG/manifest.json" >> "$GITHUB_ENV"
+          echo "FABDESK_UPGRADE_EXPECT=$TARGET_TAG" >> "$GITHUB_ENV"
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q libfuse2 xvfb imagemagick libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libatk-bridge2.0-0 libdrm2 xdg-utils policykit-1 python3-pexpect >/dev/null
+      - name: Click Update, quit normally, reopen the original installed app
+        id: posix
+        if: runner.os != 'Windows'
+        env:
+          FABDESK_TEST_ONE_CLICK: '1'
+          FABDESK_TEST_MOVE: ${{ matrix.move }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          os=linux; [ "$RUNNER_OS" != macOS ] || os=mac
+          bash scripts/vm/runner-upgrade-test.sh "$os" "$(uname -m)" "$EXT" --file "$TEST_INSTALLER"
+      - name: Click Update, quit normally, reopen the installed Windows app
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          export TEST_INSTALLER="$(cygpath -w "$TEST_INSTALLER")"
+          pwsh -NoProfile -Command '& scripts/vm/guest/windows-upgrade-test.ps1 -Installer $env:TEST_INSTALLER -Out (Join-Path $env:RUNNER_TEMP "fabdesk-upgrade-test") -OneClick; exit $LASTEXITCODE'
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: one-click-${{ matrix.target }}-${{ matrix.ext }}
+          path: |
+            ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/*.png
+            ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/upgrade-report.json
+            ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/app-stdout.txt
+            ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/second-launch.log
+          retention-days: 14
+          if-no-files-found: warn

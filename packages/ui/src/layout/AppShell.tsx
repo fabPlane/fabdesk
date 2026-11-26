@@ -6,6 +6,7 @@ import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
 import { ThreadView } from "../chat/ThreadView";
 import { BoardPanelToggle } from "../components/BoardPanelToggle";
 import { InventoryView } from "../inventory/InventoryView";
+import { UpdateBadge } from "../components/UpdateBadge";
 import { OpenSourceView } from "../opensource/OpenSourceView";
 import { OrderFlow } from "../order/OrderFlow";
 import { ThreadSidebar } from "../sidebar/ThreadSidebar";
@@ -89,6 +90,7 @@ function ClassicAppShell({ onNewChat, coreStatus, banner }: AppShellProps) {
   return (
     <div ref={shellRef} className="fd-workspace flex h-full flex-col">
       <TopBar coreStatus={coreStatus} />
+      <UpdateBadge />
       {banner}
       <div className="min-h-0 flex-1">
         <PanelGroup direction="horizontal" autoSaveId="fabdesk-shell-sidebar">
