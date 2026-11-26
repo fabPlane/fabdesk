@@ -160,9 +160,13 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
     screenshot(bridge, out / "upgrade-ready.png")
     def windows_snapshot():
         diagnostic = Path(__file__).with_name("windows-upgrade-state.ps1")
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(diagnostic),
-                                 str(exe), state["path"], str(bridge.user_data)],
-                                capture_output=True, text=True, timeout=15)
+        try:
+            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(diagnostic),
+                                     str(exe), state["path"], str(bridge.user_data)],
+                                    capture_output=True, text=True, timeout=15)
+        except subprocess.TimeoutExpired:
+            step("Windows diagnostics timed out; continuing the install and relaunch checks")
+            return
         step(f"Windows update: bridge pid={bridge.pid()}, old pid={old_pid}, {result.stdout.strip()}")
 
     if os.name == "nt":
@@ -197,8 +201,8 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
             try:
                 if disk_updated(exe, version, state):
                     break
-            except (OSError, ValueError):
-                pass  # A native installer may be replacing this file.
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                pass  # Retry until the installed version can be verified.
         elif bridge.pid() != old_pid:
             raise RuntimeError("FabDesk reopened itself following a normal Quit")
         time.sleep(1)
