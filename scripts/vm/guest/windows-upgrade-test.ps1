@@ -18,7 +18,8 @@ if ($restartNow) {
   if (!$OneClick -or $Incoming) { throw "Restart now requires a separately launched one-click candidate" }
   $ud = Join-Path $Out "Custom user data"
   $env:FABDESK_HOME = Join-Path $Out "Custom core home"
-  $env:FABDESK_PROJECTS_DIR = Join-Path $Out "Custom projects"
+  # Mixed separators exercise the same path comparison as a user-supplied workspace.
+  $env:FABDESK_PROJECTS_DIR = "$Out//./Custom projects/"
 }
 if (Test-Path -LiteralPath $ud) { throw "Fresh FabDesk test profile required at $ud" }
 Unblock-File $installer

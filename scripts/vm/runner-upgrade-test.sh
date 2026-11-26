@@ -60,7 +60,8 @@ if [ "${FABDESK_TEST_RESTART_NOW:-}" = 1 ]; then
   # that drops these arguments must not pass by finding a bridge in the default profile.
   UD="$APPS/Custom user data"
   export FABDESK_HOME="$APPS/Custom core home"
-  export FABDESK_PROJECTS_DIR="$APPS/Custom projects"
+  # The desktop and both native bridges must agree on this directory, including after restart.
+  export FABDESK_PROJECTS_DIR="$APPS//./Custom projects/"
   ARGS+=("--user-data-dir=$UD")
   EXTRA+=(--restart-now)
 fi
