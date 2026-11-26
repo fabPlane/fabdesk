@@ -363,7 +363,7 @@ jobs:
         shell: bash
         run: |
           export TEST_INSTALLER="$(cygpath -w "$TEST_INSTALLER")"
-          pwsh -NoProfile -Command '& scripts/vm/guest/windows-upgrade-test.ps1 -Installer $env:TEST_INSTALLER -Out (Join-Path $env:RUNNER_TEMP "fabdesk-upgrade-test") -OneClick; exit $LASTEXITCODE'
+          pwsh -NoProfile -Command '& scripts/vm/guest/windows-upgrade-test.ps1 -Installer $env:TEST_INSTALLER -Out (Join-Path $env:RUNNER_TEMP "fabdesk-upgrade-test") -OneClick -Incoming; exit $LASTEXITCODE'
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -371,6 +371,7 @@ jobs:
           path: |
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/*.png
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/upgrade-report.json
+            ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/incoming-launch-report.json
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/app-stdout.txt
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/second-launch.log
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/ShipIt_stderr.log
