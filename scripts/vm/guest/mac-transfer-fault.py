@@ -120,7 +120,10 @@ try:
         assert events[1]["bytesSent"]==asset["size"]
         assert events[0]["bytesSent"]==(0 if fault=="503" else 4*1024*1024)
         assert result["sha256"]==asset["sha256"]
-        assert digest(Path(result["path"]))==asset["sha256"],"Downloaded ZIP differs from public release"
+        # Squirrel owns the staged installation; FabDesk deliberately returns an empty renderer path on Mac.
+        cached=list((Path.home()/"Library/Caches").glob("*/pending/"+file))
+        assert len(cached)==1,("Cannot uniquely identify the downloaded Mac ZIP",len(cached))
+        assert digest(cached[0])==asset["sha256"],"Downloaded ZIP differs from public release"
         report["cachedZipVerified"]=True
         ready=b.eval('document.querySelector(\'[aria-label="FabDesk update"]\')?.innerText')
         assert "Ready for next launch" in ready
