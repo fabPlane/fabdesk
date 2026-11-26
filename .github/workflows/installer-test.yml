@@ -302,7 +302,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false, persist-credentials: false }
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: installers-bun-${{ matrix.target }}
           path: ${{ runner.temp }}/upgrade-source
