@@ -44,9 +44,6 @@ jobs:
           sparse-checkout: scripts/vm
           sparse-checkout-cone-mode: false
           persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: installers-bun-darwin-arm64

@@ -14,7 +14,10 @@ payload=release/file
 manifest=json.loads((release/"manifest.json").read_text())
 asset=next(a for a in manifest["assets"] if a["filename"]==file)
 def digest(p):
-    with p.open("rb") as src: return hashlib.file_digest(src,"sha256").hexdigest()
+    h=hashlib.sha256()
+    with p.open("rb") as src:
+        for chunk in iter(lambda:src.read(1024*1024),b""): h.update(chunk)
+    return h.hexdigest()
 assert digest(payload)==asset["sha256"]=="287b049eb9f80220c2daa0a47f6f95a2b08d0f83eb864da6d0f165d87b87a0e4"
 assert payload.stat().st_size==asset["size"]==531530096
 events=[]
