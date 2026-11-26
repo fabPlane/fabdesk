@@ -128,6 +128,15 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
     if bridge.pid() != old_pid:
         raise RuntimeError("Clicking Update restarted the app before the user quit")
     screenshot(bridge, out / "upgrade-ready.png")
+    def windows_snapshot():
+        diagnostic = Path(__file__).with_name("windows-upgrade-state.ps1")
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(diagnostic),
+                                 str(exe), state["path"], str(bridge.user_data)],
+                                capture_output=True, text=True, timeout=15)
+        step(f"Windows update: bridge pid={bridge.pid()}, old pid={old_pid}, {result.stdout.strip()}")
+
+    if os.name == "nt":
+        windows_snapshot()
     if sys.platform == "darwin":
         mac_window_lifecycle(bridge, exe, old_pid, step)
         subprocess.run(["osascript", "-e", 'tell application id "com.tensorfleet.fabdesk" to quit'],
@@ -139,7 +148,11 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
         except OSError:
             pass
     step("quit normally with no Install or Restart button click")
+    next_snapshot = time.monotonic()
     while time.time() < deadline:
+        if os.name == "nt" and time.monotonic() >= next_snapshot:
+            windows_snapshot()
+            next_snapshot = time.monotonic() + 30
         if not bridge.pid():
             try:
                 if disk_updated(exe, version, state):

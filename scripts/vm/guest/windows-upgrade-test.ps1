@@ -39,11 +39,18 @@ $env:FABDESK_AUTOMATION = "1"
 # The silent installer starts the updated app itself; a user-level variable reaches it either way.
 [Environment]::SetEnvironmentVariable("FABDESK_AUTOMATION", "1", "User")
 Remove-Item Env:FABDESK_UPDATE_CHECK -ErrorAction SilentlyContinue
-Start-Process -FilePath $exe | Out-Null
+$stdout = Join-Path $Out "native-stdout.txt"
+$stderr = Join-Path $Out "native-stderr.txt"
+Start-Process -FilePath $exe -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
 $extra = @()
 if ($OneClick) { $extra += '--one-click' }
 python (Join-Path $PSScriptRoot "upgrade-drive.py") --user-data $ud --out $Out --timeout $Timeout --executable $exe @extra
 $rc = $LASTEXITCODE
+# Report only native installation milestones, never the complete process output.
+$milestones = "Install on explicit quitAndInstall|Install: isSilent|Executing:|No update filepath provided|Could not run installer|Cannot run installer|could not install on exit"
+foreach ($line in (Select-String -Path $stdout, $stderr -Pattern $milestones -ErrorAction SilentlyContinue)) {
+  Log $line.Line
+}
 Get-ChildItem (Split-Path $exe) -ErrorAction SilentlyContinue | Select-Object Name, Length, LastWriteTime | Out-File (Join-Path $Out "install-dir.txt")
 Get-ChildItem $ud -Include *.log, update-install.json -Recurse -Depth 0 -ErrorAction SilentlyContinue | Copy-Item -Destination $Out -ErrorAction SilentlyContinue
 try {
