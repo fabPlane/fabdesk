@@ -351,6 +351,8 @@ jobs:
               /usr/bin/dbus-run-session -- bash scripts/vm/runner-upgrade-test.sh "$os" "$(uname -m)" "$EXT" --file "$TEST_INSTALLER" || {
                 rc=$?
                 sudo -n journalctl -u polkit.service --since '5 minutes ago' --no-pager -o cat
+                sudo -n journalctl --since '5 minutes ago' --no-pager -o cat -g 'pam_unix\(polkit|polkit-agent-helper'
+                sudo -n grep -hsE '^AdminIdentities=' /etc/polkit-1/localauthority.conf.d/*.conf || true
                 exit "$rc"
               }
           else
