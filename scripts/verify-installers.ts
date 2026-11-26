@@ -165,6 +165,13 @@ function checkMacApp(app: string, label: string): void {
       fail(`${label}: notarization ticket not stapled (${st.out.trim().split("\n").pop()})`);
     else console.log(`${label}: Developer ID signed, notarization ticket stapled`);
   }
+  // Squirrel.Mac cannot strip quarantine from a read-only file, so one such file in the bundle
+  // makes every in-place update fail (after-pack.cjs makes them writable).
+  const readOnly = run(["find", app, "!", "-type", "l", "!", "-perm", "-u+w"], { allowFail: true })
+    .out.split("\n")
+    .filter((line) => line.startsWith(app));
+  if (readOnly.length > 0)
+    fail(`${label}: ${readOnly.length} bundle entries are not owner-writable, in-place updates would fail (first: ${readOnly[0]})`);
   const resources = join(app, "Contents", "Resources");
   checkCore(join(resources, "core", "fabdesk-core"), label);
   checkBundledKicad(resources, label);

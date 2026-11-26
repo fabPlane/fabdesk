@@ -7,11 +7,17 @@
  *    Electron template's signature, which no longer matches the bundle and is refused on Apple Silicon.
  *    Re-sign ad hoc (identity "-") with our bundle id so the app launches; Gatekeeper still warns because
  *    it is not notarized, and real signing takes over automatically once CSC_LINK is provided.
+ * 3. Make every file in the macOS bundle owner-writable. Squirrel.Mac strips the quarantine
+ *    attribute from each file of an update, which fails on a read-only one ("Permission denied");
+ *    it then gives up after three attempts and the in-place update never applies. The bundled
+ *    Java runtime ships its legal notices read-only.
  */
 const { execFileSync } = require("node:child_process");
 const {
+  chmodSync,
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -121,6 +127,22 @@ function signAdHocSidecars(appPath, binaries, entitlements, run = execFileSync) 
   }
 }
 
+/** Adds owner write to every file and folder under `root` that lacks it; returns how many changed. */
+function makeOwnerWritable(root) {
+  let changed = 0;
+  const visit = (path) => {
+    const info = lstatSync(path);
+    if (info.isSymbolicLink()) return;
+    if ((info.mode & 0o200) === 0) {
+      chmodSync(path, (info.mode & 0o7777) | 0o200);
+      changed += 1;
+    }
+    if (info.isDirectory()) for (const name of readdirSync(path)) visit(join(path, name));
+  };
+  visit(root);
+  return changed;
+}
+
 module.exports = async function afterPack(context) {
   copyBundledKicad(context);
 
@@ -133,6 +155,8 @@ module.exports = async function afterPack(context) {
   }
   // electron-builder's binaries list takes literal paths, not globs. Enumerate all JRE
   // dylibs (including lib/server/libjvm.dylib) before its hardened-runtime signing step.
+  const madeWritable = makeOwnerWritable(appPath);
+  if (madeWritable > 0) console.log(`after-pack: made ${madeWritable} read-only bundle entries owner-writable`);
   const jreBinaries = jreSigningBinaries(appPath);
   const options = context.packager.platformSpecificBuildOptions;
   options.binaries = [...new Set([...(options.binaries ?? []), ...jreBinaries])];
@@ -164,4 +188,5 @@ module.exports = async function afterPack(context) {
 module.exports.platformArch = platformArch;
 module.exports.copyBundledKicad = copyBundledKicad;
 module.exports.jreSigningBinaries = jreSigningBinaries;
+module.exports.makeOwnerWritable = makeOwnerWritable;
 module.exports.signAdHocSidecars = signAdHocSidecars;
