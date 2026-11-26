@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Resolve an exact public Release run to its tag; otherwise use run artifacts."""
+"""Resolve an exact public Release run to its tag; otherwise use run artifacts.
+
+  resolve-run-release.py <run id>          the public tag that run published, or nothing
+  resolve-run-release.py --previous vX.Y.Z the public release to test an in-place update from
+"""
 import base64
 import json
 import os
@@ -42,9 +46,35 @@ def resolve(run_id, fetch=github):
     return tag
 
 
+# The first release whose app can replace itself; older ones only download an installer.
+FIRST_IN_PLACE = (0, 4, 21)
+
+
+def version_of(tag):
+    match = re.fullmatch(r'v(\d+)\.(\d+)\.(\d+)', tag or '')
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+def previous(tag, fetch=github):
+    """The newest published release older than `tag` that updates in place, or None."""
+    current = version_of(tag)
+    if current is None:
+        raise ValueError('release tag must look like vX.Y.Z')
+    older = [
+        (version_of(release['tag_name']), release['tag_name'])
+        for release in fetch('releases?per_page=100')
+        if not release['draft'] and not release['prerelease'] and version_of(release['tag_name'])
+    ]
+    older = [entry for entry in older if FIRST_IN_PLACE <= entry[0] < current]
+    return max(older)[1] if older else None
+
+
 if __name__ == '__main__':
     try:
-        print(resolve(sys.argv[1]) or '')
+        if sys.argv[1] == '--previous':
+            print(previous(sys.argv[2]) or '')
+        else:
+            print(resolve(sys.argv[1]) or '')
     except Exception as error:
         print('Cannot resolve exact release: ' + str(error), file=sys.stderr)
         sys.exit(1)

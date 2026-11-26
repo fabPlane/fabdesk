@@ -11,8 +11,14 @@ reports a failure. The macOS x64 build is exercised under Rosetta on the arm64 r
 
 ### In-place update test
 
-`gh workflow run installer-test.yml -f upgrade_from=v0.4.21` runs the update test instead of the
-install test, on the same fresh runners (macOS arm64 zip, Linux AppImage, Windows NSIS; `platform`
+After every public Release the workflow also updates the previous published release to the new
+one, next to the install test: the `select` job resolves the Release run to its tag and picks the
+newest published release before it (`scripts/vm/resolve-run-release.py --previous`), which is what
+most users are running when the new one arrives. Internal and branch runs publish nothing and get
+no update test.
+
+`gh workflow run installer-test.yml -f upgrade_from=v0.4.21` runs only the update test, from that
+release to the site's latest, on the same fresh runners (macOS arm64 zip, Linux AppImage, Windows NSIS; `platform`
 narrows it). Each job installs that older release, launches it with the automation bridge and the
 update check on. `scripts/vm/guest/upgrade-drive.py` then makes the calls the update badge makes
 (a fresh profile is at the sign-in screen, where the badge is not drawn): it starts the download,
