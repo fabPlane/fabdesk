@@ -25,7 +25,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from upgrade_normal_restart import click_update, save_test_project, normal_restart, verify_saved_project
+from upgrade_normal_restart import click_update, core_request, save_test_project, normal_restart, verify_saved_project
 
 FEED = "https://fabplane.com/desktop/latest.json"
 # What a bridge call raises when the app is not there (yet, or any more).
@@ -158,10 +158,15 @@ def main():
         if not args.executable:
             finish("one-click test requires the original installed executable")
         try:
+            test_move = os.environ.get("FABDESK_TEST_MOVE") == "1"
+            if test_move:
+                core_request(bridge, "PATCH", "/settings", b'{"keepCoreRunning":true}')
+                if not json.loads(core_request(bridge, "GET", "/settings")).get("keepCoreRunning"):
+                    finish("Could not enable the persistent core on the mounted copy")
             if os.environ.get("FABDESK_TEST_DEB_NAME"):
                 deb_auth = subprocess.Popen(["/usr/bin/python3", str(Path(__file__).with_name("deb-ci-auth.py")), str(old_bridge_pid)])
             click_update(bridge, target, Path(args.out))
-            if os.environ.get("FABDESK_TEST_MOVE") == "1":
+            if test_move:
                 # macOS relaunches the installed copy as part of first-time relocation.
                 # The accepted update must resume there without another click.
                 move_deadline = min(deadline, time.time() + 120)
@@ -177,8 +182,18 @@ def main():
                     finish("Move to Applications did not open the installed copy")
                 if not Path(args.executable).is_file():
                     finish("The relocated app is missing from Applications")
+                if bridge.daemon()["pid"] == old_pid:
+                    finish("The relocated app reused the core running from the disk image")
+                try:
+                    os.kill(old_pid, 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    finish("The mounted copy left its original core process running")
+                if not json.loads(core_request(bridge, "GET", "/settings")).get("keepCoreRunning"):
+                    finish("Moving to Applications changed the user's persistent-core setting")
                 old_pid, old_bridge_pid = bridge.daemon()["pid"], bridge.pid()
-                step("the mounted copy moved to Applications and resumed the authorized update")
+                step("the mounted copy released its persistent core and resumed the update in Applications")
             project = save_test_project(bridge)
         except Exception as error:
             finish(f"visible update or project save failed: {error}")

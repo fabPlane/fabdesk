@@ -38,7 +38,7 @@ export function createAlternateUpdateTransport(mode: AlternateInstallMode | null
     cancel() {},
     open: async () => "",
     async download() {
-      if (moving) return state;
+      if (moving || state.state === "installing") return state;
       moving = true;
       const record = join(app.getPath("userData"), "update-install.json");
       let accepted = false;
@@ -49,6 +49,10 @@ export function createAlternateUpdateTransport(mode: AlternateInstallMode | null
         await checkCore?.();
         saveAcceptedUpdate(record, { version: result.latest.version, sha256: asset.sha256 });
         accepted = true;
+        // The native mover calls Browser::Quit before returning. Its will-quit
+        // listener must see this intent and drain the owned core, even on a DMG
+        // whose user enabled keepCoreRunning. A canceled move resets it below.
+        state = { state: "installing", version: result.latest.version };
         const exe = app.getPath("exe");
         const installed = join("/Applications", basename(dirname(dirname(dirname(exe)))));
         if (existsSync(installed) && (!writable(installed) || !writable("/Applications"))) {
@@ -56,7 +60,9 @@ export function createAlternateUpdateTransport(mode: AlternateInstallMode | null
           // copy so a currently running application is never overwritten.
           const id = execFileSync("/usr/bin/plutil", ["-extract", "CFBundleIdentifier", "raw", join(installed, "Contents", "Info.plist")], { encoding: "utf8" }).trim();
           if (id !== "com.tensorfleet.fabdesk") throw new Error("A different application occupies the fabPlane installation path.");
-          app.once("will-quit", () => app.relaunch({ execPath: join(installed, "Contents", "MacOS", basename(exe)) }));
+          app.once("quit", (_event, code) => {
+            if (code === 0) app.relaunch({ execPath: join(installed, "Contents", "MacOS", basename(exe)) });
+          });
           app.quit();
           return state;
         }

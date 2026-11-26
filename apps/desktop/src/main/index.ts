@@ -156,7 +156,7 @@ let automation: AppAutomation | null = null;
 let quitting = false;
 let backendsStopped = false;
 let installer: ReturnType<typeof createUpdateInstaller> | undefined;
-let debUpdater: UpdateTransport | undefined;
+let systemUpdater: UpdateTransport | undefined;
 const debRestart = new RestartOnQuit();
 
 /**
@@ -167,10 +167,10 @@ async function stopBackendsForQuit(): Promise<void> {
   quitting = true;
   // apt may still be replacing files with system authorization. Finish the existing
   // package transaction before releasing the app and its child processes.
-  if (debUpdater?.state().state === "downloading" || debUpdater?.state().state === "verifying") debUpdater.cancel();
-  await debUpdater?.waitForInstall?.();
-  const updateState = (installer ?? debUpdater)?.state().state;
-  if (updateState === "done" || updateState === "verifying" || updateState === "downloading") {
+  if (systemUpdater?.state().state === "downloading" || systemUpdater?.state().state === "verifying") systemUpdater.cancel();
+  await systemUpdater?.waitForInstall?.();
+  const updateState = (installer ?? systemUpdater)?.state().state;
+  if (updateState === "done" || updateState === "installing" || updateState === "verifying" || updateState === "downloading") {
     await supervisor?.stopForUpdate();
   } else {
     await supervisor?.stop({ shutdown: true }).catch(() => {});
@@ -423,7 +423,7 @@ if (!app.requestSingleInstanceLock()) {
     };
     const alternate = createAlternateUpdateTransport(installMode, updates, checkCore, async () => debRestart.request(() => app.quit()));
     if (alternate) {
-      if (installMode === "system-package") debUpdater = alternate;
+      if (installMode === "system-package" || installMode === "move-to-applications") systemUpdater = alternate;
       registerUpdateDownloadIpc(alternate);
     } else {
       installer = createUpdateInstaller(updates, join(app.getPath("userData"), "update-install.json"), checkCore);
@@ -483,7 +483,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("quit", (_e, exitCode) => {
     try {
       installer?.finishQuit(exitCode);
-      if (exitCode === 0 && debRestart.relaunch && debUpdater?.state().state === "done") app.relaunch();
+      if (exitCode === 0 && debRestart.relaunch && systemUpdater?.state().state === "done") app.relaunch();
     }
     catch (error) { console.error("[update] could not install on exit:", error); }
   });
