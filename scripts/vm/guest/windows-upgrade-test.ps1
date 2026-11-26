@@ -59,6 +59,7 @@ if ($Incoming) {
   Start-Process -FilePath $exe @launch -RedirectStandardOutput $stdout -RedirectStandardError $stderr | Out-Null
 }
 $extra = @()
+$env:FABDESK_TEST_INSTALLED_EXE = $exe
 if ($OneClick) { $extra += '--one-click' }
 if ($restartNow) { $extra += '--restart-now' }
 python (Join-Path $PSScriptRoot "upgrade-drive.py") --user-data $ud --out $Out --timeout $Timeout --executable $exe @extra

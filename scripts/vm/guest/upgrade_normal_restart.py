@@ -119,7 +119,11 @@ def click_update_button(bridge, label, out, image):
         if not bridge.eval(probe):
             raise RuntimeError("Update control moved or disappeared before the screenshot")
     screenshot(bridge, out / image)
-    bridge.call("POST", "/click", {"selector": selector})
+    if os.name == "nt" and os.environ.get("FABDESK_TEST_WINDOWS_FOCUS") == "1":
+        from windows_focus_watch import native_click
+        native_click(bridge, label, out)
+    else:
+        bridge.call("POST", "/click", {"selector": selector})
 
 
 def disk_updated(exe, version, state):

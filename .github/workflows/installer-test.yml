@@ -301,6 +301,7 @@ jobs:
     env:
       FABDESK_TEST_RESTART_NOW: ${{ inputs.restart_now && '1' || '0' }}
       FABDESK_TEST_SIGNED_OUT: '1'
+      FABDESK_TEST_WINDOWS_FOCUS: '1'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.candidate_matrix) }}
@@ -380,6 +381,7 @@ jobs:
           path: |
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/*.png
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/upgrade-report.json
+            ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/windows-focus-report.json
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/incoming-launch-report.json
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/app-stdout.txt
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/second-launch.log

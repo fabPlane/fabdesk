@@ -309,6 +309,9 @@ def main():
                             verify_signed_out("after")
                             step(f"desktop and core are both {target}; saved project recovered")
                         step(f"window is back (app pid {bridge.pid()})")
+                        if os.name == "nt" and os.environ.get("FABDESK_TEST_WINDOWS_FOCUS") == "1":
+                            import windows_focus_watch
+                            windows_focus_watch.state.finish(bridge.pid())
                         bridge.screenshot(os.path.join(args.out, "upgrade-after.png"))
                         finish(None)
                 except GONE:
