@@ -267,7 +267,7 @@ export function SettingsDialog() {
               <Row label="Share usage data" hint="Share your sessions with us so we can see where fabPlane gets stuck and make it better. This includes your conversations and agent activity, past ones too, and can include your prompts and project files. We keep it private. Turning this off stops future sharing; it doesn't remove what was already shared.">
                 <input type="checkbox" checked={usageArchiveAllowed(draft, privacyScreen ?? true)} onChange={(e) => update((s) => ({ ...s, ...usageArchiveChoice(e.target.checked) }))} />
               </Row>
-              <Row label="Product analytics" hint="Anonymous onboarding steps (app launched, signed in, first project) so we can see where people drop off. Never includes prompts, board files, tokens, emails, project names or paths. This setting stays on this device and is not part of Cloud Settings.">
+              <Row label="Product analytics" hint="Send app activation, successful board builds and limited error categories to PostHog. Campaign tags can connect website visits to app use, and signing in links activity to your account ID. No prompts, board files, tokens, emails, project names, paths or raw error text. Enabled by default; turn off to stop future analytics. This setting stays on this device.">
                 <input type="checkbox" checked={draft.productAnalytics} onChange={(e) => update((s) => ({ ...s, productAnalytics: e.target.checked }))} />
               </Row>
             </div>

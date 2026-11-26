@@ -8,6 +8,7 @@ import { serve, type Daemon } from "../src/serve";
 import { mockServices } from "../../../packages/tools/test/mock-services";
 
 let daemon: Daemon;
+let design: CoreServices["design"];
 let captures: Array<Record<string, unknown>> = [];
 
 beforeAll(async () => {
@@ -35,13 +36,16 @@ beforeAll(async () => {
       captures.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return new Response("{}", { status: 200 });
     },
-    services: async ({ projects, bus, store }) =>
-      mockServices([], {
+    services: async ({ projects, bus, store }) => {
+      const services = mockServices([], {
         projects,
         bus: { emit: (e) => bus.emit(e) },
         routeRuns: store.routeRuns,
         channel: "internal",
-      }) as unknown as CoreServices,
+      }) as unknown as CoreServices;
+      design = services.design;
+      return services;
+    },
   });
 });
 
@@ -89,7 +93,10 @@ describe("funnel HTTP", () => {
   test("POST /funnel/events allow-lists client review and board events", async () => {
     const allowed = await api("/funnel/events", {
       method: "POST",
-      body: JSON.stringify({ event: "onboarding_first_review_viewed", properties: { source: "review" } }),
+      body: JSON.stringify({
+        event: "onboarding_first_review_viewed",
+        properties: { source: "review" },
+      }),
     });
     expect(allowed.status).toBe(200);
     expect((await allowed.json()) as { recorded: boolean }).toEqual({ recorded: true });
@@ -107,7 +114,10 @@ describe("funnel HTTP", () => {
     expect((await denied.json()) as { recorded: boolean }).toEqual({ recorded: false });
     const board = await api("/funnel/events", {
       method: "POST",
-      body: JSON.stringify({ event: "onboarding_first_board_viewed", properties: { source: "pcb" } }),
+      body: JSON.stringify({
+        event: "onboarding_first_board_viewed",
+        properties: { source: "pcb" },
+      }),
     });
     expect(board.status).toBe(200);
     expect((await board.json()) as { recorded: boolean }).toEqual({ recorded: true });
@@ -118,7 +128,7 @@ describe("funnel HTTP", () => {
     expect((pcb?.properties as { source?: string } | undefined)?.source).toBe("pcb");
   });
 
-  test("tool activations wait for a successful tool_result", async () => {
+  test("board activation requires a real successful build, including external calls", async () => {
     const wait = () => new Promise((resolve) => setTimeout(resolve, 50));
     daemon.bus.emit({
       ts: Date.now(),
@@ -160,7 +170,29 @@ describe("funnel HTTP", () => {
     });
     await wait();
     const afterOk = (await (await api("/funnel")).json()) as FunnelSnapshot;
-    expect(afterOk.events.filter((e) => e.event === "onboarding_first_board_built")).toHaveLength(1);
+    expect(afterOk.events.filter((e) => e.event === "onboarding_first_board_built")).toHaveLength(
+      0,
+    );
+    const projectDir = await mkdtemp(join(tmpdir(), "funnel-board-"));
+    await Bun.write(join(projectDir, "circuit.netlist.json"), "BROKEN");
+    expect((await design.build({ projectDir })).ok).toBe(false);
+    expect(
+      daemon.funnel.snapshot().events.some((e) => e.event === "onboarding_first_board_built"),
+    ).toBe(false);
+    await Bun.write(join(projectDir, "circuit.netlist.json"), "{}");
+    expect((await design.build({ projectDir })).ok).toBe(true);
+    await design.build({ projectDir });
+    await daemon.funnel.flush();
+    expect(
+      daemon.funnel.snapshot().events.filter((e) => e.event === "onboarding_first_board_built"),
+    ).toHaveLength(1);
+    const built = captures.filter((e) => e.event === "onboarding_first_board_built");
+    expect(built).toHaveLength(1);
+    expect(built[0]?.properties).toMatchObject({
+      distinct_id: daemon.funnel.distinctId(),
+      utm_source: "newsletter",
+      utm_campaign: "try",
+    });
   });
 
   test("creating a project records onboarding_first_project once", async () => {
@@ -176,6 +208,19 @@ describe("funnel HTTP", () => {
     expect(again.status).toBe(201);
     const snap = (await (await api("/funnel")).json()) as FunnelSnapshot;
     expect(snap.events.filter((e) => e.event === "onboarding_first_project")).toHaveLength(1);
+  });
+
+  test("failed AI runs record an attributed error while user-aborted runs do not", async () => {
+    daemon.bus.emit({ ts: Date.now(), topic: "agent.done", runId: "cancelled", threadId: "thread", status: "aborted" });
+    await daemon.funnel.flush();
+    expect(daemon.funnel.snapshot().events.some(e => e.event === "onboarding_first_ai_run_error")).toBe(false);
+    daemon.bus.emit({ ts: Date.now(), topic: "agent.done", runId: "failed", threadId: "thread", status: "failed" });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    await daemon.funnel.flush();
+    const failure = captures.find(e => e.event === "onboarding_first_ai_run_error");
+    expect(failure?.properties).toMatchObject({ distinct_id: daemon.funnel.distinctId(), utm_source: "newsletter", failure_kind: "failed" });
+    const tool = captures.find(e => e.event === "onboarding_first_tool_error");
+    expect(tool?.properties).toMatchObject({ tool_group: "build", failure_kind: "tool_error" });
   });
 
   test("productAnalytics off is local and stops new events", async () => {

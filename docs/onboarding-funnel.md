@@ -8,13 +8,19 @@ complete no-op when `POSTHOG_KEY` is unset.
 This is not crash reporting ([sentry.md](sentry.md)) and not the first-party product events gated
 by usage-archive consent ([telemetry.md](telemetry.md)). Users can turn the funnel off in
 Settings → Privacy (`productAnalytics`, default on). That flag is local to the device and is not
-part of Cloud Settings.
+part of Cloud Settings. No analytics permission screen is shown. Capture starts automatically
+when a build has a configured key and this setting is enabled. Users can disable it in Settings.
+The session-sharing screen and crash reporting remain separate.
+
+Campaign/account-linked activity is pseudonymous, not fully anonymous. Source builds and forks
+need no organization secrets; leaving the key unset disables capture. Only the public ingestion
+token belongs in distributed binaries, never a personal/admin credential.
 
 Events never include prompts, board files, tokens, emails, project names or paths.
 
 ## Website contract (fabplane.com)
 
-The public site owns posthog-js on `/try`. Pass the anonymous distinct_id plus first-touch fields
+The public site owns posthog-js on `/try` and `/community`. Pass the anonymous distinct_id plus first-touch fields
 into login and download:
 
 | Query key | Meaning |
@@ -63,6 +69,56 @@ fabdesk then:
 Extra activation: `onboarding_sign_in_started`, `onboarding_first_kicad_import`,
 `onboarding_first_board_built`, `onboarding_first_route`, `onboarding_first_board_viewed`. Each
 `(distinct_id, event)` pair is stored once.
+
+`onboarding_first_board_built` is recorded at the design service after a build
+returns `ok: true` with at least one component. This covers built-in agents and
+external MCP/HTTP callers. Agent tool-result text, failures, exceptions and empty
+boards do not qualify. It means a board was generated; it is not evidence of
+DRC/ERC clearance, routing completion, manufacturability or a physically working
+board. Native editing without a compile is outside this metric.
+
+For the ad-to-build funnel use `landing_view` → `download_click` →
+`onboarding_app_launched` → `onboarding_first_board_built`, a seven-day window,
+with optional sign-in/project/AI-run steps as diagnostics rather than mandatory
+steps. Filter the landing step to `utm_source=openai`, `utm_medium=cpc`, and the
+India campaign; break down by `utm_campaign` / `utm_content` on the landing step.
+Do not count `discord_join_click` as a successful design or a completed join.
+
+Installer downloads alone cannot transfer a browser ID to a desktop executable.
+After installation, the download page's explicit `fabplane://open?ph_id=…&utm_…`
+link must be used to adopt attribution. A manual OS launch or a copied Discord
+link may remain unattributed. Do not infer a match from IP, country or timestamps.
+The app must be a release containing the funnel instrumentation and compiled
+PostHog key; already-installed releases are not changed by setting CI secrets.
+
+## Errors during activation
+
+The same attributed person also receives these first-of-stage milestones:
+
+| Event | Trigger |
+| --- | --- |
+| `onboarding_first_board_build_error` | Design-service build fails, throws (except cancellation), or returns an empty board |
+| `onboarding_first_ai_run_error` | An in-app agent run finishes with status `failed`, including startup failures; `aborted` is excluded |
+| `onboarding_first_tool_error` | An in-app agent tool result reports `isError=true` |
+
+These events are once per distinct identity, like the other onboarding milestones.
+They measure affected users, **not total errors**. `failure_kind` is restricted to
+`build_failed`, `empty_board`, `exception`, `failed`, or `tool_error`;
+`tool_group` is restricted to `build`, `route`, `review`, `import`, or `other`.
+Raw exception text, stack traces, tool inputs/outputs, project names/paths, prompts
+and board files are not sent to PostHog. These events respect `productAnalytics`.
+
+Use a unique-user funnel `landing_view` → `onboarding_first_board_build_error` →
+`onboarding_first_board_built` to see recovery, or compare the cohort with any
+first-error event against the cohort reaching first-board activation. Apply
+campaign filters to the landing step. Tool/AI events cover in-app agent sessions;
+external clients are covered for design-service build failures, not every tool.
+
+Detailed crash diagnostics remain in the existing Sentry integration
+([sentry.md](sentry.md)), with its separate `errorReporting` switch. Signed-in
+users use the same account subject in Sentry and the onboarding funnel. Sentry
+is not duplicated as PostHog exception capture, and this does not guarantee
+reporting a crash that occurs before the funnel can initialize.
 
 ## Env vars
 

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Funnel, pick, posthogHost, posthogKey } from "../src/funnel";
+import { Funnel, pick, posthogHost, posthogKey, trackBoardBuilds } from "../src/funnel";
+import type { DesignService } from "@fabdesk/tools";
 import { Store } from "../src/db";
 
 async function openStore(): Promise<Store> {
@@ -25,11 +26,127 @@ describe("posthog key pick", () => {
     expect(posthogKey({ FABDESK_POSTHOG_KEY: "phc_c" })).toBe("phc_c");
     expect(posthogKey({ POSTHOG_KEY: "" })).toBeUndefined();
     expect(posthogHost({})).toBe("https://us.i.posthog.com");
-    expect(posthogHost({ POSTHOG_HOST: "https://eu.i.posthog.com" })).toBe("https://eu.i.posthog.com");
+    expect(posthogHost({ POSTHOG_HOST: "https://eu.i.posthog.com" })).toBe(
+      "https://eu.i.posthog.com",
+    );
   });
 });
 
 describe("Funnel", () => {
+  test("ad handoff and sign-in keep the first successful non-empty build on the same person", async () => {
+    const store = await openStore();
+    const bodies: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    const funnel = new Funnel({
+      store,
+      env: { POSTHOG_KEY: "phc_test" },
+      fetch: async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return new Response("{}", { status: 200 });
+      },
+    });
+    let outcome: "throw" | "failed" | "empty" | "ok" = "failed";
+    const design: Pick<DesignService, "build"> = {
+      async build() {
+        if (outcome === "throw") throw new Error("build failed");
+        return {
+          ok: outcome !== "failed",
+          errors: [],
+          warnings: [],
+          durationMs: 1,
+          counts: {
+            components: outcome === "ok" ? 2 : 0,
+            nets: 1,
+            footprintsAdded: 2,
+            footprintsPlaced: 2,
+          },
+        };
+      },
+    };
+    trackBoardBuilds(design, funnel);
+    funnel.adoptFromProcess(
+      [
+        "fabplane://open?ph_id=web_ad_visitor&utm_source=openai&utm_medium=cpc&utm_campaign=india_circuits&utm_content=creative_1",
+      ],
+      {},
+    );
+    funnel.record("onboarding_app_launched");
+    funnel.identify("account_subject");
+    try {
+      for (const next of ["failed", "empty", "throw"] as const) {
+        outcome = next;
+        try {
+          await design.build({ projectDir: "never-sent" });
+        } catch {
+          /* expected throw */
+        }
+        expect(store.funnel.list().some((e) => e.event === "onboarding_first_board_built")).toBe(
+          false,
+        );
+      }
+      outcome = "ok";
+      await design.build({ projectDir: "never-sent" });
+      await design.build({ projectDir: "never-sent" });
+      await funnel.flush();
+      expect(bodies.find((e) => e.event === "$identify")?.properties.$anon_distinct_id).toBe(
+        "web_ad_visitor",
+      );
+      const built = bodies.filter((e) => e.event === "onboarding_first_board_built");
+      expect(built).toHaveLength(1);
+      expect(built[0]?.properties).toMatchObject({
+        distinct_id: "account_subject",
+        utm_source: "openai",
+        utm_medium: "cpc",
+        utm_campaign: "india_circuits",
+        utm_content: "creative_1",
+      });
+      const errors = bodies.filter(e => e.event === "onboarding_first_board_build_error");
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.properties).toMatchObject({ distinct_id: "account_subject", utm_source: "openai", failure_kind: "build_failed" });
+      expect(JSON.stringify(bodies)).not.toContain("never-sent");
+    } finally {
+      store.close();
+    }
+  });
+
+  test("first error stages use bounded categories, respect opt-out and do not send raw errors", async () => {
+    const store = await openStore();
+    const bodies: Array<{ event: string; properties: Record<string, unknown> }> = [];
+    const funnel = new Funnel({ store, env: { POSTHOG_KEY: "phc_test" }, fetch: async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response("{}", { status: 200 });
+    }});
+    try {
+      funnel.adopt({ phId: "ad_visitor", utmCampaign: "india_circuits" });
+      expect(funnel.noteError("tool", "tool_error", "mcp__fabdesk__route_run")).toBe(true);
+      expect(funnel.noteError("tool", "tool_error", "/private/project/secret")).toBe(false);
+      expect(funnel.noteError("ai_run", "failed")).toBe(true);
+      store.settings.patch({ productAnalytics: false });
+      expect(funnel.noteError("board_build", "exception")).toBe(false);
+      await funnel.flush();
+      expect(bodies.filter(e => e.event.startsWith("onboarding_first_"))).toHaveLength(2);
+      expect(bodies.find(e => e.event === "onboarding_first_tool_error")?.properties).toMatchObject({ distinct_id: "ad_visitor", tool_group: "route", failure_kind: "tool_error", utm_campaign: "india_circuits" });
+      expect(JSON.stringify(bodies)).not.toContain("/private/project/secret");
+    } finally { store.close(); }
+  });
+
+  test("cancelled builds preserve their error without recording a failure", async () => {
+    const store = await openStore();
+    const funnel = new Funnel({ store, env: {} });
+    const cancelled = new Error("private cancellation detail");
+    cancelled.name = "AbortError";
+    const design: Pick<DesignService, "build"> = { async build() { throw cancelled; } };
+    trackBoardBuilds(design, funnel);
+    try {
+      await expect(design.build({ projectDir: "private" })).rejects.toBe(cancelled);
+      const aborted = new AbortController();
+      aborted.abort();
+      const returned: Pick<DesignService, "build"> = { async build() { return { ok: false, errors: [], warnings: [], durationMs: 0, counts: { components: 0, nets: 0, footprintsAdded: 0, footprintsPlaced: 0 } }; } };
+      trackBoardBuilds(returned, funnel);
+      await returned.build({ projectDir: "private", signal: aborted.signal });
+      expect(store.funnel.list()).toEqual([]);
+    } finally { store.close(); }
+  });
+
   test("capture is a no-op without a key and still records locally", async () => {
     const store = await openStore();
     const calls: string[] = [];
@@ -120,7 +237,10 @@ describe("Funnel", () => {
       },
     });
     expect(
-      funnel.record("onboarding_first_review_viewed", { source: "review", path: "/secret.kicad_pcb" }),
+      funnel.record("onboarding_first_review_viewed", {
+        source: "review",
+        path: "/secret.kicad_pcb",
+      }),
     ).toBe(true);
     expect(funnel.record("onboarding_first_board_viewed", { source: "schematic" })).toBe(true);
     await funnel.flush();
@@ -199,7 +319,11 @@ describe("Funnel", () => {
     funnel.adopt({ phId: "ph_second", utmCampaign: "try" });
     await funnel.flush();
     expect(funnel.distinctId()).toBe("ph_first");
-    expect(funnel.handoff()).toMatchObject({ phId: "ph_first", utmSource: "google", utmCampaign: "try" });
+    expect(funnel.handoff()).toMatchObject({
+      phId: "ph_first",
+      utmSource: "google",
+      utmCampaign: "try",
+    });
     expect(bodies.some((b) => b.event === "$create_alias")).toBe(false);
     store.close();
   });
@@ -252,8 +376,12 @@ describe("Funnel", () => {
     funnel.noteTool("route_run");
     funnel.noteTool("board_review");
     funnel.noteTool("project_import_kicad");
-    expect(funnel.snapshot().events.map((e) => e.event).sort()).toEqual([
-      "onboarding_first_board_built",
+    expect(
+      funnel
+        .snapshot()
+        .events.map((e) => e.event)
+        .sort(),
+    ).toEqual([
       "onboarding_first_kicad_import",
       "onboarding_first_project",
       "onboarding_first_review_viewed",
