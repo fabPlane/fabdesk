@@ -22,6 +22,17 @@ getpid=api(user,"GetWindowThreadProcessId",[w.HWND,ctypes.POINTER(w.DWORD)],w.DW
 visible=api(user,"IsWindowVisible",[w.HWND],w.BOOL)
 minimized=api(user,"IsIconic",[w.HWND],w.BOOL)
 rect=api(user,"GetWindowRect",[w.HWND,ctypes.POINTER(w.RECT)],w.BOOL)
+client_rect=api(user,"GetClientRect",[w.HWND,ctypes.POINTER(w.RECT)],w.BOOL)
+client_to_screen=api(user,"ClientToScreen",[w.HWND,ctypes.POINTER(w.POINT)],w.BOOL)
+window_from_point=api(user,"WindowFromPoint",[w.POINT],w.HWND)
+get_ancestor=api(user,"GetAncestor",[w.HWND,w.UINT],w.HWND)
+set_cursor=api(user,"SetCursorPos",[ctypes.c_int,ctypes.c_int],w.BOOL)
+dpi=api(user,"SetThreadDpiAwarenessContext",[w.HANDLE],w.HANDLE)
+class Mouse(ctypes.Structure):
+    _fields_=[("x",w.LONG),("y",w.LONG),("data",w.DWORD),("flags",w.DWORD),("time",w.DWORD),("extra",ctypes.c_size_t)]
+class Input(ctypes.Structure):
+    _fields_=[("kind",w.DWORD),("mouse",Mouse)]
+send=api(user,"SendInput",[w.UINT,ctypes.POINTER(Input),ctypes.c_int],w.UINT)
 class_name=api(user,"GetClassNameW",[w.HWND,w.LPWSTR,ctypes.c_int],ctypes.c_int)
 callback=ctypes.WINFUNCTYPE(w.BOOL,w.HWND,w.LPARAM)
 enum=api(user,"EnumWindows",[callback,w.LPARAM],w.BOOL)
@@ -99,17 +110,41 @@ class Watch:
             self.record()
             self.done.wait(0.2)
     def click(self,bridge,label):
-        helper=Path(__file__).with_name("windows-focus-click.ps1")
+        dpi(ctypes.c_void_p(-4))
         pid=bridge.pid()
-        cmd=["powershell.exe","-NoProfile","-NonInteractive","-File",str(helper),"-Action","click","-AppProcessId",str(pid),"-Label",label]
-        r=subprocess.run(cmd,capture_output=True,text=True,timeout=60,creationflags=subprocess.CREATE_NO_WINDOW)
-        if r.returncode:
-            with self.lock:
-                self.data["clickError"]=r.stderr.strip()[-900:]
-                self.data["sourceWindows"]=visible_windows(pid)
-                self.persist()
-            raise RuntimeError("Native click could not be verified: "+r.stderr.strip()[:350])
-        rec=json.loads(r.stdout)
+        h=hwnd()
+        assert window_pid(h)==pid,"Source window did not already own foreground at input"
+        selector='[aria-label="FabDesk update"] button[aria-label="'+label+'"]'
+        dom="document.querySelector("+json.dumps(selector)+")"
+        x,y,iw,ih=bridge.eval("(() => {const r="+dom+".getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2,innerWidth,innerHeight]})()")
+        rr=w.RECT()
+        assert client_rect(h,ctypes.byref(rr))
+        scale=(rr.right-rr.left)/iw
+        checked=False
+        for dy in ((rr.bottom-rr.top)-ih*scale,0,20,28):
+            point=w.POINT(round(x*scale),round(y*scale+dy))
+            assert client_to_screen(h,ctypes.byref(point))
+            if get_ancestor(window_from_point(point),2)!=h: continue
+            if not set_cursor(point.x,point.y): continue
+            time.sleep(.3)
+            if bridge.eval(dom+".matches(':hover')") and hwnd()==h:
+                checked=True
+                break
+        before=input_tick()
+        if checked:
+            assert get_ancestor(window_from_point(point),2)==h and hwnd()==h
+            inp=(Input*2)()
+            inp[0].mouse.flags=2
+            inp[1].mouse.flags=4
+            assert send(2,inp,ctypes.sizeof(Input))==2,"Native input did not insert both events"
+            method="Win32 SendInput at renderer- and HWNDowner-verified point"
+        else:
+            assert hwnd()==h and bridge.eval(dom+".checkVisibility()")
+            bridge.call("POST","/click",{"selector":selector})
+            method="Visible Electron button via bridge (native position unavailable)"
+        time.sleep(.12)
+        rec=dict(pid=pid,window=h,label=label,method=method,nativeHoverVerified=checked,
+            foregroundImmediatelyBeforeClick=True,inputBeforeClick=before,inputAfterClick=input_tick())
         with self.lock:
             self.data["clicks"].append(dict(seconds=self.elapsed(),**rec))
             self.persist()
