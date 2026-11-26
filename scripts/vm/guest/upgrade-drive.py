@@ -14,6 +14,7 @@ Writes <out>/upgrade-report.json and exits 0 only when the running app reports t
 """
 import argparse
 import base64
+import http.client
 import json
 import os
 import sys
@@ -23,6 +24,8 @@ import urllib.parse
 import urllib.request
 
 FEED = "https://fabplane.com/desktop/latest.json"
+# What a bridge call raises when the app is not there (yet, or any more).
+GONE = (RuntimeError, urllib.error.URLError, http.client.HTTPException, OSError, ValueError)
 
 
 def read_json(path):
@@ -118,7 +121,7 @@ def main():
     while time.time() < deadline:
         try:
             status = bridge.eval("window.fabdesk.updateStatus()") or bridge.eval("window.fabdesk.checkForUpdates()")
-        except (RuntimeError, urllib.error.URLError, OSError, ValueError):
+        except GONE:
             status = None
         if status and status.get("latest"):
             break
@@ -153,13 +156,16 @@ def main():
     if not state.get("restart"):
         finish(f"the app fell back to the installer file ({state.get('filename')}) instead of updating in place")
     bridge.screenshot(os.path.join(args.out, "upgrade-ready.png"))
-    bridge.eval("void window.fabdesk.openUpdate(), null")
+    try:
+        bridge.eval("void window.fabdesk.openUpdate(), null")
+    except GONE:
+        pass  # Windows and the AppImage quit before the bridge can answer
     step("asked the app to restart into the update (what clicking Restart to update does)")
     # A failed install comes back as an error state while the old app is still up.
     for _ in range(10):
         try:
             state = bridge.eval("window.fabdesk.updateDownloadState()") or {}
-        except (RuntimeError, urllib.error.URLError, OSError, ValueError):
+        except GONE:
             break  # the app went away to install
         if state.get("state") == "error":
             finish(f"the install failed: {state.get('message')}")
