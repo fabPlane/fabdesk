@@ -72,5 +72,38 @@ class ResolveTests(unittest.TestCase):
             resolver.resolve('latest', self.fetch)
 
 
+class PreviousReleaseTests(unittest.TestCase):
+    releases = [
+        dict(tag_name='v0.4.25', draft=True, prerelease=False),
+        dict(tag_name='v0.4.24', draft=False, prerelease=False),
+        dict(tag_name='v0.4.23', draft=True, prerelease=False),
+        dict(tag_name='v0.4.22', draft=False, prerelease=True),
+        dict(tag_name='v0.4.21', draft=False, prerelease=False),
+        dict(tag_name='v0.4.19', draft=False, prerelease=False),
+        dict(tag_name='cli-v1.2.0', draft=False, prerelease=False),
+    ]
+
+    def fetch(self, path, missing_ok=False):
+        self.assertEqual(path, 'releases?per_page=100')
+        return self.releases
+
+    def test_newest_published_release_before_the_tag(self):
+        self.assertEqual(resolver.previous('v0.4.25', self.fetch), 'v0.4.24')
+
+    def test_drafts_and_prereleases_are_not_what_users_run(self):
+        self.assertEqual(resolver.previous('v0.4.24', self.fetch), 'v0.4.21')
+
+    def test_versions_compare_as_numbers(self):
+        releases = [dict(tag_name='v0.4.99', draft=False, prerelease=False), dict(tag_name='v0.4.100', draft=False, prerelease=False)]
+        self.assertEqual(resolver.previous('v0.4.101', lambda *a, **k: releases), 'v0.4.100')
+
+    def test_releases_before_in_place_updates_are_skipped(self):
+        self.assertIsNone(resolver.previous('v0.4.21', self.fetch))
+
+    def test_invalid_tag(self):
+        with self.assertRaises(ValueError):
+            resolver.previous('latest', self.fetch)
+
+
 if __name__ == '__main__':
     unittest.main()

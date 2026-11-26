@@ -107,6 +107,11 @@ def main():
     with urllib.request.urlopen(feed, timeout=30) as response:
         target = json.loads(response.read().decode())["version"]
     report["target"] = target
+    # After a Release the workflow names the version it just published: a feed still serving the
+    # older one would otherwise only show up as a confusing "nothing to update from".
+    expected = os.environ.get("FABDESK_UPGRADE_EXPECT", "").lstrip("v")
+    if expected and expected != target:
+        finish(f"the feed serves {target}, but the release under test is {expected}")
     bridge = Bridge(args.user_data)
 
     while time.time() < deadline and not (bridge.daemon() and os.path.exists(os.path.join(args.user_data, "app-bridge.json"))):

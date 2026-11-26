@@ -45,12 +45,14 @@ jobs:
   select:
     # Resolve a public Release run to its exact published tag; internal runs use artifacts. Manual/scheduled tests
     # can still select a published tag or the site's latest release.
-    if: inputs.upgrade_from == '' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     # Metadata selection must not wait for a disposable NAS VM to rebuild.
     runs-on: ubuntu-latest
     outputs:
       args: ${{ steps.pick.outputs.args }}
       label: ${{ steps.pick.outputs.label }}
+      upgrade_from: ${{ steps.upgrade.outputs.from }}
+      upgrade_to: ${{ steps.upgrade.outputs.to }}
     steps:
       - uses: actions/checkout@v5
         with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
@@ -78,6 +80,26 @@ jobs:
             echo "args=--latest" >> "$GITHUB_OUTPUT"
             echo "label=site-latest" >> "$GITHUB_OUTPUT"
           fi
+      # The release to update from: the one named by hand, or, after a public Release, the
+      # published release before it (what most users are running when the new one arrives).
+      # Internal and branch runs publish nothing, so they get no update test.
+      - id: upgrade
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          INPUT_UPGRADE_FROM: ${{ github.event.inputs.upgrade_from }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          from="$INPUT_UPGRADE_FROM"
+          tag=""
+          if [ "$EVENT" = workflow_run ]; then
+            tag="$(python3 scripts/vm/resolve-run-release.py "$RUN_ID")"
+            if [ -n "$tag" ]; then from="$(python3 scripts/vm/resolve-run-release.py --previous "$tag")"; fi
+            echo "release run $RUN_ID published '${tag}', update test from '${from}'"
+          fi
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+          echo "to=$tag" >> "$GITHUB_OUTPUT"
 
   macos:
     if: inputs.upgrade_from == '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos')
@@ -174,11 +196,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # In-place update test (manual, `upgrade_from` set): install the older release, click the update
-  # badge and "Restart to update" through the automation bridge, and require the app to come back
-  # on the version fabplane.com serves. See docs/installer-vms.md.
+  # In-place update test: after every public Release from the release before it, or by hand with
+  # `upgrade_from`. Installs the older release, starts the update and the restart through the
+  # automation bridge, and requires the app to come back on the version fabplane.com serves.
+  # See docs/installer-vms.md.
   upgrade-macos:
-    if: inputs.upgrade_from != '' && (inputs.platform == 'all' || inputs.platform == 'macos')
+    needs: select
+    if: needs.select.outputs.upgrade_from != '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'macos')
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -186,7 +210,7 @@ jobs:
         with: { sparse-checkout: scripts/vm, sparse-checkout-cone-mode: false }
       - name: Update in place
         id: t
-        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ inputs.upgrade_from }}" }
+        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ needs.select.outputs.upgrade_from }}", FABDESK_UPGRADE_EXPECT: "${{ needs.select.outputs.upgrade_to }}" }
         run: bash scripts/vm/runner-upgrade-test.sh mac arm64 zip --tag "$UPGRADE_FROM"
       - uses: actions/upload-artifact@v6
         if: always() && steps.t.outputs.RESULTS_DIR != ''
@@ -197,7 +221,8 @@ jobs:
           retention-days: 7
 
   upgrade-linux:
-    if: inputs.upgrade_from != '' && (inputs.platform == 'all' || inputs.platform == 'linux')
+    needs: select
+    if: needs.select.outputs.upgrade_from != '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'linux')
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
@@ -207,7 +232,7 @@ jobs:
         run: sudo apt-get update -q && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q libfuse2 xvfb imagemagick libgtk-3-0 libnss3 libxss1 libasound2 libgbm1 libatk-bridge2.0-0 libdrm2 xdg-utils >/dev/null
       - name: Update in place
         id: t
-        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ inputs.upgrade_from }}" }
+        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ needs.select.outputs.upgrade_from }}", FABDESK_UPGRADE_EXPECT: "${{ needs.select.outputs.upgrade_to }}" }
         run: bash scripts/vm/runner-upgrade-test.sh linux "(x64|amd64|x86_64)" AppImage --tag "$UPGRADE_FROM"
       - uses: actions/upload-artifact@v6
         if: always() && steps.t.outputs.RESULTS_DIR != ''
@@ -218,7 +243,8 @@ jobs:
           retention-days: 7
 
   upgrade-windows:
-    if: inputs.upgrade_from != '' && (inputs.platform == 'all' || inputs.platform == 'windows')
+    needs: select
+    if: needs.select.outputs.upgrade_from != '' && (inputs.platform == '' || inputs.platform == 'all' || inputs.platform == 'windows')
     runs-on: windows-2025
     timeout-minutes: 40
     steps:
@@ -227,7 +253,7 @@ jobs:
       - name: Fetch the older installer
         id: fetch
         shell: bash
-        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ inputs.upgrade_from }}" }
+        env: { GH_TOKEN: "${{ github.token }}", UPGRADE_FROM: "${{ needs.select.outputs.upgrade_from }}" }
         run: |
           source scripts/vm/lib.sh
           parse_args test --tag "$UPGRADE_FROM"
@@ -235,6 +261,7 @@ jobs:
           echo "installer=$(cygpath -w "$f")" >> "$GITHUB_OUTPUT"
       - name: Update in place
         shell: pwsh
+        env: { FABDESK_UPGRADE_EXPECT: "${{ needs.select.outputs.upgrade_to }}" }
         run: |
           $out = Join-Path $env:RUNNER_TEMP "fabdesk-upgrade-test"
           & scripts/vm/guest/windows-upgrade-test.ps1 -Installer "${{ steps.fetch.outputs.installer }}" -Out $out
