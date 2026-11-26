@@ -69,6 +69,45 @@ test("an explicit restart requests one relaunch only after confirmed closure", a
   expect(installs).toEqual([true]);
 });
 
+test("double-clicking Restart prepares the foreground handoff once before the window closes", async () => {
+  const { job, host, installs } = setup();
+  await job.download();
+  const prepared = Promise.withResolvers<void>();
+  let requests = 0;
+  host.prepareRestart = () => { requests++; return prepared.promise; };
+  host.quit = () => { job.beforeQuit(); job.finishQuit(0); };
+  const first = job.open();
+  await job.open();
+  expect(requests).toBe(1);
+  expect(installs).toEqual([]);
+  prepared.resolve();
+  await first;
+  expect(installs).toEqual([true]);
+});
+
+test("a normal quit during foreground preparation stays a normal quit", async () => {
+  const { job, host, installs } = setup();
+  await job.download();
+  const prepared = Promise.withResolvers<void>();
+  host.prepareRestart = () => prepared.promise;
+  host.quit = () => { throw new Error("A second quit was requested"); };
+  const opening = job.open();
+  job.beforeQuit();
+  job.finishQuit(0);
+  prepared.resolve();
+  await opening;
+  expect(installs).toEqual([false]);
+});
+
+test("a failed foreground preparation still restarts the app", async () => {
+  const { job, host, installs } = setup();
+  await job.download();
+  host.prepareRestart = () => Promise.reject(new Error("unavailable"));
+  host.quit = () => { job.beforeQuit(); job.finishQuit(0); };
+  await job.open();
+  expect(installs).toEqual([true]);
+});
+
 test("an interrupted acceptance is restored only for the exact release digest", async () => {
   const { host, recordPath, job, offer } = setup();
   saveAcceptedUpdate(recordPath, { version: offer.version, sha256 });

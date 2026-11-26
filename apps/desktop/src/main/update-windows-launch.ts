@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -60,16 +60,60 @@ interface WindowsLaunch {
 /** NSIS normally relaunches via Explorer, which drops Electron's profile switch and
  * the environment inherited by its core. Keep that context in a separate GUI process
  * outside the installation directory while NSIS replaces the application. */
-export function restartAfterWindowsUpdate(launch: Omit<WindowsLaunch, "args">, installer = WINDOWS_INSTALL_MUTEX, parent = process.pid): void {
+function startRestartWaiter(launch: Omit<WindowsLaunch, "args">, installer: string, parent: number, arm?: string) {
   const helper = extractHelper(launch.appPath);
   const args = ["--updated", ...updateRelaunchArgs(launch.userData)];
-  const child = spawn(helper, ["restart", installer, String(parent), launch.exe, launch.cwd, launch.version], {
+  const child = spawn(helper, [arm ? "arm" : "restart", installer, String(parent), launch.exe, launch.cwd, launch.version, ...(arm ? [arm] : [])], {
     cwd: tmpdir(), detached: true, windowsHide: true, stdio: "ignore",
     env: { ...process.env, FABDESK_NSIS_START_ARGS: args.map(windowsArgument).join(" ") },
   });
   child.on("error", error => console.error("[update] Windows restart helper failed:", error));
   if (!child.pid) throw new Error("Could not start the Windows update restart helper.");
   child.unref();
+  return child;
+}
+
+export function restartAfterWindowsUpdate(launch: Omit<WindowsLaunch, "args">, installer = WINDOWS_INSTALL_MUTEX, parent = process.pid): void {
+  startRestartWaiter(launch, installer, parent);
+}
+
+export interface PreparedWindowsRestart {
+  commit(): boolean;
+  cancel(): void;
+}
+
+/** Capture Windows' foreground permission before the user's window closes. Only the
+ * final, successful quit can authorize this child to launch the target installation. */
+export async function prepareWindowsRestart(launch: Omit<WindowsLaunch, "args">): Promise<PreparedWindowsRestart | undefined> {
+  let directory: string;
+  try { directory = mkdtempSync(join(tmpdir(), "fabdesk-update-foreground-")); }
+  catch { return undefined; }
+  let child: ReturnType<typeof startRestartWaiter> | undefined;
+  const cancel = () => {
+    child?.kill();
+    try { rmSync(directory, { recursive: true, force: true }); } catch { /* Best-effort cleanup on Windows. */ }
+  };
+  try {
+    child = startRestartWaiter(launch, WINDOWS_INSTALL_MUTEX, process.pid, directory);
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
+      if (existsSync(join(directory, "ready"))) {
+        return {
+          cancel,
+          commit() {
+            if (child?.exitCode !== null || child.signalCode !== null) return false;
+            try { writeFileSync(join(directory, "commit"), "", { flag: "wx", mode: 0o600 }); return true; }
+            catch { cancel(); return false; }
+          },
+        };
+      }
+      await delay(15);
+    }
+  } catch (error) {
+    console.warn("[update] Could not prepare Windows foreground handoff:", error);
+  }
+  cancel();
+  return undefined;
 }
 
 /** Hand an actual mid-NSIS launch off to one hidden process, releasing the EXE, ASAR and Electron locks. */

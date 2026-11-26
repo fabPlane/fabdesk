@@ -7,7 +7,7 @@ import { StagedUpdate, type StagedUpdateHost, type UpdateOffer } from "./staged-
 import { installAppImage, stageAppImage } from "./update-appimage";
 import { macUpdateRelaunch, updateRelaunchArgs } from "./update-relaunch";
 import { restartLinuxAfterUpdate } from "./update-linux-relaunch";
-import { restartAfterWindowsUpdate } from "./update-windows-launch";
+import { prepareWindowsRestart, restartAfterWindowsUpdate, type PreparedWindowsRestart } from "./update-windows-launch";
 
 /** Squirrel checks the signed bundle and prepares ShipIt to replace it when the app exits.
  * downloadUpdate alone only sets up the local ZIP server when autoInstallOnAppQuit is false. */
@@ -57,6 +57,11 @@ export function createUpdateInstaller(checker: UpdateChecker, recordPath: string
     return updater;
   }
 
+  let preparedRestart: PreparedWindowsRestart | undefined;
+  const windowsLaunch = (version: string) => ({
+    appPath: app.getAppPath(), userData: app.getPath("userData"), version, exe: process.execPath, cwd: process.cwd(),
+  });
+  const cancelPreparedRestart = () => { preparedRestart?.cancel(); preparedRestart = undefined; };
   const host: StagedUpdateHost = {
     recordPath, version: app.getVersion(),
     async offer() {
@@ -105,6 +110,13 @@ export function createUpdateInstaller(checker: UpdateChecker, recordPath: string
         native.removeListener("download-progress", report);
       }
     },
+    ...(process.platform === "win32" ? {
+      async prepareRestart(version: string) {
+        cancelPreparedRestart();
+        preparedRestart = await prepareWindowsRestart(windowsLaunch(version));
+      },
+      cancelPreparedRestart,
+    } : {}),
     quit: () => app.quit(),
     notify(state) {
       for (const win of BrowserWindow.getAllWindows()) {
@@ -121,10 +133,9 @@ export function createUpdateInstaller(checker: UpdateChecker, recordPath: string
         installAppImage(stagedImage);
         if (restart) restartLinuxAfterUpdate(stagedImage.destination, updateRelaunchArgs(app.getPath("userData")));
       } else {
-        if (restart) restartAfterWindowsUpdate({
-          appPath: app.getAppPath(), userData: app.getPath("userData"), version: job.version,
-          exe: process.execPath, cwd: process.cwd(),
-        });
+        if (restart) {
+          if (!preparedRestart?.commit()) restartAfterWindowsUpdate(windowsLaunch(job.version));
+        } else preparedRestart?.cancel();
         // Explorer's --force-run opens the default profile. The staged install
         // still uses the native updater; only the explicit relaunch is ours.
         engine().quitAndInstall(true, false);

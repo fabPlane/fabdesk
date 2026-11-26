@@ -16,6 +16,8 @@ export interface StagedUpdateHost {
   offer(): Promise<UpdateOffer>;
   stage(offer: UpdateOffer, signal: AbortSignal, progress: (stats: Pick<Downloading, "received" | "total" | "percent" | "bytesPerSecond">) => void, verifying: () => void): Promise<string>;
   notify(state: UpdateDownloadState): void;
+  prepareRestart?(version: string): Promise<void>;
+  cancelPreparedRestart?(): void;
   quit(): void;
   install(job: Staged, restart: boolean): void;
 }
@@ -63,6 +65,8 @@ export class StagedUpdate {
   #pending: Promise<UpdateDownloadState> | null = null;
   #abort: AbortController | null = null;
   #restart = new RestartOnQuit();
+  #opening = false;
+  #quitAttempts = 0;
 
   constructor(private readonly host: StagedUpdateHost) {}
 
@@ -141,11 +145,28 @@ export class StagedUpdate {
   /** Optional immediate restart follows the same native quit/unsaved-work decisions as File → Quit. */
   async open(): Promise<string> {
     if (this.#state.state !== "done") return "The update is still being prepared.";
-    this.#restart.request(() => this.host.quit());
+    if (this.#opening) return "";
+    this.#opening = true;
+    try {
+      if (this.host.prepareRestart) {
+        const attempt = this.#quitAttempts;
+        try { await this.host.prepareRestart(this.#state.version); }
+        catch (error) { console.warn("[update] Foreground handoff unavailable:", error); }
+        if (attempt !== this.#quitAttempts) {
+          this.host.cancelPreparedRestart?.();
+          return "";
+        }
+      }
+      this.#restart.request(() => this.host.quit());
+    } finally { this.#opening = false; }
     return "";
   }
 
-  beforeQuit(): void { this.#restart.begin(); }
+  beforeQuit(): void {
+    this.#quitAttempts++;
+    this.#restart.begin();
+    if (!this.#restart.relaunch) this.host.cancelPreparedRestart?.();
+  }
 
   finishQuit(exitCode: number): void {
     const job = this.#state;
