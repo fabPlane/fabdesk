@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +12,10 @@ let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "fabdesk-upgrade-")); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 const sha256 = "b".repeat(64);
+test("a staged update drains a kept owned core and refuses to stop a separate live core", async () => {
+  await promisify(execFile)(process.execPath, [join(import.meta.dir, "../../test-fixtures/update-core-stop.ts")], { windowsHide: true, timeout: 10_000 });
+});
+
 function setup() {
   const recordPath = join(dir, "update-install.json");
   const url = "https://example.test/asset.exe";

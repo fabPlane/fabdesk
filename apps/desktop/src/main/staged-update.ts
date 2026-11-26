@@ -44,14 +44,25 @@ export function saveAcceptedUpdate(recordPath: string, target: Target): void {
   saveReceipt(recordPath, { ...target, phase: "accepted" });
 }
 
+/** Electron emits before-quit synchronously from app.quit(). A new OS quit after a
+ * window veto starts a fresh attempt, without inheriting a canceled Restart request. */
+export class RestartOnQuit {
+  #requested = false;
+  relaunch = false;
+  request(quit: () => void): void {
+    this.#requested = true;
+    try { quit(); } finally { this.#requested = false; }
+  }
+  begin(): void { this.relaunch = this.#requested; }
+}
+
 /** Only an accepted release can stage itself. The final Electron quit event is after
  * every cancellable window close and after the application's child processes stop. */
 export class StagedUpdate {
   #state: UpdateDownloadState = { state: "idle" };
   #pending: Promise<UpdateDownloadState> | null = null;
   #abort: AbortController | null = null;
-  #requestingRestart = false;
-  #relaunchOnQuit = false;
+  #restart = new RestartOnQuit();
 
   constructor(private readonly host: StagedUpdateHost) {}
 
@@ -130,18 +141,17 @@ export class StagedUpdate {
   /** Optional immediate restart follows the same native quit/unsaved-work decisions as File → Quit. */
   async open(): Promise<string> {
     if (this.#state.state !== "done") return "The update is still being prepared.";
-    this.#requestingRestart = true;
-    try { this.host.quit(); } finally { this.#requestingRestart = false; }
+    this.#restart.request(() => this.host.quit());
     return "";
   }
 
-  beforeQuit(): void { this.#relaunchOnQuit = this.#requestingRestart; }
+  beforeQuit(): void { this.#restart.begin(); }
 
   finishQuit(exitCode: number): void {
     const job = this.#state;
     if (exitCode !== 0 || job.state !== "done") return;
     this.#set({ state: "installing", version: job.version });
     saveReceipt(this.host.recordPath, { version: job.version, sha256: job.sha256, phase: "applying" });
-    this.host.install(job, this.#relaunchOnQuit);
+    this.host.install(job, this.#restart.relaunch);
   }
 }

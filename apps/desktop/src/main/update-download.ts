@@ -18,7 +18,8 @@ export class UpdateDownloader {
   #abort: AbortController | null = null;
   #pending: Promise<UpdateDownloadState> | null = null;
 
-  constructor(private readonly checker: UpdateChecker, private readonly systemPackage = false) {}
+  constructor(private readonly checker: UpdateChecker, private readonly systemPackage = false,
+    private readonly checkCore?: () => Promise<void>, private readonly restartApplied?: () => Promise<void>) {}
 
   state(): UpdateDownloadState {
     return this.#state;
@@ -33,6 +34,10 @@ export class UpdateDownloader {
 
   cancel(): void {
     this.#abort?.abort();
+  }
+
+  async waitForInstall(): Promise<void> {
+    if (this.#state.state === "installing") await this.#pending;
   }
 
   /** Starts (or returns the current) download of the installer picked by the last update check. */
@@ -75,6 +80,8 @@ export class UpdateDownloader {
       }
       abort.signal.throwIfAborted();
       if (this.systemPackage) {
+        await this.checkCore?.();
+        abort.signal.throwIfAborted();
         this.#abort = null;
         this.#set({ state: "installing", version });
         await installDebianUpdate(finalPath, app.getPath("exe"), version, process.arch);
@@ -95,8 +102,8 @@ export class UpdateDownloader {
   async open(): Promise<string> {
     if (this.#state.state !== "done") return "Nothing downloaded yet.";
     if (this.systemPackage) {
-      app.relaunch();
-      app.quit();
+      if (!this.restartApplied) return "Quit and reopen fabPlane to use the updated package.";
+      await this.restartApplied();
       return "";
     }
     const error = await shell.openPath(this.#state.path);
@@ -164,6 +171,7 @@ export interface UpdateTransport {
   download(): Promise<UpdateDownloadState>;
   cancel(): void;
   open(): Promise<string>;
+  waitForInstall?(): Promise<void>;
 }
 
 export function registerUpdateDownloadIpc(downloader: UpdateTransport): void {

@@ -246,6 +246,8 @@ function verifyDeb(file: string): void {
     else {
       checkCore(core, file);
       const resources = resolve(core, "..", "..");
+      const format = join(resources, "package-type");
+      if (!existsSync(format) || readFileSync(format, "utf8").trim() !== "deb") fail(`${file}: missing Debian update package marker`);
       checkBundledKicad(resources, file);
       checkPcbBundle(resources, file);
       checkCadBundle(resources, file);

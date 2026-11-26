@@ -150,6 +150,7 @@ body {
 .fd-update-notice > div { overflow-wrap: anywhere; }
 .fd-update-notice > button { flex: none; }
 .fd-update-notice [role="status"] > span { color: color-mix(in srgb, var(--fd-muted) 72%, var(--fd-fg)); }
+.fd-update-notice [role="status"] > span, .fd-update-notice [role="alert"] { max-height: 5rem; overflow-y: auto; }
 .fd-update-notice[data-ready] > svg { color: var(--fd-success); }
 .fd-update-screen > .fd-update-notice {
   width: min(100%, 24rem);

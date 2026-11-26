@@ -132,6 +132,7 @@ async function coreHealth(
 
 export class CoreSupervisor extends EventEmitter {
   private child: ChildProcess | null = null;
+  private drainingUpdateChild: ChildProcess | null = null;
   private port: number | null = null;
   private token: string | null = null;
   private pid: number | null = null;
@@ -446,9 +447,13 @@ export class CoreSupervisor extends EventEmitter {
    * exit after shutdown, including when Windows needs the forced-kill fallback. */
   async stopForUpdate(): Promise<void> {
     await this.assertCanUpdate();
-    const owned = this.child;
+    const owned = this.drainingUpdateChild ?? this.child;
+    this.drainingUpdateChild = owned;
     await this.stop({ shutdown: true, force: true });
-    if (!owned?.pid || owned.exitCode !== null || owned.signalCode !== null) return;
+    if (!owned?.pid || owned.exitCode !== null || owned.signalCode !== null) {
+      this.drainingUpdateChild = null;
+      return;
+    }
     const pid = owned.pid;
     const timedOut = await new Promise<boolean>(resolve => {
       const exited = () => { clearTimeout(timer); resolve(false); };
@@ -460,6 +465,7 @@ export class CoreSupervisor extends EventEmitter {
       }
     });
     if (timedOut && pidAlive(pid)) throw new Error("The FabDesk core is still running. Close its active work, then retry the update.");
+    this.drainingUpdateChild = null;
   }
 
   /** On ordinary quit, keep the daemon alive if the user enabled keepCoreRunning. */

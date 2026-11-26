@@ -20,9 +20,10 @@ import {
   syncErrorReportingFromCore,
 } from "./sentry";
 import { registerUpdateIpc, UpdateChecker } from "./updates";
-import { registerUpdateDownloadIpc } from "./update-download";
+import { registerUpdateDownloadIpc, type UpdateTransport } from "./update-download";
 import { createAlternateUpdateTransport, desktopInstallMode } from "./update-installation";
 import { createUpdateInstaller } from "./update-install";
+import { RestartOnQuit } from "./staged-update";
 import { migrateLegacyUserData } from "./user-data";
 import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
 import { CadRuntimeManager, CadRuntimeConsent } from "./cad-runtime";
@@ -154,8 +155,9 @@ let cadSupervisor: CadSupervisor | null = null;
 let automation: AppAutomation | null = null;
 let quitting = false;
 let backendsStopped = false;
-let canApplyOnExit = true;
 let installer: ReturnType<typeof createUpdateInstaller> | undefined;
+let debUpdater: UpdateTransport | undefined;
+const debRestart = new RestartOnQuit();
 
 /**
  * Release backend files before the final app quit can replace the installed binaries.
@@ -163,18 +165,18 @@ let installer: ReturnType<typeof createUpdateInstaller> | undefined;
 async function stopBackendsForQuit(): Promise<void> {
   if (quitting) return;
   quitting = true;
+  // apt may still be replacing files with system authorization. Finish the existing
+  // package transaction before releasing the app and its child processes.
+  if (debUpdater?.state().state === "downloading" || debUpdater?.state().state === "verifying") debUpdater.cancel();
+  await debUpdater?.waitForInstall?.();
+  const updateState = (installer ?? debUpdater)?.state().state;
+  if (updateState === "done" || updateState === "verifying" || updateState === "downloading") {
+    await supervisor?.stopForUpdate();
+  } else {
+    await supervisor?.stop({ shutdown: true }).catch(() => {});
+  }
   void automation?.stop();
   try {
-    if (installer?.state().state === "done") {
-      try { await supervisor?.stopForUpdate(); }
-      catch (error) {
-        canApplyOnExit = false;
-        console.error("[update] core could not stop:", error);
-        dialog.showErrorBox("FabDesk update postponed", error instanceof Error ? error.message : String(error));
-      }
-    } else {
-      await supervisor?.stop({ shutdown: true }).catch(() => {});
-    }
     await Promise.all([pcbSupervisor?.stop(), cadSupervisor?.stop()]);
     await flushSentry();
   } catch {
@@ -414,13 +416,17 @@ if (!app.requestSingleInstanceLock()) {
       enabled: process.env["FABDESK_UPDATE_CHECK"] !== "0",
     });
     registerUpdateIpc(updates);
-    const alternate = createAlternateUpdateTransport(installMode, updates);
-    if (alternate) registerUpdateDownloadIpc(alternate);
-    else {
-      installer = createUpdateInstaller(updates, join(app.getPath("userData"), "update-install.json"), async () => {
-        await coreStartup;
-        await sup.assertCanUpdate();
-      });
+    const checkCore = async () => {
+      await coreStartup;
+      if (quitting) throw new Error("FabDesk is closing. Retry the update after reopening.");
+      await sup.assertCanUpdate();
+    };
+    const alternate = createAlternateUpdateTransport(installMode, updates, checkCore, async () => debRestart.request(() => app.quit()));
+    if (alternate) {
+      if (installMode === "system-package") debUpdater = alternate;
+      registerUpdateDownloadIpc(alternate);
+    } else {
+      installer = createUpdateInstaller(updates, join(app.getPath("userData"), "update-install.json"), checkCore);
       registerUpdateDownloadIpc(installer);
     }
     updates.start();
@@ -453,20 +459,32 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => {
-    if (!quitting) installer?.beforeQuit();
+    if (!quitting) {
+      installer?.beforeQuit();
+      debRestart.begin();
+    }
   });
   // All windows have accepted closing by will-quit. A veto leaves the current core,
   // bridges and staged update intact. Coalesce repeated quit requests during shutdown.
   app.on("will-quit", (e) => {
     if (backendsStopped || !supervisor) return;
     e.preventDefault();
-    if (!quitting) void stopBackendsForQuit().finally(() => {
+    if (!quitting) void stopBackendsForQuit().then(() => {
       backendsStopped = true;
       app.quit();
+    }, error => {
+      // Squirrel already owns a verified Mac update. Keep the app running until
+      // the installation is free instead of exiting into a blocked replacement.
+      quitting = false;
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      dialog.showErrorBox("FabDesk update postponed", error instanceof Error ? error.message : String(error));
     });
   });
   app.on("quit", (_e, exitCode) => {
-    try { if (canApplyOnExit) installer?.finishQuit(exitCode); }
+    try {
+      installer?.finishQuit(exitCode);
+      if (exitCode === 0 && debRestart.relaunch && debUpdater?.state().state === "done") app.relaunch();
+    }
     catch (error) { console.error("[update] could not install on exit:", error); }
   });
 }
