@@ -70,7 +70,8 @@ jobs:
           CANDIDATE_RUN: ${{ inputs.run_id }}
         run: |
           if [ -z "$CANDIDATE_RUN" ]; then echo "::error::A one-click test requires the candidate release run_id"; exit 1; fi
-          matrix=$(python3 scripts/vm/candidate-matrix.py "$PLATFORM")
+          test "$PLATFORM" = macos
+          matrix=$(python3 scripts/vm/candidate-matrix.py "$PLATFORM" | jq -c '{include: [.include[] | select(.target == "darwin-arm64")]}')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
       - id: pick
         env:
@@ -291,7 +292,7 @@ jobs:
           retention-days: 7
 
   candidate-upgrade:
-    name: One-click upgrade · ${{ matrix.label }}
+    name: One-click upgrade Â· ${{ matrix.label }}
     if: github.event_name == 'workflow_dispatch' && inputs.one_click_target != '' && inputs.run_id != ''
     needs: select
     strategy:
@@ -369,6 +370,7 @@ jobs:
         with:
           name: one-click-${{ matrix.target }}-${{ matrix.ext }}
           path: |
+            ${{ steps.posix.outputs.RESULTS_DIR }}/recording/
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/*.png
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/upgrade-report.json
             ${{ steps.posix.outputs.RESULTS_DIR || format('{0}/fabdesk-upgrade-test', runner.temp) }}/incoming-launch-report.json

@@ -290,6 +290,7 @@ def main():
                             step(f"desktop and core are both {target}; saved project recovered")
                         step(f"window is back (app pid {bridge.pid()})")
                         bridge.screenshot(os.path.join(args.out, "upgrade-after.png"))
+                        time.sleep(6)
                         finish(None)
                 except GONE:
                     pass

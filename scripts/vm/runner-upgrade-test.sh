@@ -60,9 +60,15 @@ if [ -e "$UD" ]; then die "fresh test profile required at $UD"; fi
 export FABDESK_AUTOMATION=1
 LAUNCH="$BIN"
 if [ "${FABDESK_TEST_MOVE:-}" = 1 ]; then LAUNCH="$MNT/fabPlane.app/Contents/MacOS/fabPlane"; fi
+mkdir -p "$OUT/recording"
+python3 "$VM_SCRIPTS/guest/record-native-upgrade.py" "$OUT/recording" "$UD" & RPID=$!
 "$LAUNCH" ${ARGS[@]+"${ARGS[@]}"} >"$OUT/app-stdout.txt" 2>&1 &
 rc=0
 python3 "$VM_SCRIPTS/guest/upgrade-drive.py" --user-data "$UD" --out "$OUT" --timeout "$TIMEOUT" --executable "$BIN" ${EXTRA[@]+"${EXTRA[@]}"} || rc=$?
+touch "$OUT/recording/stop-recording"
+wait "$RPID" || rc=1
+sw_vers > "$OUT/recording/os.txt"
+uname -m >> "$OUT/recording/os.txt"
 ls -la "$APPS" >"$OUT/install-dir.txt" 2>&1 || true
 cp "$UD"/*.log "$UD"/update-install.json "$OUT/" 2>/dev/null || true
 [ "$OS" = mac ] && cp "$HOME/Library/Caches/com.tensorfleet.fabdesk.ShipIt/ShipIt_stderr.log" "$OUT/" 2>/dev/null || true

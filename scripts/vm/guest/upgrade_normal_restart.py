@@ -115,6 +115,8 @@ def click_update(bridge, version, out):
         if not bridge.eval(probe):
             raise RuntimeError("Update control moved or disappeared before the screenshot")
     screenshot(bridge, out / "upgrade-offered.png")
+    time.sleep(5)
+    (out / "recording" / "mark-update").write_text(str(time.time()))
     bridge.call("POST", "/click", {"selector": selector})
 
 
@@ -164,7 +166,8 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
     if os.name == "nt":
         windows_snapshot()
     if sys.platform == "darwin":
-        mac_window_lifecycle(bridge, exe, old_pid, step)
+        time.sleep(5)
+        (out / "recording" / "mark-quit").write_text(str(time.time()))
         subprocess.run(["/usr/bin/swift", str(Path(__file__).with_name("quit-mac-app.swift")),
                         str(old_pid), str(exe.parents[2])], check=True, timeout=90)
     else:
@@ -209,6 +212,7 @@ def normal_restart(bridge, installed_path, version, state, old_pid, deadline, st
         command = [str(exe)]
     else:
         command = [str(exe), "--disable-gpu", "--disable-dev-shm-usage"]
+    (out / "recording" / "mark-open").write_text(str(time.time()))
     with (out / "second-launch.log").open("wb") as log:
         subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
     step("reopened the same installed application")
