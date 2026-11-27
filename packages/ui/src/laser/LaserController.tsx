@@ -12,6 +12,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   LASER_CELL_STEPS,
+  errorPayload,
   formatDuration,
   useLaserCell,
   useLaserCellAction,
@@ -48,7 +49,8 @@ const MODES: Array<{ id: LaserCellRunMode; label: string }> = [
 
 type JobSummary = { boardMm: { width: number; height: number }; estimatedSeconds: number; preset: string; warnings: string[] };
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** The cell's own message (e.g. "there is no copper on B.Cu"), not the app's generic retry advice. */
+const errorText = (e: unknown) => errorPayload(e).message.replace(/^Error:s*/, "") || "Something went wrong";
 
 /** One action at a time per section, with its error. */
 function useAction() {

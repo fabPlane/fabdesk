@@ -16,6 +16,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import polygonClipping, { type MultiPolygon, type Polygon } from "polygon-clipping";
+import type { ManifoldToplevel } from "manifold-3d";
+import { solidKernel } from "./enclosure-solid";
 
 export type Vec2 = [number, number];
 type Ring = Vec2[];
@@ -249,23 +251,118 @@ function ringArea(ring: Vec2[]): number {
   return Math.abs(a / 2);
 }
 
-function multiArea(mp: MultiPolygon): number {
-  return mp.reduce((sum, poly) => sum + ringArea(poly[0] ?? []) - poly.slice(1).reduce((s, hole) => s + ringArea(hole), 0), 0);
+function signedRingArea(ring: Vec2[]): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += (ring[j]![0] + ring[i]![0]) * (ring[j]![1] - ring[i]![1]);
+  return a / 2;
 }
 
-function unionAll(polys: Polygon[]): MultiPolygon {
-  if (!polys.length) return [];
-  // Union in chunks: polygon-clipping is much faster on balanced inputs than on one huge call.
-  let layer: MultiPolygon[] = polys.map(p => [p]);
-  while (layer.length > 1) {
-    const next: MultiPolygon[] = [];
-    for (let i = 0; i < layer.length; i += 16) {
-      const chunk = layer.slice(i, i + 16);
-      next.push(chunk.length === 1 ? chunk[0]! : polygonClipping.union(chunk[0]!, ...chunk.slice(1)));
-    }
-    layer = next;
+/** Area of a set of rings where holes wind opposite to their outer ring (both clipping engines output that). */
+function multiArea(mp: MultiPolygon): number {
+  return Math.abs(mp.reduce((sum, poly) => sum + poly.reduce((s, ring) => s + signedRingArea(ring as Vec2[]), 0), 0));
+}
+
+// polygon-clipping fails on some boards ("Unable to complete output ring", "Unable to find segment ... in
+// SweepLine tree") when points nearly coincide after floating-point arithmetic (86.24 vs 86.23999999999992).
+// Every operation therefore works on coordinates snapped to a grid, and the whole geometry is retried on a
+// coarser grid if the library still fails. 5 µm is far below the UV spot (~20 µm), so the job is unchanged.
+const SNAP_GRIDS_MM = [1e-4, 1e-3, 5e-3];
+
+function snapRing(ring: Ring, grid: number): Ring | null {
+  const out: Vec2[] = [];
+  for (const [x, y] of ring) {
+    const p: Vec2 = [Math.round(x / grid) * grid, Math.round(y / grid) * grid];
+    const prev = out.at(-1);
+    if (!prev || prev[0] !== p[0] || prev[1] !== p[1]) out.push(p);
   }
-  return layer[0]!;
+  if (out.length > 1 && out[0]![0] === out.at(-1)![0] && out[0]![1] === out.at(-1)![1]) out.pop();
+  if (out.length < 3 || ringArea(out) < grid * grid) return null;
+  out.push([out[0]![0], out[0]![1]]);
+  return out;
+}
+
+function snapPolygon(poly: Polygon, grid: number): Polygon | null {
+  const outer = poly[0] ? snapRing(poly[0] as Ring, grid) : null;
+  if (!outer) return null;
+  return [outer, ...poly.slice(1).map(h => snapRing(h as Ring, grid)).filter((h): h is Ring => h !== null)];
+}
+
+function snapMulti(mp: MultiPolygon, grid: number): MultiPolygon {
+  return mp.map(p => snapPolygon(p, grid)).filter((p): p is Polygon => p !== null);
+}
+
+/** Boolean operations on grid-snapped input and output. */
+function clipOps(grid: number) {
+  const op = (fn: (a: MultiPolygon, ...b: MultiPolygon[]) => MultiPolygon) => (a: MultiPolygon, ...b: MultiPolygon[]) =>
+    snapMulti(fn(snapMulti(a, grid), ...b.map(m => snapMulti(m, grid))), grid);
+  return {
+    union: op(polygonClipping.union),
+    difference: op(polygonClipping.difference),
+    intersection: op(polygonClipping.intersection),
+    /** Union of many polygons, in chunks: polygon-clipping is much faster on balanced inputs than on one huge call. */
+    unionAll(polys: Polygon[]): MultiPolygon {
+      let layer: MultiPolygon[] = polys.map(p => snapPolygon(p, grid)).filter((p): p is Polygon => p !== null).map(p => [p]);
+      if (!layer.length) return [];
+      while (layer.length > 1) {
+        const next: MultiPolygon[] = [];
+        for (let i = 0; i < layer.length; i += 16) {
+          const chunk = layer.slice(i, i + 16);
+          next.push(chunk.length === 1 ? chunk[0]! : snapMulti(polygonClipping.union(chunk[0]!, ...chunk.slice(1)), grid));
+        }
+        layer = next;
+      }
+      return layer[0]!;
+    },
+  };
+}
+
+type ClipOps = Pick<ReturnType<typeof clipOps>, "unionAll" | "difference" | "intersection">;
+
+/**
+ * The same operations on manifold's CrossSection (Clipper2, integer coordinates): robust where
+ * polygon-clipping is not. Output contours are flat (outer counter-clockwise, holes clockwise), one per
+ * Polygon; every writer here handles that (even-odd fill, signed area).
+ */
+function manifoldOps(k: ManifoldToplevel): ClipOps & { dispose(): void } {
+  const owned: Array<{ delete(): void }> = [];
+  const keep = <T extends { delete(): void }>(x: T): T => { owned.push(x); return x; };
+  const contours = (mp: MultiPolygon) => mp.flatMap(p => p.map(ring => (ring as Vec2[]).map(([x, y]) => [x, y] as [number, number])));
+  // manifold reads a list whose first ring has < 3 points as one ring, and fails on an empty list:
+  // drop degenerate rings and give it a zero-area triangle (= empty) when nothing is left.
+  const make = (rings: Array<Array<[number, number]>>, rule: "EvenOdd" | "Positive") => {
+    const valid = rings.filter(r => r.length >= 3);
+    return keep(new k.CrossSection(valid.length ? valid : [[[0, 0], [0, 0], [0, 0]]], rule));
+  };
+  const cs = (mp: MultiPolygon) => make(contours(mp), "EvenOdd");
+  const out = (c: InstanceType<ManifoldToplevel["CrossSection"]>): MultiPolygon => c.toPolygons().map(ring => [ring.map(([x, y]) => [x, y] as [number, number])]);
+  // Union of many polygons in one constructor call: outer rings counter-clockwise, holes clockwise, then the
+  // Positive fill rule keeps every point covered by at least one polygon.
+  const unionCs = (list: MultiPolygon[]) => make(list.flatMap(mp => mp.flatMap(p => p.map((ring, i) => {
+    const pts = (ring as Vec2[]).map(([x, y]) => [x, y] as [number, number]);
+    // signedRingArea is negative for counter-clockwise rings (y up).
+    return (signedRingArea(pts) < 0) === (i === 0) ? pts : pts.reverse();
+  }))), "Positive");
+  return {
+    unionAll: polys => (polys.length ? out(unionCs(polys.map(p => [p]))) : []),
+    // One operand is already a clean set of contours (holes wound backwards): read it even-odd. Several
+    // operands are raw shapes that may overlap: union them.
+    difference: (a, ...b) => (b.length ? out(keep(cs(a).subtract(b.length === 1 ? cs(b[0]!) : unionCs(b)))) : a),
+    intersection: (a, ...b) => out(b.reduce((acc, m) => keep(acc.intersect(cs(m))), cs(a))),
+    dispose: () => { for (const x of owned.splice(0)) x.delete(); },
+  };
+}
+
+/** Runs the geometry on the finest grid that polygon-clipping can handle. */
+function withSnapGrid<T>(compute: (ops: ClipOps) => T): T {
+  let last: unknown;
+  for (const grid of SNAP_GRIDS_MM) {
+    try {
+      return compute(clipOps(grid));
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw new CopperLaserOptionsError(`could not work out the copper shapes on this board (${last instanceof Error ? last.message : String(last)}); check the board for overlapping or broken copper`);
 }
 
 // ---------------------------------------------------------------- board → copper primitives
@@ -428,7 +525,11 @@ export function suggestCopperPreset(widthMm: number, heightMm: number): CopperPr
   return Math.max(widthMm, heightMm) <= COPPER_PRESETS["omni-x-6w-70mm"].fieldMm - 5 ? "omni-x-6w-70mm" : "omni-x-6w-150mm";
 }
 
-export function buildCopperLaserJob(pcbText: string, opts: CopperLaserOptions = {}): CopperLaserBuild {
+/**
+ * Builds the copper-removal geometry. With `kernel` (manifold, see {@link solidKernel}) the boolean operations
+ * run on Clipper2, which handles every board; without it they run on polygon-clipping with grid snapping.
+ */
+export function buildCopperLaserJob(pcbText: string, opts: CopperLaserOptions = {}, kernel?: ManifoldToplevel): CopperLaserBuild {
   const side = opts.side ?? "F";
   const mode = opts.mode ?? "isolation";
   const isolationMm = opts.isolationMm ?? 0.4;
@@ -453,17 +554,22 @@ export function buildCopperLaserJob(pcbText: string, opts: CopperLaserOptions = 
   const toJob = ([x, y]: Vec2): Vec2 => [mirror ? maxX - x : x - minX, maxY - y];
   const mapPoly = (p: Polygon): Polygon => p.map(ring => ring.map(pt => toJob(pt as Vec2)));
 
-  let copper = unionAll(shapes.map(s => polyOf(s.ring)));
   const pocket = drillMarkMm > 0 ? drills.filter(d => d.kind === "pad").map(d => polyOf(circle([d.x, d.y], Math.min(drillMarkMm, d.diameterMm) / 2, 16))) : [];
-  if (pocket.length) copper = polygonClipping.difference(copper, ...pocket.map(p => [p] as MultiPolygon));
   const inset = edgeMarginMm;
   const boardPoly: Polygon = polyOf([[minX + inset, minY + inset], [maxX - inset, minY + inset], [maxX - inset, maxY - inset], [minX + inset, maxY - inset]]);
-  copper = polygonClipping.intersection(copper, [boardPoly]);
-
-  let region: MultiPolygon;
-  if (mode === "full") region = [boardPoly];
-  else region = polygonClipping.intersection(unionAll(shapes.flatMap(s => s.grow(isolationMm)).map(polyOf)), [boardPoly]);
-  const ablate = polygonClipping.difference(region, copper);
+  const geometry = (ops: ClipOps) => {
+    let copper = ops.unionAll(shapes.map(s => polyOf(s.ring)));
+    if (pocket.length) copper = ops.difference(copper, ...pocket.map(p => [p] as MultiPolygon));
+    copper = ops.intersection(copper, [boardPoly]);
+    const region = mode === "full" ? [boardPoly] : ops.intersection(ops.unionAll(shapes.flatMap(s => s.grow(isolationMm)).map(polyOf)), [boardPoly]);
+    return { copper, ablate: ops.difference(region, copper) };
+  };
+  let result: { copper: MultiPolygon; ablate: MultiPolygon };
+  if (kernel) {
+    const ops = manifoldOps(kernel);
+    try { result = geometry(ops); } finally { ops.dispose(); }
+  } else result = withSnapGrid(geometry);
+  const { copper, ablate } = result;
 
   if (counts.pads === 0 && counts.tracks === 0) warnings.push("no pads or tracks on this side; check that the right copper side was chosen");
   if (!mirror && side === "B") warnings.push("bottom copper is not mirrored; mirror it if the blank is lasered from the back");
@@ -625,7 +731,7 @@ export type CopperLaserSummary = {
 };
 
 export async function exportCopperLaserJob(opts: CopperLaserOptions & { board: string; outDir: string }): Promise<CopperLaserSummary> {
-  const built = buildCopperLaserJob(await Bun.file(opts.board).text(), opts);
+  const built = buildCopperLaserJob(await Bun.file(opts.board).text(), opts, await solidKernel());
   await mkdir(opts.outDir, { recursive: true });
   const stem = `${built.side}-Cu-laser-${built.mode}`;
   const files = { lbrn2: join(opts.outDir, `${stem}.lbrn2`), svg: join(opts.outDir, `${stem}.svg`), json: join(opts.outDir, `${stem}.json`), studioSvg: join(opts.outDir, `${stem}.studio.svg`) };

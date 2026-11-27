@@ -122,3 +122,21 @@ describe("Studio SVG", () => {
     expect(svg).toContain(`width="${+b.width.toFixed(4)}mm"`);
   });
 });
+
+describe("geometry engines", () => {
+  test("manifold (used for exports) and grid-snapped polygon-clipping give the same job", async () => {
+    const { buildCopperLaserJob } = await import("../src/pcb-laser-copper");
+    const { solidKernel } = await import("../src/enclosure-solid");
+    const kernel = await solidKernel();
+    const pcb = await Bun.file(new URL("../../client-core/src/placement/fixtures/usb-timer.kicad_pcb", import.meta.url)).text();
+    for (const mode of ["isolation", "full"] as const) {
+      const a = buildCopperLaserJob(pcb, { mode });
+      const b = buildCopperLaserJob(pcb, { mode }, kernel);
+      expect(b.areaMm2.copper).toBeCloseTo(a.areaMm2.copper, 1);
+      expect(b.areaMm2.ablate).toBeCloseTo(a.areaMm2.ablate, 1);
+    }
+    // "full" removes everything that is not copper.
+    const full = buildCopperLaserJob(pcb, { mode: "full" }, kernel);
+    expect(full.areaMm2.ablate).toBeCloseTo(full.areaMm2.board - full.areaMm2.copper, 0);
+  });
+});
