@@ -280,13 +280,15 @@ export async function openBridgeLmc(host: string, port: number, token: string, t
   (heartbeat as unknown as { unref?: () => void }).unref?.();
   const touch = <T>(p: Promise<T>) => { lastRequest = Date.now(); return p; };
   return {
+    remote: true,
+    get closed() { return closed; },
     async write(packet) { await touch(request("W", packet, "O")); },
     read: () => touch(request("R", undefined, "D")),
     transact: packet => touch(request("C", packet, "D")),
     async close() {
-      closed = true;
       clearInterval(heartbeat);
-      socket.end();
+      // Fails a request still waiting for its answer at once (Stop must not wait for its timeout).
+      fail(new LmcUsbError("the laser bridge connection was closed"));
     },
   };
 }

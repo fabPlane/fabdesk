@@ -129,8 +129,10 @@ if ($action -eq 'read') {
 $target = $null
 if ($action -eq 'start') { if ($start -and $start.Current.Name -match '^\s*Start') { $target = $start } }
 else {
-  if ($start -and $start.Current.Name -match 'Stop|Pause|Abort|Cancel') { $target = $start }
-  else { foreach ($e in $all) { $c = $e.Current; if ($c.AutomationId -match 'widget_CmdButtonList\.' -and $c.ControlType -eq [Windows.Automation.ControlType]::Button -and $c.IsEnabled -and $c.Name -match '^\s*(Stop|Abort|Cancel)') { $target = $e; break } } }
+  # A real Stop first: the main button may read "Pause", which would only pause the job.
+  if ($start -and $start.Current.Name -match '^\s*(Stop|Abort|Cancel)') { $target = $start }
+  if (-not $target) { foreach ($e in $all) { $c = $e.Current; if ($c.AutomationId -match 'widget_CmdButtonList\.' -and $c.ControlType -eq [Windows.Automation.ControlType]::Button -and $c.IsEnabled -and $c.Name -match '^\s*(Stop|Abort|Cancel)') { $target = $e; break } } }
+  if (-not $target -and $start -and $start.Current.Name -match '^\s*Pause') { $target = $start }
 }
 if (-not $target) { Send @{ ok = $false; error = $(if ($start) { 'Studio shows "' + $start.Current.Name + '"' } else { 'Studio''s Start button is not visible' }) }; exit }
 if (-not $target.Current.IsEnabled) { Send @{ ok = $false; error = '"' + $target.Current.Name + '" is greyed out in Studio' }; exit }
@@ -358,17 +360,27 @@ export function powerShellError(stderr: string): string {
 
 /** Script files blocked by a group policy: run the script inline instead (inputs stay in the environment). */
 let scriptFilesBlocked = false;
+const INLINE_BOOTSTRAP = Buffer.from(
+  "$s = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:FABPLANE_SCRIPT)); Remove-Item Env:FABPLANE_SCRIPT; & ([scriptblock]::Create($s))",
+  "utf16le",
+).toString("base64");
+/** Tests: run every script the inline way (as when a group policy blocks script files). */
+export function setInlinePowerShellForTests(on: boolean): void {
+  scriptFilesBlocked = on;
+}
 const POLICY_ERROR = /execution polic|not digitally signed|running scripts is disabled/i;
 
 export const runPowerShell: PowerShellRunner = async (script, timeoutMs, env = {}, signal) => {
   const attempt = async (inline: boolean) => {
     if (signal?.aborted) throw new LaserDriverError("stopped");
-    const source = inline ? ["-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")] : ["-File", scriptFile(script)];
+    // Inline: a short fixed bootstrap on the command line runs the script from an environment variable, so
+    // long scripts never hit the 32 767-character command-line limit (script blocks are not policy-checked).
+    const source = inline ? ["-EncodedCommand", INLINE_BOOTSTRAP] : ["-File", scriptFile(script)];
     const proc = Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", ...source], {
       stdout: "pipe",
       stderr: "pipe",
       windowsHide: true,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...env, ...(inline ? { FABPLANE_SCRIPT: Buffer.from(script, "utf8").toString("base64") } : {}) },
     });
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; proc.kill(); }, timeoutMs);
@@ -446,8 +458,12 @@ export function windowsStudioUi(run: PowerShellRunner = runPowerShell): StudioUi
         try {
           return JSON.parse(await run(STUDIO_LOAD_SCRIPT, 300_000, { FABPLANE_ARGS: args }, signal)) as StudioLoadResult;
         } catch (error) {
-          // Stopped mid-import: close the file dialog the killed script may have left open in Studio.
-          if (signal?.aborted) await run(STUDIO_CANCEL_DIALOG_SCRIPT, 15_000).catch(() => undefined);
+          // Stopped mid-import: close the file dialog the killed script may have left open in Studio. Queued
+          // behind nothing and not awaited, so the cell is free again at once; the next Studio action waits for it.
+          if (signal?.aborted) {
+            const cleanup = run(STUDIO_CANCEL_DIALOG_SCRIPT, 15_000).catch(() => undefined);
+            queue = queue.then(() => cleanup);
+          }
           throw error;
         }
       };
@@ -543,7 +559,13 @@ export class StudioWindowLaser implements LaserDriver {
 
   async start(): Promise<void> {
     const generation = this.generation;
-    const status = await this.status();
+    let status: LaserStatus;
+    try {
+      status = await this.status();
+    } catch (error) {
+      // Nothing was pressed: whatever Studio is doing (maybe a job started by hand) is left alone.
+      throw new LaserDriverError(error instanceof Error ? error.message : String(error), true);
+    }
     if (generation !== this.generation) throw new LaserDriverError("stopped");
     if (status.state !== "idle") throw new LaserDriverError(`Studio is not ready to start: ${status.detail}`, true);
     this.startPress = this.ui.press("start", { cancelled: () => generation !== this.generation });
@@ -644,15 +666,16 @@ export const DEFAULT_STUDIO_EXE = join(process.env.LOCALAPPDATA ?? join(homedir(
  * Starts ComMarker Studio without administrator rights (`__COMPAT_LAYER=RunAsInvoker`) so fabPlane may press
  * its buttons, and waits for its window. Does nothing when Studio is already running.
  */
-export async function launchStudio(ui: StudioUi, exe = DEFAULT_STUDIO_EXE, timeoutMs = 45_000): Promise<"running" | "started"> {
+export async function launchStudio(ui: StudioUi, exe = DEFAULT_STUDIO_EXE, timeoutMs = 45_000, signal?: AbortSignal): Promise<"running" | "started"> {
   if ((await ui.read()).running) return "running";
   if (process.platform !== "win32") throw new LaserDriverError("ComMarker Studio needs Windows");
   if (!(await Bun.file(exe).exists())) throw new LaserDriverError(`ComMarker Studio was not found at ${exe}; install it or set its path`);
+  if (signal?.aborted) throw new LaserDriverError("stopped");
   const dir = dirname(exe);
   Bun.spawn(["cmd.exe", "/c", "start", "", exe], { cwd: dir, env: { ...process.env, __COMPAT_LAYER: "RunAsInvoker" }, stdout: "ignore", stderr: "ignore", windowsHide: true });
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    await sleep(1500);
+    await sleep(1500, signal);
     const s = await ui.read().catch(() => null);
     if (s?.running && s.elements >= 10) return "started";
   }

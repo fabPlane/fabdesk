@@ -223,15 +223,18 @@ export class St3215Bus {
     return bytes[0]! | (bytes[1]! << 8);
   }
 
-  write(id: number, address: number, data: ArrayLike<number>): Promise<void> {
+  /** `cancelled` is checked when the write's turn comes; a cancelled write is not sent (Stop won the race). */
+  write(id: number, address: number, data: ArrayLike<number>, cancelled?: () => boolean): Promise<void> {
     return this.exclusive(async () => {
+      if (cancelled?.()) throw new St3215Error("stopped");
       const reply = await this.transact(writePacket(id, address, data), id !== BROADCAST_ID);
       if (reply?.error) throw new St3215Error(`servo ${id} reports ${describeServoError(reply.error).join(", ") || `error 0x${reply.error.toString(16)}`}`);
     });
   }
 
-  syncWrite(address: number, entries: ReadonlyArray<{ id: number; data: ArrayLike<number> }>): Promise<void> {
+  syncWrite(address: number, entries: ReadonlyArray<{ id: number; data: ArrayLike<number> }>, cancelled?: () => boolean): Promise<void> {
     return this.exclusive(async () => {
+      if (cancelled?.()) throw new St3215Error("stopped");
       await this.transact(syncWritePacket(address, entries), false);
     });
   }
@@ -244,8 +247,8 @@ export class St3215Bus {
     return (await this.read(id, Reg.moving, 1))[0] !== 0;
   }
 
-  async torque(ids: readonly number[], on: boolean): Promise<void> {
-    await this.syncWrite(Reg.torqueEnable, ids.map(id => ({ id, data: [on ? 1 : 0] })));
+  async torque(ids: readonly number[], on: boolean, cancelled?: () => boolean): Promise<void> {
+    await this.syncWrite(Reg.torqueEnable, ids.map(id => ({ id, data: [on ? 1 : 0] })), cancelled);
   }
 
   close(): Promise<void> {

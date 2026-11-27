@@ -19,6 +19,10 @@ export class LmcUsbError extends Error {
 }
 
 export interface LmcTransport {
+  /** Set by the Wi-Fi bridge client: the board is on another computer, reached over the network. */
+  readonly remote?: boolean;
+  /** True once the link is gone (e.g. a heartbeat timed out); the driver reconnects instead of using it. */
+  readonly closed?: boolean;
   /** 12-byte single command or 3072-byte list packet. */
   write(packet: Uint8Array): Promise<void>;
   /** 8-byte reply to the last single command. */

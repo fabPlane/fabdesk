@@ -80,7 +80,22 @@ export function syncedSpeeds(from: Pose, to: Pose, maxSpeed: number): Record<num
 }
 
 export class Arm {
+  /** Bumped by stop(); a move or grip that started before it sends nothing more. */
+  private stopGeneration = 0;
+  /** Last position read from each servo, for freezing a servo that does not answer during a stop. */
+  private lastKnown: Pose = {};
+
   constructor(readonly bus: St3215Bus, readonly config: ArmConfig = DEFAULT_ARM_CONFIG) {}
+
+  /** A guard for bus writes of one move: true once Stop was pressed (or the signal aborted) after it began. */
+  private guard(signal?: AbortSignal): () => boolean {
+    const generation = this.stopGeneration;
+    return () => generation !== this.stopGeneration || signal?.aborted === true;
+  }
+
+  private assertGo(stopped: () => boolean, what: string) {
+    if (stopped()) throw new ArmError(`${what} stopped`);
+  }
 
   get allIds(): number[] {
     return [...this.config.jointIds, this.config.gripperId];
@@ -95,7 +110,10 @@ export class Arm {
 
   async read(): Promise<Pose> {
     const pose: Pose = {};
-    for (const id of this.allIds) pose[id] = await this.bus.position(id);
+    for (const id of this.allIds) {
+      pose[id] = await this.bus.position(id);
+      this.lastKnown[id] = pose[id]!;
+    }
     return pose;
   }
 
@@ -131,13 +149,28 @@ export class Arm {
     return present;
   }
 
-  /** Stop where it is: freeze every joint at its present position. Keeps the board in the gripper. */
+  /**
+   * Stop where it is: freeze every joint at its present position. Keeps the board in the gripper.
+   * Servo by servo: one that does not answer is frozen at its last known position, and never keeps the
+   * others from being frozen. Any move or grip already under way sends nothing more after this.
+   */
   async stop(): Promise<void> {
+    this.stopGeneration++;
+    const freeze: Array<{ id: number; data: number[] }> = [];
+    for (const id of this.allIds) {
+      let at: number | undefined;
+      try {
+        at = await this.bus.position(id);
+        this.lastKnown[id] = at;
+      } catch {
+        at = this.lastKnown[id];
+      }
+      if (at !== undefined) freeze.push({ id, data: u16le(clampPosition(at)) });
+    }
     try {
-      const present = await this.read();
-      await this.bus.syncWrite(Reg.goalPosition, this.allIds.map(id => ({ id, data: u16le(clampPosition(present[id]!)) })));
+      if (freeze.length) await this.bus.syncWrite(Reg.goalPosition, freeze);
     } catch {
-      // If the bus is gone the servos keep their last goal; nothing more we can do from here.
+      // If the bus is gone the servos keep their last goal; nothing more we can do from here (E-stop).
     }
   }
 
@@ -152,15 +185,23 @@ export class Arm {
     if (!ids.length) throw new ArmError("pose has no joints");
     const unknown = ids.filter(id => !this.allIds.includes(id));
     if (unknown.length) throw new ArmError(`pose uses servo id(s) ${unknown.join(", ")} that are not configured`);
+    const stopped = this.guard(options.signal);
+    this.assertGo(stopped, "move");
     const start = await this.read();
+    this.assertGo(stopped, "move");
     const speeds = syncedSpeeds(start, goal, options.speed ?? this.config.speed);
-    await this.bus.torque(ids, true);
-    await this.bus.syncWrite(Reg.goalPosition, ids.map(id => ({ id, data: goalBlock(goal[id]!, speeds[id]!) })));
+    try {
+      await this.bus.torque(ids, true, stopped);
+      await this.bus.syncWrite(Reg.goalPosition, ids.map(id => ({ id, data: goalBlock(goal[id]!, speeds[id]!) })), stopped);
+    } catch (error) {
+      if (stopped()) throw new ArmError("move stopped");
+      throw error;
+    }
     const total = Math.max(1, ...ids.map(id => stepDistance(start[id]!, goal[id]!)));
     const deadline = Date.now() + this.config.moveTimeoutMs;
     for (;;) {
-      if (options.signal?.aborted) {
-        await this.stop();
+      if (stopped()) {
+        if (options.signal?.aborted) await this.stop();
         throw new ArmError("move stopped");
       }
       const present = await this.read();
@@ -182,14 +223,21 @@ export class Arm {
    */
   async grip(closed: number, signal?: AbortSignal): Promise<{ held: boolean; position: number }> {
     const id = this.config.gripperId;
-    await this.bus.write(id, Reg.torqueLimit, u16le(this.config.gripTorqueLimit));
-    await this.bus.write(id, Reg.torqueEnable, [1]);
-    await this.bus.write(id, Reg.goalPosition, goalBlock(closed, this.config.approachSpeed));
+    const stopped = this.guard(signal);
+    this.assertGo(stopped, "grip");
+    try {
+      await this.bus.write(id, Reg.torqueLimit, u16le(this.config.gripTorqueLimit), stopped);
+      await this.bus.write(id, Reg.torqueEnable, [1], stopped);
+      await this.bus.write(id, Reg.goalPosition, goalBlock(closed, this.config.approachSpeed), stopped);
+    } catch (error) {
+      if (stopped()) throw new ArmError("grip stopped");
+      throw error;
+    }
     let last = await this.bus.position(id);
     let still = 0;
     const deadline = Date.now() + 3000;
     while (Date.now() < deadline && still < 4) {
-      if (signal?.aborted) throw new ArmError("grip stopped");
+      if (stopped()) throw new ArmError("grip stopped");
       await sleep(40);
       const now = await this.bus.position(id);
       still = stepDistance(now, last) <= 2 ? still + 1 : 0;
@@ -200,7 +248,9 @@ export class Arm {
 
   async release(open: number, signal?: AbortSignal): Promise<void> {
     const id = this.config.gripperId;
-    await this.bus.write(id, Reg.torqueLimit, u16le(1000));
+    const stopped = this.guard(signal);
+    this.assertGo(stopped, "release");
+    await this.bus.write(id, Reg.torqueLimit, u16le(1000), stopped).catch(error => { if (stopped()) throw new ArmError("release stopped"); throw error; });
     await this.moveTo({ [id]: open }, { speed: this.config.speed, ...(signal ? { signal } : {}) });
   }
 }

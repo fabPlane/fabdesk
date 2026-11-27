@@ -143,16 +143,25 @@ export class StudioFootswitchLaser implements LaserDriver {
     this.options.onBusyUntil?.(this.busyUntil);
   }
 
-  /** One press by hand: Studio runs its loaded job, so the laser counts as busy for the job time. */
+  /**
+   * One press by hand: Studio runs its loaded job, so the laser counts as busy for the job time. Marked busy
+   * even when the relay reports an error: the contact may have closed before the error.
+   */
   async press(): Promise<void> {
-    await this.options.relay.pulse(this.options.pressMs ?? 250);
-    this.markBusy();
+    try {
+      await this.options.relay.pulse(this.options.pressMs ?? 250);
+    } finally {
+      this.markBusy();
+    }
   }
 
-  /** Hold / release by hand. After a release the job Studio started may still be running. */
+  /** Hold / release by hand. Busy from the moment the contact closes, and again for the job time after it opens. */
   async setHeld(held: boolean): Promise<void> {
-    await this.options.relay.set(held);
-    if (!held) this.markBusy();
+    try {
+      await this.options.relay.set(held);
+    } finally {
+      if (held || this.options.relay.pressed === false) this.markBusy();
+    }
   }
 
   get expectedSeconds(): number {
@@ -170,8 +179,11 @@ export class StudioFootswitchLaser implements LaserDriver {
   }
 
   async start(): Promise<void> {
-    await this.options.relay.pulse(this.options.pressMs ?? 250);
-    this.markBusy();
+    try {
+      await this.options.relay.pulse(this.options.pressMs ?? 250);
+    } finally {
+      this.markBusy(); // even if the release failed: the contact may have closed and started Studio
+    }
   }
 
   /** Waits the job time (checked against the limit before the start, in the cycle's preflight). */
@@ -184,11 +196,19 @@ export class StudioFootswitchLaser implements LaserDriver {
    * passed; the cycle freezes the arm, and the Omni X E-stop stops the beam.
    */
   async stop(): Promise<void> {
+    const held = this.options.relay.pressed;
     await this.options.relay.set(false).catch(() => undefined);
+    if (held) this.markBusy(); // the pedal was down: Studio is running the job it started
   }
 
+  /** Closing the relay opens the contact (settings change, shutdown): a held pedal counts like a release. */
   async close(): Promise<void> {
-    await this.options.relay.close();
+    const held = this.options.relay.pressed;
+    try {
+      await this.options.relay.close();
+    } finally {
+      if (held) this.markBusy();
+    }
   }
 }
 

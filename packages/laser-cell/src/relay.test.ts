@@ -43,7 +43,7 @@ describe("foot-switch relays", () => {
     expect(port.isClosed()).toBe(true);
   });
 
-  test("a held pedal makes the laser busy so a run cannot start, and stop releases it", async () => {
+  test("a held pedal makes the laser busy so a run cannot start; stop releases it and the job it started still counts", async () => {
     const port = fakePort();
     const relay = await openLcusRelay("COM9", 1, async () => port.link);
     const laser = new StudioFootswitchLaser({ relay, markSeconds: 1, marginSeconds: 0 });
@@ -51,6 +51,6 @@ describe("foot-switch relays", () => {
     expect((await laser.status()).state).toBe("busy");
     await laser.stop();
     expect(relay.pressed).toBe(false);
-    expect((await laser.status()).state).toBe("idle");
+    expect((await laser.status()).state).toBe("busy"); // Studio is running the job the pedal started
   });
 });

@@ -71,6 +71,10 @@ export class LmcLaser implements LaserDriver {
   /** Bumped by stop(); an operation that sees a different value has been stopped. */
   private generation = 0;
   private operation: Operation | null = null;
+  /** The halt in progress, shared by overlapping stop() calls. */
+  private halting: Promise<void> | null = null;
+  /** No operation has begun since the last completed halt: another stop() has nothing to send. */
+  private cleanSinceHalt = false;
   /** Serial number and version words read on connect. */
   info: { serial: Reply["words"]; version: Reply["words"] } | null = null;
 
@@ -80,6 +84,12 @@ export class LmcLaser implements LaserDriver {
 
   /** One shared connection: concurrent callers wait for the same open + init. */
   connect(): Promise<LmcTransport> {
+    if (this.transport?.closed) {
+      // The link died on its own (heartbeat timeout): reconnect now rather than fail the next command once.
+      const dead = this.transport;
+      this.transport = null;
+      void dead.close().catch(() => undefined);
+    }
     if (this.transport) return Promise.resolve(this.transport);
     this.connecting ??= (async () => {
       const t = await this.open();
@@ -190,6 +200,7 @@ export class LmcLaser implements LaserDriver {
   private begin(operation: Operation): number {
     if (this.operation) throw new LaserDriverError(`the laser is busy (${this.operation}); stop it first`);
     this.operation = operation;
+    this.cleanSinceHalt = false;
     return this.generation;
   }
 
@@ -316,10 +327,23 @@ export class LmcLaser implements LaserDriver {
    * Stops the list on the board and switches the outputs off; any operation in progress gives up before its
    * next write. Keep the machine's E-stop within reach.
    */
+  /**
+   * Stops whatever runs and halts the board, once: overlapping calls share one halt, and a call after a
+   * completed halt with nothing started since sends nothing. Over the Wi-Fi bridge the link is dropped first,
+   * so a request stuck on a dead link fails at once; the bridge stops the board itself when its driving
+   * computer goes away, and one fresh try confirms it.
+   */
   async stop(): Promise<void> {
     this.generation++;
-    await this.haltBoard();
-    this.operation = null;
+    if (this.halting) return this.halting;
+    if (this.cleanSinceHalt && !this.operation) return;
+    this.halting = (async () => {
+      if (this.transport?.remote) await this.drop(this.transport);
+      await this.haltBoard();
+      this.operation = null;
+      this.cleanSinceHalt = true;
+    })().finally(() => { this.halting = null; });
+    return this.halting;
   }
 
   get isRunning(): boolean {
