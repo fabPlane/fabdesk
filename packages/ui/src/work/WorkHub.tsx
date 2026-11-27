@@ -97,10 +97,10 @@ function AccountsMenu({ connection }: { connection: Connected }) {
   </WorkspaceMenu>;
 }
 
-function AttentionList({ items }: { items: AttentionItem[] }) {
+function AttentionList({ items, limit = 8, onShowAll }: { items: AttentionItem[]; limit?: number; onShowAll?: (() => void) | undefined }) {
   const [all, setAll] = useState(false);
   if (!items.length) return <p className="fd-work-empty">Nothing is waiting on you.</p>;
-  return <><ul className="fd-work-list">{(all ? items : items.slice(0, 8)).map(item => <li key={item.id}>
+  return <><ul className="fd-work-list">{(all ? items : items.slice(0, limit)).map(item => <li key={item.id}>
     <ExternalRow url={item.url} className="fd-work-row">
       <Icon name={item.kind === "pull_request" ? "route" : "checkCircle"} width={17} height={17} />
       <span className="fd-work-row-copy">
@@ -110,11 +110,11 @@ function AttentionList({ items }: { items: AttentionItem[] }) {
       <span className="fd-work-reasons">{item.reasons.map(reason => <Badge key={reason} tone={REASONS[reason].tone}>{REASONS[reason].label}</Badge>)}</span>
     </ExternalRow>
   </li>)}</ul>
-  {!all && items.length > 8 && <Button size="sm" variant="ghost" className="fd-work-show-more" onClick={() => setAll(true)}>Show all {items.length}</Button>}</>;
+  {!all && items.length > limit && <Button size="sm" variant="ghost" className="fd-work-show-more" onClick={onShowAll ?? (() => setAll(true))}>Show all {items.length}</Button>}</>;
 }
 
-function Feed({ events }: { events: WorkEvent[] }) {
-  const [shown, setShown] = useState(40);
+function Feed({ events, limit = 40, onShowAll }: { events: WorkEvent[]; limit?: number; onShowAll?: (() => void) | undefined }) {
+  const [shown, setShown] = useState(limit);
   const days = useMemo(() => {
     const groups: Array<{ day: string; events: WorkEvent[] }> = [];
     for (const event of events.slice(0, shown)) {
@@ -137,13 +137,14 @@ function Feed({ events }: { events: WorkEvent[] }) {
         </ExternalRow>
       </li>)}</ul>
     </div>)}
-    {events.length > shown && <Button size="sm" variant="ghost" onClick={() => setShown(shown + 60)}>Show older activity</Button>}
+    {events.length > shown && <Button size="sm" variant="ghost" onClick={onShowAll ?? (() => setShown(shown + 60))}>{onShowAll ? "Show all activity" : "Show older activity"}</Button>}
   </>;
 }
 
-function Team({ members, sinceDays }: { members: TeamMember[]; sinceDays: number }) {
+function Team({ members, sinceDays, limit, onShowAll }: { members: TeamMember[]; sinceDays: number; limit?: number | undefined; onShowAll?: (() => void) | undefined }) {
   if (!members.length) return <p className="fd-work-empty">No one has been active in the last {sinceDays} days.</p>;
-  return <ul className="fd-work-team">{members.map(member => {
+  const shown = limit ? members.slice(0, limit) : members;
+  return <><ul className="fd-work-team">{shown.map(member => {
     const counts = [
       member.commits && `${member.commits} ${member.commits === 1 ? "commit" : "commits"}`,
       member.pullRequests && `${member.pullRequests} PR ${member.pullRequests === 1 ? "update" : "updates"}`,
@@ -156,7 +157,7 @@ function Team({ members, sinceDays }: { members: TeamMember[]; sinceDays: number
       {member.openPullRequests.slice(0, 3).map(pr => <ExternalRow key={pr.url} url={pr.url} className="fd-work-member-latest"><span>Open: <em>{pr.title}</em> · {pr.repo.split("/")[1]}#{pr.number}{pr.draft ? " · draft" : ""}</span></ExternalRow>)}
       {member.openPullRequests.length > 3 && <small className="fd-work-more">+{member.openPullRequests.length - 3} more open pull requests</small>}
     </li>;
-  })}</ul>;
+  })}</ul>{members.length > shown.length && onShowAll && <Button size="sm" variant="ghost" className="fd-work-show-more" onClick={onShowAll}>Show all {members.length} people</Button>}</>;
 }
 
 function Repositories({ scope, enabled }: { scope: WorkScope; enabled: boolean }) {
@@ -246,8 +247,11 @@ function readScope(): WorkScope {
   try { return localStorage.getItem(SCOPE_KEY) === "hardware" ? "hardware" : "all"; } catch { return "all"; }
 }
 
-/** Home's Work page: what needs you, what changed, who is doing what, across GitHub. */
-export function WorkHub() {
+/**
+ * What needs you, what changed and who is doing what, across GitHub. `compact` is the summary shown
+ * under the projects on Home's Everything view; the full page adds repositories and local projects.
+ */
+export function WorkHub({ compact = false, onShowAll }: { compact?: boolean; onShowAll?: () => void }) {
   const connection = useWorkConnection();
   const [scope, setScopeState] = useState<WorkScope>(readScope);
   const setScope = (next: WorkScope) => { setScopeState(next); try { localStorage.setItem(SCOPE_KEY, next); } catch { /* the choice just is not remembered */ } };
@@ -255,9 +259,10 @@ export function WorkHub() {
   const overview = useWorkOverview(scope, !!connected);
   const { refresh } = useWorkMutations();
   const busy = refresh.isPending || overview.isFetching;
-  return <div className="fd-project-home fd-work-hub" data-testid="work-hub">
+  const more = compact ? onShowAll : undefined;
+  return <div className="fd-project-home fd-work-hub" data-testid="work-hub" data-compact={compact || undefined}>
     <header>
-      <div><h1>Work</h1><p>{connected ? `Pull requests, issues and commits across ${connected.owners.filter(owner => owner.watched).map(owner => owner.login).join(", ") || "no accounts yet"}.` : "Everything going on across your team’s repositories, in one place."}</p></div>
+      <div>{compact ? <h2 className="fd-work-title">Work</h2> : <h1>Work</h1>}<p>{connected ? `Pull requests, issues and commits across ${connected.owners.filter(owner => owner.watched).map(owner => owner.login).join(", ") || "no accounts yet"}.` : "Everything going on across your team’s repositories, in one place."}</p></div>
       {connected && <div className="fd-home-actions">
         <div className="fd-work-scope" role="group" aria-label="Which repositories to show">
           <button type="button" aria-pressed={scope === "hardware"} onClick={() => setScope("hardware")}><Icon name="pcb" width={15} height={15} />Hardware</button>
@@ -276,22 +281,22 @@ export function WorkHub() {
           <div>
             <section aria-label="Needs your attention">
               <div className="fd-work-heading"><h2>Needs your attention</h2>{overview.data && <span>{overview.data.attention.length} open</span>}</div>
-              {overview.isPending ? <p role="status" className="fd-work-empty"><Spinner /> Loading…</p> : overview.data && <AttentionList items={overview.data.attention} />}
+              {overview.isPending ? <p role="status" className="fd-work-empty"><Spinner /> Loading…</p> : overview.data && <AttentionList key={String(compact)} items={overview.data.attention} limit={compact ? 4 : 8} onShowAll={more} />}
             </section>
             <section aria-label="Activity">
               <div className="fd-work-heading"><h2>Activity</h2>{overview.data && <span>Last {overview.data.sinceDays} days · {overview.data.repos.length} active {overview.data.repos.length === 1 ? "repository" : "repositories"}</span>}</div>
-              {overview.isPending ? <p role="status" className="fd-work-empty"><Spinner /> Loading…</p> : overview.data && <Feed key={scope} events={overview.data.feed} />}
+              {overview.isPending ? <p role="status" className="fd-work-empty"><Spinner /> Loading…</p> : overview.data && <Feed key={`${scope}:${compact}`} events={overview.data.feed} limit={compact ? 8 : 40} onShowAll={more} />}
             </section>
           </div>
           <aside>
             <section aria-label="Team">
               <div className="fd-work-heading"><h2>Team</h2></div>
-              {overview.isPending ? <p role="status" className="fd-work-empty"><Spinner /> Loading…</p> : overview.data && <Team members={overview.data.team} sinceDays={overview.data.sinceDays} />}
+              {overview.isPending ? <p role="status" className="fd-work-empty"><Spinner /> Loading…</p> : overview.data && <Team members={overview.data.team} sinceDays={overview.data.sinceDays} limit={compact ? 4 : undefined} onShowAll={more} />}
             </section>
-            <LocalProjects connection={connected} />
+            {!compact && <LocalProjects connection={connected} />}
           </aside>
         </div>
-        <Repositories scope={scope} enabled />
+        {!compact && <Repositories scope={scope} enabled />}
       </>}
   </div>;
 }

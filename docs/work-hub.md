@@ -1,8 +1,11 @@
 # Work hub
 
-Home › **Work** shows what is going on across a GitHub account's repositories: what needs the
-signed-in person, a feed of commits / pull requests / issues / reviews, what each team member is
-doing, the repositories themselves, and local fabPlane projects that can be moved to GitHub.
+Home is one page with a three-way switch at the upper right: **Everything** (start an idea, recent
+projects, and a summary of the team's work), **Projects** (only projects and ideas) and **Work**
+(only GitHub). The choice is remembered. Work shows what needs the signed-in person, a feed of
+commits / pull requests / issues / reviews, what each team member is doing, the repositories
+themselves, and local fabPlane projects that can be moved to GitHub; the Everything summary leaves
+out the last two and links to the full view.
 
 Everything runs in the local core (`apps/core/src/work-hub.ts`, routes in
 `apps/core/src/http/work-routes.ts`, shapes in `packages/protocol/src/work-hub.ts`, page in

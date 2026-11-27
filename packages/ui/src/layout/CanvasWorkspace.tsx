@@ -34,6 +34,16 @@ import { SketchStartReference } from "./SketchStartReference";
 import { WorkspaceBackButton } from "./WorkspaceBackButton";
 import { WorkspaceMenu } from "./WorkspaceMenu";
 
+type HomeView = "all" | "projects" | "work";
+const HOME_VIEW_KEY = "fabdesk.home.view";
+const HOME_VIEWS: Array<{ id: HomeView; label: string; hint: string; icon: "library" | "folder" | "activity" }> = [
+  { id: "all", label: "Everything", hint: "Start an idea, recent projects and your team's work", icon: "library" },
+  { id: "projects", label: "Projects", hint: "Only your projects and ideas", icon: "folder" },
+  { id: "work", label: "Work", hint: "Only pull requests, issues and team activity from GitHub", icon: "activity" },
+];
+function readHomeView(): HomeView {
+  try { const saved = localStorage.getItem(HOME_VIEW_KEY); return saved === "projects" || saved === "work" ? saved : "all"; } catch { return "all"; }
+}
 
 export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps) {
   const { host, sseStatus, client } = useCore();
@@ -42,12 +52,13 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const projects = useProjects();
   const coreIdentity = useCoreIdentity();
   const isDraft = project.data ? !!project.data.manifest.ideaDraft : !!projects.data?.find(item => item.id === projectId)?.isDraft;
-  const [showProjects, setShowProjects] = useState(false);
-  const [showWork, setShowWork] = useState(false);
+  // Home is one page seen three ways: everything, only projects, or only the team's work.
+  const [homeView, setHomeViewState] = useState<HomeView>(readHomeView);
+  const setHomeView = (view: HomeView) => { setHomeViewState(view); try { localStorage.setItem(HOME_VIEW_KEY, view); } catch { /* not remembered */ } };
   const [setupDraft, setSetupDraft] = useState<ProjectDetail | null>(null);
   const [draftView, setDraftView] = useState<"sketch" | "conversation">("sketch");
   const seenRequest = useRef("");
-  useEffect(() => { if (!projectId) setShowProjects(false); setShowWork(false); setDraftView("sketch"); }, [projectId]);
+  useEffect(() => { setDraftView("sketch"); }, [projectId]);
   const boardSources = useBoardSources(projectId);
   useEffect(() => {
     const state = useUiStore.getState();
@@ -154,16 +165,14 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       paddingRight: "calc(var(--fd-canvas-gutter, 24px) + max(0px, 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)))",
       WebkitAppRegion: "drag",
     } as React.CSSProperties}>
-      <button className="fd-canvas-brand" title="Project overview" onClick={() => { if (projectId) openArea("overview"); else { ui().setActiveThread(null); setShowProjects(false); setShowWork(false); } }}>
+      <button className="fd-canvas-brand" title="Project overview" onClick={() => { if (projectId) openArea("overview"); else { ui().setActiveThread(null); setHomeView("all"); } }}>
         <FabPlaneLogo /><span>fabPlane</span>
       </button>
-      {projectId ? <><WorkspaceBackButton /><strong className="fd-project-identity" title={name}>{name}</strong><Button className="fd-header-home" size="sm" variant="ghost" onClick={() => ui().goHome(client.baseUrl)} title="Return to Home. Running work continues.">Home</Button></> : <span className="fd-home-header-label">{showWork ? "Work" : showProjects ? "Projects" : "Home"}</span>}
+      {projectId ? <><WorkspaceBackButton /><strong className="fd-project-identity" title={name}>{name}</strong><Button className="fd-header-home" size="sm" variant="ghost" onClick={() => ui().goHome(client.baseUrl)} title="Return to Home. Running work continues.">Home</Button></> : <span className="fd-home-header-label">Home</span>}
       {isDraft && <span className="fd-idea-badge">Draft</span>}
       {referenceStart && <span className="fd-canvas-breadcrumb"><span>/</span><strong>Start with sketch</strong></span>}
       <div className="fd-canvas-header-actions">
-        {home && !showProjects && !showWork && <Button size="sm" onClick={() => setCreating("create")}><Icon name="plus" width={16} height={16} />New project</Button>}
-        {home && !showWork && <Button size="sm" title="Pull requests, issues and team activity from GitHub" onClick={() => setShowWork(true)}><Icon name="activity" width={16} height={16} />Work</Button>}
-        {home && <Button size="sm" onClick={() => { if (showWork) setShowWork(false); else setShowProjects(!showProjects); }}><Icon name={showProjects || showWork ? "chevronLeft" : "folder"} width={16} height={16} />{showWork ? showProjects ? "Projects" : "Home" : showProjects ? "Home" : "Projects"}</Button>}
+        {home && homeView !== "projects" && <Button size="sm" onClick={() => setCreating("create")}><Icon name="plus" width={16} height={16} />New project</Button>}
         {projectId && !boardOpen && !secondary && !isDraft && <Button size="sm" title="Return to the canvas workspace" onClick={() => { ui().setBoardOpen(true); setAssistantOpen(false); }}><Icon name="pcb" width={16} height={16} />Canvas</Button>}
         {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
         <span className="fd-canvas-connection" title={connectionTitle}><i data-connected={connected} />{connection ?? <span className="sr-only">Connected</span>}</span>
@@ -183,7 +192,13 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       </div>
     </header>
     {banner}
-    {home && showWork ? <main className="fd-home-surface"><WorkHub /></main> : home ? <main className="fd-home-surface"><ProjectHome listing={showProjects} onViewProjects={() => setShowProjects(true)} onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} /></main> : <main className="fd-canvas-main" data-draft-view={isDraft && !secondary ? conversationOnly ? "conversation" : "sketch" : undefined} data-task-toolbar={!!projectId && !secondary && (!conversationOnly || isDraft)} data-area={fresh ? "start" : area}>
+    {home ? <main className="fd-home-surface" data-home-view={homeView}>
+      <div className="fd-home-view-bar"><div className="fd-home-view-switch" role="group" aria-label="What Home shows">
+        {HOME_VIEWS.map(view => <button key={view.id} type="button" aria-pressed={homeView === view.id} title={view.hint} onClick={() => setHomeView(view.id)}><Icon name={view.icon} width={15} height={15} />{view.label}</button>)}
+      </div></div>
+      {homeView !== "work" && <ProjectHome listing={homeView === "projects"} onViewProjects={() => setHomeView("projects")} onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} />}
+      {homeView !== "projects" && <WorkHub compact={homeView === "all"} onShowAll={() => setHomeView("work")} />}
+    </main> : <main className="fd-canvas-main" data-draft-view={isDraft && !secondary ? conversationOnly ? "conversation" : "sketch" : undefined} data-task-toolbar={!!projectId && !secondary && (!conversationOnly || isDraft)} data-area={fresh ? "start" : area}>
       {!inlineBoardNavigation && destinations}
       {sketchReference && !isDraft && !fresh && !secondary && !conversationOnly && <span className="fd-reference-view-label">Project reference</span>}
       {secondary && !order && <Button className="fd-canvas-back" size="sm" onClick={() => { ui().setActiveOpenSourceId(null); ui().setInventoryOpen(false); ui().setOrderFlowOpen(false); ui().setBoardOpen(true); }}>← Return to canvas</Button>}
