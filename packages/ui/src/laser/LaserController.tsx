@@ -246,6 +246,7 @@ function Settings({ snap }: { snap: LaserCellSnapshot }) {
     {d.driver === "studio-window" && <div className="fd-lc-row">
       <Field label="Board centre X on the laser (mm)"><Input type="number" step={0.1} value={d.studioBoardCenterMm.x} onChange={e => setD({ ...d, studioBoardCenterMm: { ...d.studioBoardCenterMm, x: Number(e.target.value) } })} /></Field>
       <Field label="Board centre Y on the laser (mm)"><Input type="number" step={0.1} value={d.studioBoardCenterMm.y} onChange={e => setD({ ...d, studioBoardCenterMm: { ...d.studioBoardCenterMm, y: Number(e.target.value) } })} /></Field>
+      <Field label="ComMarker Studio program (empty = default install)"><Input placeholder="…\ComMarker_Studio\ComMarker_Studio.exe" value={d.studioExe ?? ""} onChange={e => setD({ ...d, studioExe: e.target.value.trim() || null })} /></Field>
       <Field label="Job is finished when">
         <Select value={d.studioCompletion} onChange={e => setD({ ...d, studioCompletion: e.target.value as "watch" | "timer" })}><option value="watch">Studio shows it is done</option><option value="timer">The job time has passed</option></Select>
       </Field>
