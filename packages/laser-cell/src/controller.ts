@@ -11,7 +11,8 @@ import { CellError, POSE_LABELS, POSE_NAMES, missingPoses, runCycle, type CellPo
 import { LightBurnLaser, SimulatedLaser, StudioFootswitchLaser, openLightBurnUdp, openRelay } from "./lasers";
 import { listSerialPorts, openSerial, type SerialPortInfo } from "./serial";
 import { LmcLaser } from "./lmc/laser";
-import { listUsbDevices, openWinUsbLmc, LMC_PID, LMC_VID } from "./lmc/usb";
+import { listUsbDevices, openUsbLmc, LMC_PID, LMC_VID } from "./lmc/usb";
+import { BRIDGE_DEFAULT_PORT, openBridgeLmc } from "./lmc/bridge";
 import { DEFAULT_STUDIO_EXE, StudioWindowLaser, launchStudio, windowsStudioUi, type StudioJobSpec, type StudioLoadResult } from "./studio-window";
 import { DEFAULT_BAUD, St3215Bus } from "./st3215";
 
@@ -61,8 +62,13 @@ export const LaserCellConfigSchema = z.object({
       maxPowerPct: z.number().min(1).max(100).default(20),
       initBoard: z.boolean().default(true),
       usbIndex: z.number().int().min(0).max(8).default(0),
-    }).default({ fieldMm: 70, centerMm: { x: 0, y: 0 }, flipX: false, flipY: false, swapXY: false, source: "co2", laserPin: 0, lightPin: 8, maxPowerPct: 20, initBoard: true, usbIndex: 0 }),
-  }).default({ driver: "studio-window", studioCompletion: "watch", studioExe: null, studioBoardCenterMm: { x: 0, y: 0 }, relayKind: "lcus", relayPort: null, relayChannel: 1, markSeconds: 600, marginSeconds: 5, jobPath: null, lightburnHost: "127.0.0.1", frameSeconds: 0, markTimeoutMinutes: 120, lmc: { fieldMm: 70, centerMm: { x: 0, y: 0 }, flipX: false, flipY: false, swapXY: false, source: "co2", laserPin: 0, lightPin: 8, maxPowerPct: 20, initBoard: true, usbIndex: 0 } }),
+      /** usb = laser cable in this computer; network = a fabPlane laser bridge on the Wi-Fi. */
+      connection: z.enum(["usb", "network"]).default("usb"),
+      host: z.string().default(""),
+      port: z.number().int().min(1).max(65535).default(BRIDGE_DEFAULT_PORT),
+      token: z.string().default(""),
+    }).default({ fieldMm: 70, centerMm: { x: 0, y: 0 }, flipX: false, flipY: false, swapXY: false, source: "co2", laserPin: 0, lightPin: 8, maxPowerPct: 20, initBoard: true, usbIndex: 0, connection: "usb", host: "", port: BRIDGE_DEFAULT_PORT, token: "" }),
+  }).default({ driver: "studio-window", studioCompletion: "watch", studioExe: null, studioBoardCenterMm: { x: 0, y: 0 }, relayKind: "lcus", relayPort: null, relayChannel: 1, markSeconds: 600, marginSeconds: 5, jobPath: null, lightburnHost: "127.0.0.1", frameSeconds: 0, markTimeoutMinutes: 120, lmc: { fieldMm: 70, centerMm: { x: 0, y: 0 }, flipX: false, flipY: false, swapXY: false, source: "co2", laserPin: 0, lightPin: 8, maxPowerPct: 20, initBoard: true, usbIndex: 0, connection: "usb", host: "", port: BRIDGE_DEFAULT_PORT, token: "" } }),
   poses: z.object({
     home: PoseSchema.optional(),
     stackAbove: PoseSchema.optional(),
@@ -237,9 +243,15 @@ export class LaserCellController {
     else if (l.driver === "lightburn") this.laser = new LightBurnLaser(await openLightBurnUdp(l.lightburnHost));
     else if (l.driver === "usb-lmc") {
       const m = l.lmc;
-      this.laser = new LmcLaser(() => openWinUsbLmc(m.usbIndex), {
+      const open = m.connection === "network"
+        ? () => {
+          if (!m.host || !m.token) throw new LaserCellError("Enter the laser bridge's address and access key (shown in the bridge window)");
+          return openBridgeLmc(m.host, m.port, m.token);
+        }
+        : () => openUsbLmc(m.usbIndex);
+      this.laser = new LmcLaser(open, {
         field: { sizeMm: m.fieldMm, centerMm: [m.centerMm.x, m.centerMm.y], flipX: m.flipX, flipY: m.flipY, swapXY: m.swapXY },
-        source: m.source, pins: { laser: m.laserPin, light: m.lightPin }, maxPowerPct: m.maxPowerPct, initBoard: m.initBoard, frameSeconds: Math.max(2, l.frameSeconds),
+        source: m.source, pins: { laser: m.laserPin, light: m.lightPin }, maxPowerPct: m.maxPowerPct, initBoard: m.initBoard, frameSeconds: Math.max(2, l.frameSeconds), link: m.connection === "network" ? `the Wi-Fi bridge (${m.host})` : "USB",
       });
     }
     else if (l.driver === "studio-window") this.laser = new StudioWindowLaser(windowsStudioUi(), { completion: l.studioCompletion, markSeconds: l.markSeconds, marginSeconds: l.marginSeconds });

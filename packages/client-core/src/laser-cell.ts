@@ -22,6 +22,10 @@ export type LaserCellLmcConfig = {
   maxPowerPct: number;
   initBoard: boolean;
   usbIndex: number;
+  connection: "usb" | "network";
+  host: string;
+  port: number;
+  token: string;
 };
 export type LaserCellRunMode = "cycle" | "dry-run" | "laser-only";
 

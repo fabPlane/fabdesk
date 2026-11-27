@@ -28,6 +28,8 @@ export type LmcOptions = {
   /** Seconds the red-light frame is shown. */
   frameSeconds: number;
   pollMs?: number;
+  /** How the board is reached, for messages: "USB" or "the Wi-Fi bridge". */
+  link?: string;
 };
 
 /** Job file written by export_laser_copper: `<stem>.lmc.json`. */
@@ -125,7 +127,7 @@ export class LmcLaser implements LaserDriver {
     try {
       const r = await this.single(Cmd.GetVersion);
       if (isBusy(r.status)) return { state: "busy", detail: "the laser board is running a list", driver: this.name };
-      return { state: "idle", detail: `connected over USB${this.job ? "; job loaded" : "; no job loaded (Make laser job, then Use this job)"}`, driver: this.name };
+      return { state: "idle", detail: `connected over ${this.options.link ?? "USB"}${this.job ? "; job loaded" : "; no job loaded (Make laser job, then Use this job)"}`, driver: this.name };
     } catch (error) {
       await this.close().catch(() => undefined);
       return { state: "offline", detail: error instanceof Error ? error.message : String(error), driver: this.name };

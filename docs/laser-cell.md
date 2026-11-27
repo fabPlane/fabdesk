@@ -104,6 +104,43 @@ centre lands on *Board centre X/Y* (the jig). Studio's Y direction is assumed to
 software: **check with Studio's Preview before the first board**. Only the ABLATE pass is built in Studio (the
 cross-hatched isolation fill); the separate EDGE/CLEAN passes are LightBurn-only.
 
+## fabPlane's own laser driver: USB cable or Wi-Fi (experimental)
+
+Route `usb-lmc` ("fabPlane USB driver") drives the laser's BJJCZ galvo board directly, without ComMarker
+Studio, the way LightBurn drives the Omni X. Protocol ported from
+[galvoplotter](https://github.com/meerk40t/galvoplotter) (MIT License, Copyright (c) 2023 MeerK40t).
+Code: `packages/laser-cell/src/lmc/` (protocol, job → hatch moves, WinUSB / Linux usbfs transports, Wi-Fi bridge).
+
+**Not yet run on an Omni X.** These are settings until tested on the machine: USB id 9588:9899, laser output
+pin 0, red-light pin 8, power style (PWM ratio vs current), mirror / swap of the axes, and the lens
+correction (a flat table is sent). Every mark is limited by **Power cap** (default 20 %).
+
+**USB cable (laser plugged into this PC)**
+1. Windows lets one driver own the laser's USB port. Studio installs Cypress's driver; fabPlane needs
+   **WinUSB**: install it for the 9588:9899 device with [Zadig](https://zadig.akeo.ie/) (or LightBurn's galvo
+   driver). Studio cannot use the laser until its driver is put back (Device Manager → Update driver).
+2. Laser Controller → Settings → *fabPlane USB driver* → Connect via *USB cable* → Save → **Find laser**
+   (read-only: version and status words).
+
+**Wi-Fi (fabPlane laser bridge)**: the Omni X's own Wi-Fi hotspot speaks ComMarker's private protocol and is
+not used. Instead the laser's USB cable goes into a small computer next to it (Raspberry Pi, mini PC, old
+laptop) that runs the bridge; fabPlane connects to it over the network.
+1. On that computer: install [Bun](https://bun.sh), copy this repository, then
+   `bun packages/laser-cell/src/lmc/bridge-cli.ts` (Windows: WinUSB driver as above; Linux/Pi: run as root or
+   add a udev rule for 9588:9899). It prints its address, port (5021) and an **access key** (stored in
+   `~/.fabplane-laser-bridge.json`). Only one computer can drive the laser at a time; a wrong key is refused.
+2. Laser Controller → Settings → *fabPlane USB driver* → Connect via *Wi-Fi* → address, port, access key →
+   Save → **Find laser**. `--mock` runs the bridge without a laser to test the link.
+
+**First test on the machine, in this order**: Find laser → Make laser job → Use this job → tick the UV guard →
+**Preview (red light)** (5 s frame; if the UV beam fires instead, the pins are swapped: E-stop, then change
+*Machine details*) → a small mark on scrap at the 20 % cap → raise the cap step by step. Check the frame
+position and direction; fix with board centre X/Y and the mirror / swap settings.
+
+Verified 2026-11-27 without a laser: USB device listing on Windows, all mock-board tests (hatch, list
+packets, power cap, Stop while a long job is still being sent), the bridge over TCP (key, one owner, a full
+job), and the app connecting to the bridge over the PC's Wi-Fi address. The Linux transport is untested.
+
 ## How the arm knows where things are
 
 No kinematics: positions are **taught**. Relax the arm (motors off), move it by hand to each station and

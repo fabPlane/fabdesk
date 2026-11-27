@@ -195,3 +195,63 @@ export class MockLmcTransport implements LmcTransport {
 }
 
 export { command, parseReply };
+
+// ---------------------------------------------------------------- Linux (Raspberry Pi bridge): usbfs
+
+/**
+ * Linux transport through usbfs ioctls (libc via bun:ffi), for running the Wi-Fi bridge on a Raspberry Pi.
+ * Needs permission on /dev/bus/usb (run as root or add a udev rule for 9588:9899).
+ * NOT YET TESTED on Linux hardware.
+ */
+export async function openLinuxUsbLmc(index = 0, timeoutMs = 500): Promise<LmcTransport> {
+  if (process.platform !== "linux") throw new LmcUsbError("the usbfs transport is for Linux");
+  const { readdirSync, readFileSync, openSync, closeSync } = await import("node:fs");
+  const read = (p: string) => { try { return readFileSync(p, "utf8").trim(); } catch { return ""; } };
+  const boards: string[] = [];
+  for (const d of readdirSync("/sys/bus/usb/devices")) {
+    const base = `/sys/bus/usb/devices/${d}`;
+    if (read(`${base}/idVendor`) === "9588" && read(`${base}/idProduct`) === "9899") {
+      boards.push(`/dev/bus/usb/${read(`${base}/busnum`).padStart(3, "0")}/${read(`${base}/devnum`).padStart(3, "0")}`);
+    }
+  }
+  const path = boards[index];
+  if (!path) throw new LmcUsbError("no BJJCZ laser board (USB 9588:9899) found; plug in the laser and switch it on");
+  let fd: number;
+  try { fd = openSync(path, "r+"); } catch (e) {
+    throw new LmcUsbError(`cannot open ${path} (${e instanceof Error ? e.message : String(e)}); run the bridge as root or add a udev rule for 9588:9899`);
+  }
+  const { dlopen, FFIType, ptr } = await import("bun:ffi");
+  const libc = dlopen("libc.so.6", { ioctl: { args: [FFIType.i32, FFIType.u64, FFIType.ptr], returns: FFIType.i32 } }).symbols;
+  const USBDEVFS_CLAIMINTERFACE = 0x8004550fn, USBDEVFS_RELEASEINTERFACE = 0x80045510n, USBDEVFS_BULK = 0xc0185502n;
+  const iface = new Uint32Array([0]);
+  if (libc.ioctl(fd, USBDEVFS_CLAIMINTERFACE, ptr(iface)) < 0) { closeSync(fd); throw new LmcUsbError(`could not claim the laser board's USB interface at ${path} (in use?)`); }
+  // struct usbdevfs_bulktransfer (64-bit): u32 ep, u32 len, u32 timeout, u32 pad, void* data = 24 bytes
+  const bulk = (ep: number, data: Uint8Array) => {
+    const req = new Uint8Array(24);
+    const v = new DataView(req.buffer);
+    v.setUint32(0, ep, true); v.setUint32(4, data.length, true); v.setUint32(8, timeoutMs, true);
+    v.setBigUint64(16, BigInt(ptr(data)), true);
+    return libc.ioctl(fd, USBDEVFS_BULK, ptr(req));
+  };
+  return {
+    async write(packet) {
+      const copy = new Uint8Array(packet);
+      if (bulk(LMC_OUT_ENDPOINT, copy) !== copy.length) throw new LmcUsbError("USB write to the laser board failed");
+    },
+    async read() {
+      const buf = new Uint8Array(REPLY_BYTES);
+      const n = bulk(LMC_IN_ENDPOINT, buf);
+      if (n < 0) throw new LmcUsbError("USB read from the laser board failed");
+      return buf.subarray(0, n);
+    },
+    async close() {
+      libc.ioctl(fd, USBDEVFS_RELEASEINTERFACE, ptr(iface));
+      closeSync(fd);
+    },
+  };
+}
+
+/** The USB transport for this platform. */
+export function openUsbLmc(index = 0): Promise<LmcTransport> {
+  return process.platform === "linux" ? openLinuxUsbLmc(index) : openWinUsbLmc(index);
+}

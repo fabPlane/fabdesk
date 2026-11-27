@@ -295,13 +295,24 @@ function UsbSettings({ snap, d, setD }: { snap: LaserCellSnapshot; d: LaserCellC
   const set = (patch: Partial<LaserCellConfig["laser"]["lmc"]>) => setD({ ...d, lmc: { ...m, ...patch } });
   const saved = snap.config.laser.driver === "usb-lmc";
   const find = () => run("find", async () => {
-    const list = await act<{ devices: Array<{ vid: string; pid: string; laser: boolean }> }>({ action: "usb_devices" });
-    if (!list.devices.some(x => x.laser)) { setFound("No laser board found on USB (looking for 9588:9899). Plug in the laser, switch it on, and install the WinUSB driver for it."); return; }
+    if (snap.config.laser.lmc.connection === "usb") {
+      const list = await act<{ devices: Array<{ vid: string; pid: string; laser: boolean }> }>({ action: "usb_devices" });
+      if (!list.devices.some(x => x.laser)) { setFound("No laser board found on USB (looking for 9588:9899). Plug in the laser, switch it on, and install the WinUSB driver for it."); return; }
+    }
     const p = await act<{ version: number[]; status: number }>({ action: "usb_probe" });
     setFound(`Laser board answered: version ${p.version.map(w => w.toString(16)).join(".")}, status 0x${p.status.toString(16)}.`);
   });
   return <>
     <p className="fd-lc-warn">Experimental: fabPlane talks to the laser board directly (the protocol LightBurn uses). Not yet tested on an Omni X. Close ComMarker Studio first, and test in this order: Find laser → Preview → a small mark at low power.</p>
+    <div className="fd-lc-row">
+      <Field label="Connect via"><Select value={m.connection} onChange={e => set({ connection: e.target.value as "usb" | "network" })}><option value="usb">USB cable (laser plugged into this PC)</option><option value="network">Wi-Fi (fabPlane laser bridge)</option></Select></Field>
+      {m.connection === "network" && <>
+        <Field label="Bridge address"><Input placeholder="192.168.1.50" value={m.host} onChange={e => set({ host: e.target.value.trim() })} /></Field>
+        <Field label="Port"><Input type="number" min={1} max={65535} value={m.port} onChange={e => set({ port: Number(e.target.value) || 5021 })} /></Field>
+        <Field label="Access key"><Input type="password" value={m.token} onChange={e => set({ token: e.target.value.trim() })} /></Field>
+      </>}
+    </div>
+    {m.connection === "network" && <p className="fd-lc-note">On the computer the laser is plugged into, run the fabPlane laser bridge; it shows the address and access key to enter here. Save settings, then Find laser.</p>}
     <div className="fd-lc-row">
       <Field label="Lens field (mm)"><Select value={String(m.fieldMm)} onChange={e => set({ fieldMm: Number(e.target.value) })}><option value="70">70 mm lens</option><option value="150">150 mm lens</option></Select></Field>
       <Field label="Board centre X on the laser (mm)"><Input type="number" step={0.1} value={m.centerMm.x} onChange={e => set({ centerMm: { ...m.centerMm, x: Number(e.target.value) } })} /></Field>
