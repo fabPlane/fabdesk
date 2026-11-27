@@ -23,6 +23,7 @@
         "@fabdesk/agents": "workspace:*",
         "@fabdesk/auth-client": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
+        "@fabdesk/laser-cell": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
         "@fabdesk/qr": "workspace:*",
         "@fabdesk/sim": "workspace:*",
@@ -172,6 +173,17 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/laser-cell": {
+      "name": "@fabdesk/laser-cell",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "4.6.7",
+      },
+      "devDependencies": {
+        "@types/bun": "1.2.21",
+        "typescript": "5.9.2",
+      },
+    },
     "packages/product-video": {
       "name": "@fabdesk/product-video",
       "version": "0.1.0",
@@ -222,6 +234,7 @@
         "@fabdesk/board-diff": "workspace:*",
         "@fabdesk/board-workflow": "workspace:*",
         "@fabdesk/kicad": "workspace:*",
+        "@fabdesk/laser-cell": "workspace:*",
         "@fabdesk/product-video": "workspace:*",
         "@fabdesk/protocol": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.32.2",
@@ -621,6 +634,8 @@
     "@fabdesk/desktop": ["@fabdesk/desktop@workspace:apps/desktop"],
 
     "@fabdesk/kicad": ["@fabdesk/kicad@workspace:packages/kicad"],
+
+    "@fabdesk/laser-cell": ["@fabdesk/laser-cell@workspace:packages/laser-cell"],
 
     "@fabdesk/product-video": ["@fabdesk/product-video@workspace:packages/product-video"],
 

@@ -146,6 +146,7 @@ export * from "./output-library";
 export * from "./assembly-map-layout";
 export * from "./assembly-scene";
 export * from "./board-workspace";
+export * from "./laser-cell";
 export * from "./project-status-navigation";
 export * from "./sketch-recovery";
 

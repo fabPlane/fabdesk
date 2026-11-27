@@ -30,6 +30,7 @@ import { shoppingTools } from "./shopping";
 import { spatialTools } from "./spatial";
 import { verifyTools } from "./verify";
 import { boardTools } from "./board";
+import { laserTools } from "./laser";
 import { withBoardHandoff } from "./board-handoff";
 
 export const allTools: ReadonlyArray<ToolDef> = [
@@ -64,6 +65,7 @@ export const allTools: ReadonlyArray<ToolDef> = [
   ...shoppingTools,
   ...cadTools,
   ...boardTools,
+  ...laserTools,
 ].map((tool) => withBoardHandoff(tool as unknown as ToolDef)) as unknown as ReadonlyArray<ToolDef>;
 
 /** The v1 registry exposes both routers on every channel. */
@@ -73,6 +75,7 @@ export function createRegistry(opts: { channel?: "public" | "internal" } = {}): 
 }
 
 export * from "./core";
+export * from "./laser";
 export * from "./project";
 export * from "./comments";
 export * from "./parts";

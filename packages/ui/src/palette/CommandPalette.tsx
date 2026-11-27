@@ -62,7 +62,7 @@ export function CommandPalette() {
           {projectId && <Command.Group heading="Project"><Command.Item value="close project return home open different project" onSelect={pick(() => useUiStore.getState().goHome(client.baseUrl))}>Home</Command.Item></Command.Group>}
           {canvasMode && projectId && (Object.keys(WORKSPACE_AREAS) as WorkspaceArea[]).map(area => (
             <Command.Group key={area} heading={area === "boards" && assembly ? "Boards" : WORKSPACE_AREAS[area].label}>
-              {workspaceViews(area).length === 0 && <Command.Item disabled={!projectId} value={area === "connections" ? "connections linked parts across boards cable relationships" : area === "history" ? "board history revisions timeline compare parts changes" : "project overview all boards assembly"} onSelect={pick(() => useUiStore.getState().setWorkspaceArea(area))}>{area === "overview" ? "Project overview" : WORKSPACE_AREAS[area].label}</Command.Item>}
+              {workspaceViews(area).length === 0 && <Command.Item disabled={!projectId} value={area === "connections" ? "connections linked parts across boards cable relationships" : area === "history" ? "board history revisions timeline compare parts changes" : area === "laser" ? "laser cell robot arm elrobot commarker omni x uv engrave copper pcb isolation lightburn studio" : "project overview all boards assembly"} onSelect={pick(() => useUiStore.getState().setWorkspaceArea(area))}>{area === "overview" ? "Project overview" : WORKSPACE_AREAS[area].label}</Command.Item>}
               {workspaceViews(area).filter(view => !(assembly && area === "boards" && (view.tab === "cinema" || view.tab === "art"))).map(view => {
                 const index = BOARD_TABS.indexOf(view.tab);
 

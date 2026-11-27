@@ -11,7 +11,8 @@
     "./mechanical-fit": "./src/mechanical-fit.ts",
     "./shell-fit": "./src/shell-fit.ts",
     "./stencil": "./src/stencil.ts",
-    "./stencil-laser": "./src/stencil-laser.ts"
+    "./stencil-laser": "./src/stencil-laser.ts",
+    "./pcb-laser-copper": "./src/pcb-laser-copper.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

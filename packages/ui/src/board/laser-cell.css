@@ -1,0 +1,49 @@
+/* Laser cell: robot arm + ComMarker Omni X. Run strip on top, two columns of setup panels below. */
+.fd-laser-workspace { display:flex; flex-direction:column; gap:12px; height:100%; min-height:0; padding:76px var(--fd-canvas-gutter, 24px) 76px; box-sizing:border-box; overflow:auto; }
+.fd-laser-columns { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:12px; align-items:start; }
+@media (max-width: 1100px) { .fd-laser-columns { grid-template-columns:minmax(0, 1fr); } }
+.fd-laser-column { display:grid; gap:12px; min-width:0; }
+.fd-laser-panel { display:grid; gap:10px; padding:14px 16px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); min-width:0; }
+.fd-laser-panel h3 { margin:0; font-size:13px; font-weight:600; }
+.fd-laser-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px; }
+.fd-laser-field { display:grid; gap:4px; font-size:12px; color:var(--fd-muted); align-content:start; }
+.fd-laser-field small { font-size:11px; line-height:1.35; }
+.fd-laser-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.fd-laser-note { margin:0; font-size:12px; line-height:1.45; color:var(--fd-muted); }
+.fd-laser-error { margin:0; font-size:12px; color:var(--fd-danger, #dc2626); }
+.fd-laser-warn { margin:0; font-size:12px; color:#b45309; }
+.fd-laser-state { margin:0; font-size:12px; padding:6px 10px; border-radius:8px; background:var(--fd-panel-2); }
+.fd-laser-state[data-state=idle] { color:#15803d; }
+.fd-laser-state[data-state=busy] { color:#b45309; }
+.fd-laser-state[data-state=error], .fd-laser-state[data-state=offline] { color:var(--fd-danger, #dc2626); }
+.fd-laser-summary { display:grid; gap:8px; font-size:12px; }
+.fd-laser-summary p { margin:0; }
+.fd-laser-table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; }
+.fd-laser-table th { text-align:left; font-weight:600; color:var(--fd-muted); padding:4px 6px; border-bottom:1px solid var(--fd-border); }
+.fd-laser-table td { padding:4px 6px; border-bottom:1px solid var(--fd-border); }
+.fd-laser-joints tr[data-hot] td { color:#b45309; }
+.fd-laser-files { margin:0; padding-left:16px; font-size:11px; color:var(--fd-muted); }
+.fd-laser-poses { display:grid; gap:4px; margin:0; padding:0; list-style:none; }
+.fd-laser-poses li { display:grid; grid-template-columns:minmax(0, 1fr) auto auto auto; gap:8px; align-items:center; padding:4px 8px; border-radius:8px; font-size:12px; }
+.fd-laser-poses li:nth-child(odd) { background:var(--fd-panel-2); }
+.fd-laser-poses i { font-style:normal; color:var(--fd-muted); font-size:11px; }
+.fd-laser-poses li[data-taught] i { color:#15803d; }
+.fd-laser-safety { border-color:#f59e0b; }
+.fd-laser-safety p, .fd-laser-safety ul { margin:0; font-size:12px; line-height:1.45; }
+.fd-laser-safety ul { padding-left:18px; display:grid; gap:4px; }
+.fd-laser-check { display:flex; gap:8px; align-items:flex-start; font-size:12px; font-weight:600; }
+.fd-laser-run { display:grid; gap:8px; padding:14px 16px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); flex-shrink:0; }
+.fd-laser-run-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+.fd-laser-run-controls .fd-laser-field:first-child { width:90px; }
+.fd-laser-run-controls .fd-laser-field:nth-child(2) { width:260px; }
+.fd-laser-stop { background:#dc2626 !important; color:#fff !important; border-color:#b91c1c !important; min-width:120px; font-weight:700; }
+.fd-laser-steps { display:flex; gap:4px; margin:0; padding:0; list-style:none; }
+.fd-laser-steps li { flex:1; padding:5px 0; text-align:center; font-size:11px; border-radius:6px; background:var(--fd-panel-2); color:var(--fd-muted); }
+.fd-laser-steps li[data-state=done] { background:#dcfce7; color:#166534; }
+.fd-laser-steps li[data-state=active] { background:#fef3c7; color:#92400e; font-weight:600; }
+.fd-laser-steps li[data-state=failed] { background:#fee2e2; color:#991b1b; font-weight:600; }
+.fd-laser-run-note { margin:0; font-size:12px; }
+.fd-laser-log { display:grid; gap:2px; margin:0; padding:0; list-style:none; max-height:220px; overflow:auto; font-size:11px; font-family:var(--fd-mono, ui-monospace, monospace); }
+.fd-laser-log time { color:var(--fd-muted); }
+.fd-laser-log li[data-level=warn] { color:#b45309; }
+.fd-laser-log li[data-level=error] { color:var(--fd-danger, #dc2626); }

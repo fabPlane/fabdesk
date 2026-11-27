@@ -6,6 +6,7 @@ export const WORKSPACE_AREAS = {
   connections: { label: "Connections", views: [] },
   history: { label: "History", views: [] },
   mechanical: { label: "Mechanical", views: [{ tab: "cad", label: "Enclosure & CAD" }] },
+  laser: { label: "Laser cell", views: [] },
   parts: { label: "Parts", views: [{ tab: "bom", label: "Parts & shopping" }] },
   outputs: { label: "Outputs", views: [{ tab: "renders", label: "Library" }, { tab: "3d", label: "Models & video" }, { tab: "files", label: "Export files" }] },
   review: { label: "Review", views: [{ tab: "updates", label: "Updates" }, { tab: "diff", label: "Changes" }, { tab: "comments", label: "Comments" }, { tab: "drc", label: "Checks" }] },

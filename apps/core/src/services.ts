@@ -2,6 +2,7 @@
 import { createRunChild } from "./child-runner";
 import * as kicad from "@fabdesk/kicad";
 import * as sim from "@fabdesk/sim";
+import { LaserCellController } from "@fabdesk/laser-cell";
 import type { Principal, Settings } from "@fabdesk/protocol";
 import {
   ToolError,
@@ -122,6 +123,8 @@ export async function createServices(
     clientName: `fabdesk/core/${process.pid}`,
     log: (m) => logger.info(m),
   });
+  // Robot-arm + Omni X laser cell. Opens no port until the user connects the arm or the laser.
+  const laserCell = new LaserCellController({ home: deps.home });
 
   const services: CoreServices & { dispose(): Promise<void> } = {
     version: deps.version,
@@ -187,9 +190,10 @@ export async function createServices(
     }),
     cad,
     boardAdopt: { adopt: (input) => adoptBoard(input) },
+    laserCell,
     runChild: createRunChild(),
     dispose: async () => {
-      await Promise.all([sessions.dispose(), cad.dispose()]);
+      await Promise.all([sessions.dispose(), cad.dispose(), laserCell.dispose()]);
     },
   };
   return services;
