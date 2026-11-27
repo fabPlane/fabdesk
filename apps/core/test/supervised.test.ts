@@ -296,6 +296,24 @@ describe("approvals", () => {
     bus.close();
   });
 
+  test("an agent run's own token cannot resolve its approvals or answer its questions", async () => {
+    const t = await newThread();
+    const bus = listen("agent.*");
+    await bus.ready;
+    await send(t.id, "approve:make release");
+    await waitFor(() => ofTopic(bus.events, "agent.approval_requested").length === 1);
+    const req = ofTopic(bus.events, "agent.approval_requested")[0]!;
+    const run = sessions.find((s) => s.prompt === "approve:make release")!;
+    const asAgent = { headers: { authorization: `Bearer ${run.mcp.token}` } };
+    expect((await decide(t.id, req.requestId, "approve", asAgent)).status).toBe(403);
+    expect((await local(`/threads/${t.id}/inputs/${req.requestId}`, { method: "POST", body: JSON.stringify({ answer: "yes" }), ...asAgent })).status).toBe(403);
+    expect((await detail(t.id)).pending.approvals.map((a) => a.requestId)).toEqual([req.requestId]);
+    // the person still decides
+    expect((await decide(t.id, req.requestId, "deny")).status).toBe(200);
+    await waitFor(() => ofTopic(bus.events, "agent.done").length === 1);
+    bus.close();
+  });
+
   test("deny resolves and the run goes on without the call", async () => {
     const t = await newThread();
     const bus = listen("agent.*");
