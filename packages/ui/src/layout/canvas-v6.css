@@ -799,3 +799,18 @@
 .fd-canvas-workspace .fd-svg-tools { border-color:color-mix(in srgb,var(--fd-fg) 20%,var(--fd-border)); box-shadow:0 4px 16px #102a2014; }
 .fd-canvas-workspace .fd-svg-tools .fd-button:not(:disabled) { color:var(--fd-fg); }
 .fd-canvas-workspace .fd-svg-tools .fd-button:not(:disabled):hover { background:var(--fd-panel-2); box-shadow:inset 0 0 0 1px var(--fd-border); }
+
+/* Home, Everything view: the composer leads and recent projects sit in a compact column to its right. */
+@media(min-width:1101px) {
+  .fd-idea-home { display:grid; grid-template-columns:minmax(0,1fr) 280px; column-gap:32px; align-items:start; }
+  .fd-idea-home .fd-home-resume { margin-top:8px; padding:16px; border-radius:16px; }
+  .fd-idea-home .fd-home-resume .fd-home-list-heading { flex-direction:column; align-items:flex-start; gap:2px; margin-bottom:10px; }
+  .fd-idea-home .fd-home-resume .fd-home-list-heading h2 { font-size:13px; }
+  .fd-idea-home .fd-home-resume .fd-home-list-heading > button { order:3; margin:8px 0 0 -8px; }
+  .fd-idea-home .fd-home-resume-description { display:none; }
+  .fd-idea-home .fd-home-projects { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .fd-idea-home .fd-home-projects .fd-home-workspace-open { min-height:0; padding:10px 40px 10px 10px; gap:10px; border-radius:10px; }
+  .fd-idea-home .fd-home-workspace-preview { transform:scale(.8); transform-origin:left center; margin-right:-8px; }
+  .fd-idea-home .fd-home-projects strong { font-size:13px; }
+  .fd-idea-home .fd-home-idea .fd-home-draft-note { margin-bottom:8px; }
+}
