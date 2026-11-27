@@ -72,7 +72,7 @@ describe("job geometry", () => {
     expect(cmds[0]!.op).toBe(List.ReadyMark);
     expect(cmds[1]).toEqual({ op: List.WritePort, params: [1, 0, 0, 0, 0] });
     expect(cmds.some(c => c.op === List.MarkPowerRatio)).toBe(true);
-    expect(cmds.filter(c => c.op === List.MarkTo)).toHaveLength(20); // 10 lines × 2 passes
+    expect(cmds.filter(c => c.op === List.MarkTo)).toHaveLength(40); // 10 lines × 2 directions (cross-hatch) × 2 passes
     const lastPort = cmds.filter(c => c.op === List.WritePort).at(-1)!;
     expect(lastPort.params[0]).toBe(0);
     expect(job.estimatedSeconds).toBeGreaterThan(0);
@@ -182,4 +182,17 @@ test("stop while a long job is still being sent stops feeding the board", async 
   expect(mock.lists.length).toBe(sent); // nothing more after the stop
   expect(sent).toBeLessThan(20);
   expect(mock.singles.map(c => c.op)).toContain(Cmd.StopExecute);
+});
+
+test("the streamed mark list is byte-identical to the whole list, and checks the field before the first packet", async () => {
+  const { markPackets, buildMarkJob } = await import("./job");
+  const shape: Shape = [square(2, 2, 16), square(6, 6, 4), [[3, 15], [9, 17], [5, 12]]];
+  const s: MarkSettings = { ...settings, passes: 3, intervalMm: 0.07, angleDeg: 15, angleStepDeg: 90 };
+  const opts = { source: "fiber" as const, pins: { laser: 0, light: 8 } };
+  const streamed = [...markPackets(shape, field, s, opts)];
+  const whole = buildMarkJob(shape, field, s, opts).packets;
+  expect(streamed.length).toBe(whole.length);
+  expect(streamed.every((p, i) => p.every((b, k) => b === whole[i]![k]))).toBe(true);
+  const outside = markPackets(shape, { ...field, centerMm: [40, 0] }, s, opts);
+  expect(() => outside.next()).toThrow(/outside the 70 mm lens field/);
 });

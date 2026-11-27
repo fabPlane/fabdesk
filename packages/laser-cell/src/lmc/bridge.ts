@@ -6,22 +6,30 @@
  * the network and the bridge passes the same 12-byte commands and 3072-byte list packets to the USB board.
  *
  * Wire format (TCP), every frame: type (1 byte ASCII) + payload length (uint32 LE) + payload.
- *   bridge → client  H  hello, JSON { bridge: "fabplane-lmc", version: 1 }
- *   client → bridge  A  auth, JSON { token }       (anything else before a valid token closes the link)
- *   bridge → client  K  auth accepted, JSON { device }
- *   client → bridge  W  write a 12- or 3072-byte packet to the board
- *   client → bridge  R  read the board's 8-byte reply
- *   bridge → client  D  the 8 reply bytes
- *   bridge → client  E  error, UTF-8 message (USB failure or bad request)
- * A shared token is required: anyone who can reach the bridge could otherwise fire the laser.
+ * Every client request gets exactly one answer, so replies can never get out of step:
+ *   bridge → client  H  hello, JSON { bridge: "fabplane-lmc", version: 2 }
+ *   client → bridge  A  auth, JSON { token }               → K (JSON { device }) or E, then close
+ *   client → bridge  W  write a 12- or 3072-byte packet    → O (written) or E
+ *   client → bridge  R  read the board's 8-byte reply      → D (8 bytes) or E
+ *   client → bridge  C  write a 12-byte command and read   → D (8 bytes) or E   (one round trip)
+ *   client → bridge  P  ping                               → O
+ * Safety:
+ * - an access key is required (anyone who can reach the bridge could otherwise fire the laser);
+ * - one computer drives the laser at a time; a driving computer that has been silent for TAKEOVER_MS can be
+ *   replaced by another one with the key (a laptop that dropped off the Wi-Fi does not lock everyone out);
+ * - when the driving computer disconnects or is replaced, its queued requests are dropped and the board is
+ *   stopped with its outputs off.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Socket } from "bun";
-import { COMMAND_BYTES, LIST_PACKET_BYTES } from "./protocol";
+import { Cmd, COMMAND_BYTES, LIST_PACKET_BYTES, command } from "./protocol";
 import { LmcUsbError, type LmcTransport } from "./usb";
 
 export const BRIDGE_DEFAULT_PORT = 5021;
+export const BRIDGE_VERSION = 2;
 const MAX_FRAME = LIST_PACKET_BYTES + 1024;
+/** A driving computer silent this long can be replaced. fabPlane talks to the board every few seconds while in use. */
+export const TAKEOVER_MS = 15_000;
 
 export function newBridgeToken(): string {
   return randomBytes(12).toString("base64url");
@@ -70,56 +78,103 @@ export type BridgeOptions = {
   /** Opens the USB board (WinUSB on Windows, usbfs on Linux, or a mock in tests). */
   open: () => Promise<LmcTransport>;
   log?: (line: string) => void;
+  /** Override TAKEOVER_MS (tests). */
+  takeoverMs?: number;
 };
 
-type Session = { reader: FrameReader; authed: boolean; queue: Promise<unknown> };
+type Session = { reader: FrameReader; authed: boolean; closed: boolean; lastSeen: number };
 
 /** Starts the bridge. One client at a time drives the board; the USB link is opened on first use. */
 export async function startLmcBridge(options: BridgeOptions) {
   const log = options.log ?? (() => undefined);
+  const takeoverMs = options.takeoverMs ?? TAKEOVER_MS;
   let usb: LmcTransport | null = null;
   let owner: Socket<Session> | null = null;
-  const board = async () => (usb ??= await options.open());
+  /** All USB access goes through this one queue, whichever session asks. */
+  let usbQueue: Promise<unknown> = Promise.resolve();
+  const onUsb = <T>(fn: (t: LmcTransport) => Promise<T>): Promise<T> => {
+    const go = async () => {
+      usb ??= await options.open();
+      try {
+        return await fn(usb);
+      } catch (error) {
+        const broken = usb;
+        usb = null;
+        await broken?.close().catch(() => undefined);
+        throw error;
+      }
+    };
+    const next = usbQueue.then(go, go);
+    usbQueue = next.catch(() => undefined);
+    return next;
+  };
+  /** Board stopped and outputs off, after a driving computer has gone. */
+  const stopBoard = (why: string) => onUsb(async t => {
+    for (const c of [command(Cmd.StopExecute), command(Cmd.ResetList), command(Cmd.WritePort, 0)]) { await t.write(c); await t.read(); }
+  }).then(() => log(`laser stopped: ${why}`), e => log(`could not stop the laser after ${why}: ${e instanceof Error ? e.message : String(e)}`));
+
+  const release = (s: Socket<Session>, why: string) => {
+    s.data.closed = true;
+    if (owner !== s) return;
+    owner = null;
+    log(`${why}: ${s.remoteAddress}`);
+    void stopBoard(why);
+  };
+
   const server = Bun.listen<Session>({
     hostname: options.hostname ?? "0.0.0.0",
     port: options.port ?? BRIDGE_DEFAULT_PORT,
     socket: {
       open(s) {
-        s.data = { reader: new FrameReader(), authed: false, queue: Promise.resolve() };
-        s.write(frame("H", JSON.stringify({ bridge: "fabplane-lmc", version: 1 })));
+        s.data = { reader: new FrameReader(), authed: false, closed: false, lastSeen: Date.now() };
+        (s as unknown as { setKeepAlive?: (on: boolean, ms: number) => void }).setKeepAlive?.(true, 5000);
+        s.write(frame("H", JSON.stringify({ bridge: "fabplane-lmc", version: BRIDGE_VERSION })));
       },
       data(s, chunk) {
         let frames;
         try { frames = s.data.reader.push(new Uint8Array(chunk)); } catch { s.end(); return; }
+        s.data.lastSeen = Date.now();
         for (const f of frames) {
-          s.data.queue = s.data.queue.then(async () => {
-            if (!s.data.authed) {
-              let token = "";
-              try { token = String((JSON.parse(new TextDecoder().decode(f.payload)) as { token?: unknown }).token ?? ""); } catch { /* bad auth */ }
-              if (f.type !== "A" || !sameToken(token, options.token)) { log(`refused ${s.remoteAddress}: wrong access key`); s.write(frame("E", "wrong access key")); s.end(); return; }
-              if (owner && owner !== s) { s.write(frame("E", "another computer is already driving this laser")); s.end(); return; }
-              s.data.authed = true;
-              owner = s;
-              log(`connected: ${s.remoteAddress}`);
-              s.write(frame("K", JSON.stringify({ device: "9588:9899" })));
-              return;
+          if (!s.data.authed) {
+            let token = "";
+            try { token = String((JSON.parse(new TextDecoder().decode(f.payload)) as { token?: unknown }).token ?? ""); } catch { /* bad auth */ }
+            if (f.type !== "A" || !sameToken(token, options.token)) { log(`refused ${s.remoteAddress}: wrong access key`); s.write(frame("E", "wrong access key")); s.end(); return; }
+            if (owner && owner !== s) {
+              if (Date.now() - owner.data.lastSeen < takeoverMs) { s.write(frame("E", "another computer is already driving this laser")); s.end(); return; }
+              const stale = owner;
+              release(stale, "replaced a silent computer");
+              stale.end();
             }
-            try {
-              if (f.type === "W") {
-                if (f.payload.length !== COMMAND_BYTES && f.payload.length !== LIST_PACKET_BYTES) throw new LmcUsbError(`bad packet size ${f.payload.length}`);
-                await (await board()).write(f.payload);
-              } else if (f.type === "R") {
-                s.write(frame("D", await (await board()).read()));
-              } else throw new LmcUsbError(`unknown request ${f.type}`);
-            } catch (error) {
-              s.write(frame("E", error instanceof Error ? error.message : String(error)));
-              if (usb) { await usb.close().catch(() => undefined); usb = null; }
+            s.data.authed = true;
+            owner = s;
+            log(`connected: ${s.remoteAddress}`);
+            s.write(frame("K", JSON.stringify({ device: "9588:9899" })));
+            continue;
+          }
+          if (f.type === "P") { s.write(frame("O")); continue; }
+          // Queued on the shared USB queue; skipped once this computer is gone or replaced.
+          void onUsb(async t => {
+            if (s.data.closed || owner !== s) return null;
+            if (f.type === "W") {
+              if (f.payload.length !== COMMAND_BYTES && f.payload.length !== LIST_PACKET_BYTES) throw new LmcUsbError(`bad packet size ${f.payload.length}`);
+              await t.write(f.payload);
+              return frame("O");
             }
-          });
+            if (f.type === "R") return frame("D", await t.read());
+            if (f.type === "C") {
+              if (f.payload.length !== COMMAND_BYTES) throw new LmcUsbError(`bad command size ${f.payload.length}`);
+              await t.write(f.payload);
+              return frame("D", await t.read());
+            }
+            throw new LmcUsbError(`unknown request ${f.type}`);
+          }).then(
+            reply => { if (reply && !s.data.closed) s.write(reply); },
+            error => { if (!s.data.closed) s.write(frame("E", error instanceof Error ? error.message : String(error))); },
+          );
         }
       },
       close(s) {
-        if (owner === s) { owner = null; log(`disconnected: ${s.remoteAddress}`); }
+        release(s, "disconnected");
       },
     },
   });
@@ -127,6 +182,7 @@ export async function startLmcBridge(options: BridgeOptions) {
     port: server.port,
     async stop() {
       server.stop(true);
+      await usbQueue;
       await usb?.close().catch(() => undefined);
       usb = null;
     },
@@ -135,53 +191,68 @@ export async function startLmcBridge(options: BridgeOptions) {
 
 // ---------------------------------------------------------------- client (fabPlane)
 
-/** fabPlane's side: an LmcTransport that talks to a bridge over TCP. */
+/**
+ * fabPlane's side: an LmcTransport that talks to a bridge over TCP. Every request waits for its own answer;
+ * after any error or timeout the link is closed (the driver reconnects), so a late answer is never taken
+ * for the answer to a later request.
+ */
 export async function openBridgeLmc(host: string, port: number, token: string, timeoutMs = 3000): Promise<LmcTransport> {
   const reader = new FrameReader();
-  const waiting: Array<(f: { type: string; payload: Uint8Array } | Error) => void> = [];
-  const pending: Array<{ type: string; payload: Uint8Array }> = [];
+  let waiter: ((f: { type: string; payload: Uint8Array } | Error) => void) | null = null;
+  const early: Array<{ type: string; payload: Uint8Array }> = [];
   let closed = false;
-  const deliver = (f: { type: string; payload: Uint8Array } | Error) => {
-    const w = waiting.shift();
-    if (w) w(f); else if (!(f instanceof Error)) pending.push(f);
-  };
-  const next = (ms = timeoutMs) => new Promise<{ type: string; payload: Uint8Array }>((resolve, reject) => {
-    const queued = pending.shift();
+  let socketRef: { end(): void } | null = null;
+  const fail = (e: Error) => { closed = true; socketRef?.end(); const w = waiter; waiter = null; w?.(e); };
+  const answer = (ms: number) => new Promise<{ type: string; payload: Uint8Array }>((resolve, reject) => {
+    const queued = early.shift();
     if (queued) return resolve(queued);
-    if (closed) return reject(new LmcUsbError("the laser bridge closed the connection"));
-    const timer = setTimeout(() => { const i = waiting.indexOf(handler); if (i >= 0) waiting.splice(i, 1); reject(new LmcUsbError(`the laser bridge at ${host}:${port} did not answer`)); }, ms);
-    const handler = (f: { type: string; payload: Uint8Array } | Error) => { clearTimeout(timer); f instanceof Error ? reject(f) : resolve(f); };
-    waiting.push(handler);
+    if (closed) return reject(new LmcUsbError("the laser bridge connection is closed"));
+    const timer = setTimeout(() => { waiter = null; fail(new LmcUsbError(`the laser bridge at ${host}:${port} did not answer in time`)); reject(new LmcUsbError(`the laser bridge at ${host}:${port} did not answer in time`)); }, ms);
+    waiter = f => { clearTimeout(timer); f instanceof Error ? reject(f) : resolve(f); };
   });
   const socket = await Bun.connect({
     hostname: host,
     port,
     socket: {
-      data(_s, chunk) { try { for (const f of reader.push(new Uint8Array(chunk))) deliver(f); } catch (e) { deliver(e as Error); } },
-      close() { closed = true; while (waiting.length) waiting.shift()!(new LmcUsbError("the laser bridge closed the connection")); },
-      error(_s, e) { deliver(new LmcUsbError(`laser bridge connection error: ${e.message}`)); },
+      data(_s, chunk) {
+        let frames;
+        try { frames = reader.push(new Uint8Array(chunk)); } catch (e) { fail(e as Error); return; }
+        for (const f of frames) { const w = waiter; if (w) { waiter = null; w(f); } else early.push(f); }
+      },
+      close() { fail(new LmcUsbError("the laser bridge closed the connection")); },
+      error(_s, e) { fail(new LmcUsbError(`laser bridge connection error: ${e.message}`)); },
     },
   }).catch((e: unknown) => { throw new LmcUsbError(`could not reach the laser bridge at ${host}:${port} (${e instanceof Error ? e.message : String(e)}); is the bridge running and on the same Wi-Fi?`); });
+  socketRef = socket;
   const text = (p: Uint8Array) => new TextDecoder().decode(p);
-  const hello = await next();
+  const hello = await answer(timeoutMs);
+  let version = 0;
+  try { version = Number((JSON.parse(text(hello.payload)) as { version?: unknown }).version); } catch { /* not a bridge */ }
   if (hello.type !== "H" || !text(hello.payload).includes("fabplane-lmc")) { socket.end(); throw new LmcUsbError(`${host}:${port} is not a fabPlane laser bridge`); }
+  if (version < BRIDGE_VERSION) { socket.end(); throw new LmcUsbError(`the laser bridge at ${host} is too old (version ${version}); update it`); }
   socket.write(frame("A", JSON.stringify({ token })));
-  const auth = await next();
+  const auth = await answer(timeoutMs);
   if (auth.type !== "K") { socket.end(); throw new LmcUsbError(`the laser bridge refused the connection: ${text(auth.payload) || "unknown reason"}`); }
+
   let queue: Promise<unknown> = Promise.resolve();
-  const serial = <T>(fn: () => Promise<T>) => { const p = queue.then(fn, fn); queue = p.catch(() => undefined); return p; };
-  return {
-    write: packet => serial(async () => {
+  /** One request, one answer, strictly in order. */
+  const request = (type: string, payload: Uint8Array | undefined, expect: string, ms = timeoutMs) => {
+    const go = async () => {
       if (closed) throw new LmcUsbError("the laser bridge connection is closed");
-      socket.write(frame("W", packet));
-    }),
-    read: () => serial(async () => {
-      socket.write(frame("R"));
-      const r = await next();
-      if (r.type === "E") throw new LmcUsbError(`laser bridge: ${text(r.payload)}`);
-      if (r.type !== "D") throw new LmcUsbError(`laser bridge sent ${r.type} instead of a reply`);
+      socket.write(frame(type, payload));
+      const r = await answer(ms);
+      if (r.type === "E") { fail(new LmcUsbError(`laser bridge: ${text(r.payload)}`)); throw new LmcUsbError(`laser bridge: ${text(r.payload)}`); }
+      if (r.type !== expect) { fail(new LmcUsbError(`laser bridge sent ${r.type} instead of ${expect}`)); throw new LmcUsbError(`laser bridge sent ${r.type} instead of ${expect}`); }
       return r.payload;
-    }),
+    };
+    const next = queue.then(go, go);
+    queue = next.catch(() => undefined);
+    return next;
+  };
+  return {
+    async write(packet) { await request("W", packet, "O"); },
+    read: () => request("R", undefined, "D"),
+    transact: packet => request("C", packet, "D"),
     async close() {
       closed = true;
       socket.end();

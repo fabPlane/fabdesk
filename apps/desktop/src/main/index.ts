@@ -7,8 +7,8 @@ import { isCoreReady, type CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
 import { applyDesktopIdentity } from "./dev-profile";
 import { registerIpc } from "./ipc";
-import { installAppMenu } from "./app-menu";
-import { openLaserWindow } from "./laser-window";
+import { installAppMenu, setMenuTarget } from "./app-menu";
+import { closeLaserWindow, openLaserWindow } from "./laser-window";
 import { automationEnabled, startAppAutomation, type AppAutomation } from "./automation";
 import { localAuthEnabled } from "./local-mode";
 import {
@@ -84,8 +84,12 @@ function deliverFunnelHandoff(next: FunnelHandoff): void {
   postFunnelHandoff(launchHandoff);
 }
 
+/** The main fabPlane window (not the Laser Controller): deep links, menu commands and focus go here. */
+let mainWindow: BrowserWindow | null = null;
+const liveMainWindow = () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null);
+
 function sendOpenCatalog(intent: OpenCatalogIntent): void {
-  const win = BrowserWindow.getAllWindows()[0];
+  const win = liveMainWindow();
   if (!win || win.isDestroyed()) return;
   // A send before the renderer loads is dropped; leave pending for take() on mount.
   if (win.webContents.isLoadingMainFrame()) return;
@@ -95,7 +99,7 @@ function sendOpenCatalog(intent: OpenCatalogIntent): void {
 }
 
 function sendOpenSharedProject(intent: import("@fabdesk/protocol").OpenSharedProjectIntent): void {
-  const win = BrowserWindow.getAllWindows()[0];
+  const win = liveMainWindow();
   if (!win || win.isDestroyed() || win.webContents.isLoadingMainFrame()) return;
   win.webContents.send("fabdesk:open-shared-project", intent);
   openSharedProject.take();
@@ -234,6 +238,11 @@ function createWindow(): BrowserWindow {
     });
   }
   win.once("ready-to-show", () => win.show());
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+    closeLaserWindow();
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^(https?|file):\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
@@ -257,7 +266,7 @@ if (!app.requestSingleInstanceLock()) {
     const shared = openSharedProject.offer(argv);
     if (shared) sendOpenSharedProject(shared);
     const intent = openCatalog.offer(argv);
-    const win = BrowserWindow.getAllWindows()[0];
+    const win = liveMainWindow();
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
@@ -352,6 +361,7 @@ if (!app.requestSingleInstanceLock()) {
       ...(identity.devProfile ? { devProfile: true } : {}),
     });
     installAppMenu();
+    setMenuTarget(liveMainWindow);
     registerIpc(supervisor);
     ipcMain.handle("fabdesk:open-laser-window", () => {
       openLaserWindow({

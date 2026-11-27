@@ -153,12 +153,15 @@ function RunStep({ snap }: { snap: LaserCellSnapshot }) {
   const r = snap.run;
   const studioClosed = snap.config.laser.driver === "studio-window" && snap.laser?.state === "offline" && /not open/.test(snap.laser.detail);
   const needsGuard = mode !== "dry-run" && !snap.config.safetyConfirmed;
+  const cellBusy = r.active || !!snap.operation;
   const status = r.active
     ? `Board ${r.board} of ${r.boards}: ${r.note ?? "working…"}`
+    : snap.operation ? `Busy: ${snap.operation}…`
     : r.error ? `Stopped: ${r.error}`
     : r.done ? `Finished ${r.done} of ${r.boards} board(s).`
     : snap.laser && snap.laser.state !== "idle" && mode !== "dry-run" ? `Laser: ${snap.laser.detail}`
     : mode !== "laser-only" && snap.missing.length ? `Teach the arm first (Arm setup): ${snap.missing.join(", ")}`
+    : mode === "laser-only" && snap.arm.connected ? "Laser only: the arm must be parked at “Clear of laser” (Arm setup → Go)."
     : "Ready.";
   return <section className="fd-lc-step">
     <h2><b>2</b> Run</h2>
@@ -167,11 +170,11 @@ function RunStep({ snap }: { snap: LaserCellSnapshot }) {
       <Field label="Mode"><Select value={mode} disabled={r.active} onChange={e => setMode(e.target.value as LaserCellRunMode)}>{MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}</Select></Field>
     </div>
     <label className="fd-lc-check">
-      <input type="checkbox" checked={snap.config.safetyConfirmed} disabled={!!busy || r.active} onChange={e => void run("guard", () => act({ action: "configure", safetyConfirmed: e.target.checked }))} />
-      <span>The UV guard is closed, everyone nearby wears UV glasses, and the Omni X E-stop is within reach.</span>
+      <input type="checkbox" checked={snap.config.safetyConfirmed} disabled={!!busy || cellBusy} onChange={e => void run("guard", () => act({ action: "configure", safetyConfirmed: e.target.checked }))} />
+      <span>The UV guard is closed, everyone nearby wears UV glasses, and the Omni X E-stop is within reach. (Asked again after a restart or a change of laser route.)</span>
     </label>
     <div className="fd-lc-actions">
-      {r.active
+      {cellBusy
         ? <Button variant="danger" className="fd-lc-big" onClick={() => run("stop", () => act({ action: "stop" }))}>Stop</Button>
         : <Button variant="primary" className="fd-lc-big" disabled={!!busy || needsGuard} title={needsGuard ? "Confirm the UV guard first" : undefined} onClick={() => run("start", () => act({ action: "run", boards, mode }))}>{busy === "start" && <Spinner />}Start</Button>}
       {studioClosed && <Button disabled={!!busy} onClick={() => run("studio", () => act({ action: "studio_open" }))}>{busy === "studio" && <Spinner />}Open ComMarker Studio</Button>}

@@ -16,6 +16,11 @@ export type LaserWindowOptions = {
 
 let laserWindow: BrowserWindow | null = null;
 
+/** Closes the Laser Controller (with the main window: the app has no other way back to the main window). */
+export function closeLaserWindow(): void {
+  if (laserWindow && !laserWindow.isDestroyed()) laserWindow.close();
+}
+
 export function openLaserWindow(options: LaserWindowOptions): BrowserWindow {
   if (laserWindow && !laserWindow.isDestroyed()) {
     if (laserWindow.isMinimized()) laserWindow.restore();

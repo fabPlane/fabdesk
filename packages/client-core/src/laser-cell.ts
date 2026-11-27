@@ -77,6 +77,8 @@ export type LaserCellSnapshot = {
     error: string | null;
   };
   log: Array<{ at: string; level: "info" | "warn" | "error"; message: string }>;
+  /** A non-run operation in progress (loading into Studio, preview, arm move); Stop ends it. */
+  operation: string | null;
 };
 
 export const LASER_CELL_KEY = "laser-cell";
@@ -114,7 +116,7 @@ export function useLaserCell() {
   return useQuery({
     queryKey: [LASER_CELL_KEY, "status"],
     queryFn: () => callCell<LaserCellSnapshot>(client, "laser_cell", { action: "status" }),
-    refetchInterval: query => (query.state.data?.run.active ? 1000 : 3000),
+    refetchInterval: query => (query.state.data?.run.active || query.state.data?.operation ? 1000 : 3000),
     retry: false,
   });
 }

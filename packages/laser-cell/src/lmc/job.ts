@@ -77,32 +77,52 @@ const rotate = ([x, y]: Vec, a: number): Vec => [x * Math.cos(a) - y * Math.sin(
  * (serpentine) so the galvo never jumps back across the field.
  */
 export function hatch(shape: Shape, intervalMm: number, angleDeg: number): Segment[] {
-  if (!(intervalMm > 0)) return [];
+  return [...hatchLines(shape, intervalMm, angleDeg)];
+}
+
+/** {@link hatch} as a generator, so huge jobs never hold every line in memory. */
+export function* hatchLines(shape: Shape, intervalMm: number, angleDeg: number): Generator<Segment> {
+  if (!(intervalMm > 0)) return;
   const a = (angleDeg * Math.PI) / 180;
   const rings = shape.filter(r => r.length >= 3).map(r => r.map(p => rotate(p, -a)));
-  if (!rings.length) return [];
+  if (!rings.length) return;
   let minY = Infinity, maxY = -Infinity;
   for (const r of rings) for (const [, y] of r) { if (y < minY) minY = y; if (y > maxY) maxY = y; }
-  const out: Segment[] = [];
+  // Edges sorted by their lowest y: each scan line only looks at the edges it can cross.
+  const edges: Array<[number, number, number, number]> = [];
+  for (const r of rings) for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const [x1, y1] = r[j]!, [x2, y2] = r[i]!;
+    if (y1 !== y2) edges.push(y1 < y2 ? [x1, y1, x2, y2] : [x2, y2, x1, y1]);
+  }
+  edges.sort((a, b) => a[1] - b[1]);
+  let active: Array<[number, number, number, number]> = [];
+  let nextEdge = 0;
   let forward = true;
-  for (let y = minY + intervalMm / 2; y < maxY; y += intervalMm) {
+  const lines = Math.max(0, Math.ceil((maxY - minY) / intervalMm));
+  for (let n = 0; n < lines; n++) {
+    const y = minY + intervalMm / 2 + n * intervalMm;
+    if (y >= maxY) break;
+    while (nextEdge < edges.length && edges[nextEdge]![1] <= y) active.push(edges[nextEdge++]!);
+    active = active.filter(e => e[3] > y);
+    // Half-open rule (lower end included, upper end excluded): a vertex on the scan line is counted once.
     const xs: number[] = [];
-    for (const r of rings) {
-      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-        const [x1, y1] = r[j]!, [x2, y2] = r[i]!;
-        // Half-open rule: a vertex on the scan line is counted once.
-        if ((y1 <= y && y2 > y) || (y2 <= y && y1 > y)) xs.push(x1 + ((y - y1) * (x2 - x1)) / (y2 - y1));
-      }
-    }
+    for (const [x1, y1, x2, y2] of active) xs.push(x1 + ((y - y1) * (x2 - x1)) / (y2 - y1));
     if (xs.length < 2) continue;
     xs.sort((p, q) => p - q);
     const row: Segment[] = [];
     for (let k = 0; k + 1 < xs.length; k += 2) if (xs[k + 1]! - xs[k]! > 1e-4) row.push([[xs[k]!, y], [xs[k + 1]!, y]]);
     if (!forward) { row.reverse(); for (const s of row) s.reverse(); }
     forward = !forward;
-    for (const [p, q] of row) out.push([rotate(p, a), rotate(q, a)]);
+    for (const [p, q] of row) yield [rotate(p, a), rotate(q, a)];
   }
-  return out;
+}
+
+/**
+ * Hatch angles of one pass. A 90° step is cross-hatch: every pass fills both directions, as LightBurn's
+ * "Crosshatch" and Studio's "Cross fill" do, so a job does the same work on every laser route.
+ */
+export function passAngles(s: Pick<MarkSettings, "angleDeg" | "angleStepDeg">, pass: number): number[] {
+  return s.angleStepDeg === 90 ? [s.angleDeg, s.angleDeg + 90] : [s.angleDeg + pass * s.angleStepDeg];
 }
 
 /** Closed outlines as segments. */
@@ -118,7 +138,7 @@ const length = ([p, q]: Segment) => Math.hypot(q[0] - p[0], q[1] - p[1]);
 export function estimateSeconds(segmentsPerPass: Segment[][], s: Pick<MarkSettings, "speedMmPerS" | "travelMmPerS">): number {
   let t = 0;
   for (const segs of segmentsPerPass) {
-    let last: Vec | null = null;
+    let last: Vec | null = [GALVO_CENTER, GALVO_CENTER];
     for (const seg of segs) {
       if (last) t += Math.hypot(seg[0][0] - last[0], seg[0][1] - last[1]) / s.travelMmPerS;
       t += length(seg) / s.speedMmPerS;
@@ -129,6 +149,23 @@ export function estimateSeconds(segmentsPerPass: Segment[][], s: Pick<MarkSettin
 }
 
 // ---------------------------------------------------------------- list building
+
+/**
+ * Range check for marking settings. Out-of-range values are refused, never wrapped or clamped: a wrapped
+ * frequency period or a zero speed silently becomes a far higher dose of UV on the board.
+ */
+export function validateSettings(s: MarkSettings): void {
+  const bad = (what: string) => { throw new RangeError(`laser setting out of range: ${what}`); };
+  if (!(s.powerPct >= 0 && s.powerPct <= 100)) bad(`power ${s.powerPct} % (0–100)`);
+  if (!(s.frequencyKhz >= 1 && s.frequencyKhz <= 1000)) bad(`frequency ${s.frequencyKhz} kHz (1–1000)`);
+  if (!(s.speedMmPerS >= 1 && s.speedMmPerS <= 20000)) bad(`speed ${s.speedMmPerS} mm/s (1–20000)`);
+  if (!(s.travelMmPerS >= 1 && s.travelMmPerS <= 20000)) bad(`travel speed ${s.travelMmPerS} mm/s (1–20000)`);
+  if (!(Number.isInteger(s.passes) && s.passes >= 1 && s.passes <= 200)) bad(`passes ${s.passes} (1–200)`);
+  if (!(s.intervalMm === 0 || (s.intervalMm >= 0.001 && s.intervalMm <= 10))) bad(`line spacing ${s.intervalMm} mm (0, or 0.001–10)`);
+  for (const [k, v] of [["laser-on delay", s.laserOnDelayUs], ["laser-off delay", s.laserOffDelayUs], ["polygon delay", s.polygonDelayUs], ["jump delay", s.jumpDelayUs]] as const) {
+    if (!(Math.abs(v) <= 0xffff)) bad(`${k} ${v} µs`);
+  }
+}
 
 const speedUnits = (field: FieldMap, mmPerS: number) => Math.min(0xffff, Math.max(1, Math.round((mmPerS * galvosPerMm(field)) / 1000)));
 
@@ -162,6 +199,39 @@ function addMoves(list: ListPackets, field: FieldMap, segs: Segment[], mark: boo
   return last;
 }
 
+/** Throws before anything is sent when part of the job falls outside the lens field. */
+export function assertInField(shape: Shape, field: FieldMap): void {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of shape) for (const [x, y] of r) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+  if (!Number.isFinite(minX)) throw new RangeError("the job is empty");
+  for (const p of [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]] as Vec[]) toGalvo(field, p);
+}
+
+/**
+ * The marking list as a stream of 3072-byte packets, built while it is sent: a large board (over a million
+ * commands) starts marking at once instead of after the whole list has been built in memory.
+ */
+export function* markPackets(shape: Shape, field: FieldMap, s: MarkSettings, opts: { source: SourceMode; pins: Pins; outline?: boolean }): Generator<Uint8Array> {
+  validateSettings(s);
+  assertInField(shape, field);
+  const list = new ListPackets();
+  list.add(List.ReadyMark);
+  list.add(List.WritePort, 1 << opts.pins.laser);
+  writeSettings(list, field, s, opts.source);
+  let last: Vec | null = [GALVO_CENTER, GALVO_CENTER];
+  for (let pass = 0; pass < s.passes; pass++) {
+    for (const angle of passAngles(s, pass)) {
+      for (const seg of hatchLines(shape, s.intervalMm, angle)) {
+        last = addMoves(list, field, [seg], true, last);
+        yield* list.takeFull();
+      }
+    }
+    if (opts.outline || s.intervalMm <= 0) { last = addMoves(list, field, outlines(shape), true, last); yield* list.takeFull(); }
+  }
+  list.add(List.WritePort, 0);
+  yield* list.finish();
+}
+
 export type MarkJob = {
   packets: Uint8Array[];
   /** Commands including the end-of-list. */
@@ -172,15 +242,15 @@ export type MarkJob = {
 
 /** The marking list: settings, then hatch (and outlines) per pass, laser pin on for the whole list. */
 export function buildMarkJob(shape: Shape, field: FieldMap, s: MarkSettings, opts: { source: SourceMode; pins: Pins; outline?: boolean }): MarkJob {
-  if (!(s.passes >= 1)) throw new RangeError("passes must be at least 1");
+  validateSettings(s);
   const list = new ListPackets();
   list.add(List.ReadyMark);
   list.add(List.WritePort, 1 << opts.pins.laser);
   writeSettings(list, field, s, opts.source);
   const perPass: Segment[][] = [];
-  let last: Vec | null = null;
+  let last: Vec | null = [GALVO_CENTER, GALVO_CENTER];
   for (let pass = 0; pass < s.passes; pass++) {
-    const segs = [...hatch(shape, s.intervalMm, s.angleDeg + pass * s.angleStepDeg), ...(opts.outline || s.intervalMm <= 0 ? outlines(shape) : [])];
+    const segs = [...passAngles(s, pass).flatMap(angle => hatch(shape, s.intervalMm, angle)), ...(opts.outline || s.intervalMm <= 0 ? outlines(shape) : [])];
     perPass.push(segs);
     last = addMoves(list, field, segs, true, last);
   }
@@ -200,7 +270,7 @@ export function buildLightFrame(shape: Shape, field: FieldMap, opts: { pins: Pin
   list.add(List.WritePort, 1 << opts.pins.light);
   list.add(List.JumpSpeed, speedUnits(field, opts.travelMmPerS));
   list.add(List.JumpDelay, ...signedDelay(8));
-  let last: Vec | null = null;
+  let last: Vec | null = [GALVO_CENTER, GALVO_CENTER];
   const segs = outlines([box]);
   for (let i = 0; i < Math.max(1, opts.loops); i++) last = addMoves(list, field, segs, false, last);
   list.add(List.WritePort, 0);

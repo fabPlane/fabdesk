@@ -235,7 +235,7 @@ export const laser_cell = defineTool({
           }
           if (!job.startsWith(project.dir + sep) || !job.endsWith(".lbrn2")) throw new ToolError("job must be a .lbrn2 file inside the project", "invalid_args");
           const summary = JSON.parse(await readFile(job.replace(/\.lbrn2$/, ".json"), "utf8").catch(() => "{}")) as { estimatedSeconds?: number };
-          const config = await cell.configure({ laser: { jobPath: job, ...(summary.estimatedSeconds ? { markSeconds: Math.ceil(summary.estimatedSeconds * 1.15) } : {}) } });
+          const config = await cell.configure({ laser: { jobPath: job, ...(summary.estimatedSeconds ? { markSeconds: Math.min(24 * 3600, Math.ceil(summary.estimatedSeconds * 1.15)) } : {}) } });
           return ok(`The cell now uses ${rel(project, job)}${summary.estimatedSeconds ? `; Studio mark time set to ${config.laser.markSeconds} s (estimate + 15 %). Replace it with Studio's own estimate after loading the job there.` : "."}`, { config });
         }
         case "usb_devices": {
@@ -286,7 +286,7 @@ export const laser_cell = defineTool({
             fill: { spacingMm: a.intervalMm, angleDeg: a.angleDeg, cross: a.angleStepDeg === 90 },
             settings: { powerPct: a.powerPct, speedMmPerS: a.speedMmPerS, frequencyKhz: a.frequencyKhz, pulse: a.pulseNs, passes: a.passes },
           });
-          if (summary.estimatedSeconds) await cell.configure({ laser: { markSeconds: Math.ceil(summary.estimatedSeconds * 1.15) } });
+          if (summary.estimatedSeconds) await cell.configure({ laser: { markSeconds: Math.min(24 * 3600, Math.ceil(summary.estimatedSeconds * 1.15)) } });
           const shown = Object.entries(result.values ?? {}).filter(([, v]) => typeof v !== "object").map(([k, v]) => `${k} ${String(v)}`).join(", ");
           const notes = result.log.map(l => `\n- ${l}`).join("");
           return ok(`Loaded ${rel(project, studioSvg)} into ComMarker Studio. Studio shows: ${shown}.${notes}\nCheck the position with Studio's Preview before the first board.`, { values: result.values, log: result.log });

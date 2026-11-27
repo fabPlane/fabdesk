@@ -121,8 +121,16 @@ export type StudioFootswitchOptions = {
 
 export class StudioFootswitchLaser implements LaserDriver {
   readonly name = "ComMarker Studio (foot-switch relay)";
-  private running = false;
+  /**
+   * Until when Studio may still be marking after a start. fabPlane cannot see or stop Studio on this route,
+   * so this survives errors and stop(): the laser counts as busy until the job time has passed.
+   */
+  private busyUntil = 0;
   constructor(private readonly options: StudioFootswitchOptions) {}
+
+  get expectedSeconds(): number {
+    return this.options.markSeconds + this.options.marginSeconds;
+  }
 
   get relay(): RelayLink {
     return this.options.relay;
@@ -130,29 +138,25 @@ export class StudioFootswitchLaser implements LaserDriver {
 
   async status(): Promise<LaserStatus> {
     if (this.options.relay.pressed) return { state: "busy", detail: "foot switch held down by fabPlane; release it before a run", driver: this.name };
-    return this.running
-      ? { state: "busy", detail: "job started from the foot-switch relay", driver: this.name }
-      : { state: "idle", detail: "relay ready; Studio's own state cannot be read, keep the job loaded and the preview off", driver: this.name };
+    if (Date.now() < this.busyUntil) return { state: "busy", detail: `Studio may still be marking until ${new Date(this.busyUntil).toLocaleTimeString()} (fabPlane cannot stop it on this route; use the E-stop)`, driver: this.name };
+    return { state: "idle", detail: "relay ready; Studio's own state cannot be read, keep the job loaded and the preview off", driver: this.name };
   }
 
   async start(): Promise<void> {
     await this.options.relay.pulse(this.options.pressMs ?? 250);
-    this.running = true;
+    this.busyUntil = Date.now() + this.expectedSeconds * 1000;
   }
 
-  async waitDone({ timeoutMs, signal }: { timeoutMs: number; signal?: AbortSignal }): Promise<void> {
-    const ms = (this.options.markSeconds + this.options.marginSeconds) * 1000;
-    if (ms > timeoutMs) throw new LaserDriverError(`job time ${Math.round(ms / 1000)} s is longer than the ${Math.round(timeoutMs / 1000)} s limit`);
-    try {
-      await sleep(ms, signal);
-    } finally {
-      this.running = false;
-    }
+  /** Waits the job time (checked against the limit before the start, in the cycle's preflight). */
+  async waitDone({ signal }: { timeoutMs: number; signal?: AbortSignal }): Promise<void> {
+    await sleep(Math.max(0, this.busyUntil - Date.now()), signal);
   }
 
-  /** Studio has no remote stop. The cycle freezes the arm; use the Omni X E-stop to stop the beam. */
+  /**
+   * Releases the relay. Studio has no remote stop, so the laser still counts as busy until the job time has
+   * passed; the cycle freezes the arm, and the Omni X E-stop stops the beam.
+   */
   async stop(): Promise<void> {
-    this.running = false;
     await this.options.relay.set(false).catch(() => undefined);
   }
 

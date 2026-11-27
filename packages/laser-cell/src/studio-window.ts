@@ -14,7 +14,9 @@
  * NOT verified with a laser attached: which label/state Studio shows while marking is inferred (the Start
  * button changing or disabling). `completion: "timer"` falls back to the job time if that inference is wrong.
  */
-import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { LaserDriver, LaserStatus } from "./cell";
 import { LaserDriverError } from "./lasers";
@@ -63,7 +65,8 @@ export type StudioLoadResult = {
 
 export type StudioUi = {
   read(): Promise<StudioUiState>;
-  press(target: StudioPressTarget): Promise<{ ok: boolean; label?: string; error?: string }>;
+  /** `cancelled` is checked right before the press runs (a Stop queued meanwhile cancels a Start). */
+  press(target: StudioPressTarget, options?: { cancelled?: () => boolean }): Promise<{ ok: boolean; label?: string; error?: string }>;
   load(spec: StudioJobSpec): Promise<StudioLoadResult>;
 };
 
@@ -79,7 +82,7 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 
 const STUDIO_UIA_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
-$action = '__ACTION__'
+$action = $env:FABPLANE_ACTION
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $A = [Windows.Automation.AutomationElement]
 $S = [Windows.Automation.TreeScope]
@@ -129,8 +132,14 @@ else {
 if (-not $target) { Send @{ ok = $false; error = $(if ($start) { 'Studio shows "' + $start.Current.Name + '"' } else { 'Studio''s Start button is not visible' }) }; exit }
 if (-not $target.Current.IsEnabled) { Send @{ ok = $false; error = '"' + $target.Current.Name + '" is greyed out in Studio' }; exit }
 $label = $target.Current.Name
-$target.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+# Invoke on its own runspace: if the button opens a modal dialog, Invoke would block until it closes.
+$ps = [powershell]::Create()
+[void]$ps.AddScript({ param($e) $e.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke() }).AddArgument($target)
+$h = $ps.BeginInvoke()
+[void]$h.AsyncWaitHandle.WaitOne(1500)
 Send @{ ok = $true; label = $label }
+[Console]::Out.Flush()
+[Environment]::Exit(0)
 `;
 
 /**
@@ -141,7 +150,7 @@ Send @{ ok = $true; label = $label }
  */
 const STUDIO_LOAD_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
-$cfg = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__ARGS__')) | ConvertFrom-Json
+$cfg = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:FABPLANE_ARGS)) | ConvertFrom-Json
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 Add-Type @'
 using System; using System.Text; using System.Runtime.InteropServices;
@@ -300,7 +309,20 @@ $out.objects = Items
 Send @{ ok = $true; values = $out; log = $log }
 `;
 
-export type PowerShellRunner = (script: string, timeoutMs: number) => Promise<string>;
+export type PowerShellRunner = (script: string, timeoutMs: number, env?: Record<string, string>) => Promise<string>;
+
+const scriptFiles = new Map<string, string>();
+/** Writes each script once to a temp .ps1 (scripts are too long for -EncodedCommand plus their inputs). */
+function scriptFile(script: string): string {
+  let path = scriptFiles.get(script);
+  if (!path) {
+    const hash = createHash("sha1").update(script).digest("hex").slice(0, 12);
+    path = join(tmpdir(), `fabplane-studio-${hash}.ps1`);
+    writeFileSync(path, "\uFEFF" + script, "utf8");
+    scriptFiles.set(script, path);
+  }
+  return path;
+}
 
 /** First error line of PowerShell's stderr, which non-interactive PowerShell writes as CLIXML. */
 export function powerShellError(stderr: string): string {
@@ -311,12 +333,12 @@ export function powerShellError(stderr: string): string {
   return text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 3).join(" ").slice(0, 300);
 }
 
-export const runPowerShell: PowerShellRunner = async (script, timeoutMs) => {
-  const encoded = Buffer.from(script, "utf16le").toString("base64");
-  const proc = Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded], {
+export const runPowerShell: PowerShellRunner = async (script, timeoutMs, env = {}) => {
+  const proc = Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptFile(script)], {
     stdout: "pipe",
     stderr: "pipe",
     windowsHide: true,
+    env: { ...process.env, ...env },
   });
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; proc.kill(); }, timeoutMs);
@@ -339,8 +361,12 @@ export function windowsStudioUi(run: PowerShellRunner = runPowerShell): StudioUi
     return { read: unsupported, press: unsupported, load: unsupported };
   }
   let queue: Promise<unknown> = Promise.resolve();
-  const call = <T>(action: string): Promise<T> => {
-    const go = async () => JSON.parse(await run(STUDIO_UIA_SCRIPT.replace("__ACTION__", action), 20_000)) as T;
+  const once = <T>(action: string) => run(STUDIO_UIA_SCRIPT, 20_000, { FABPLANE_ACTION: action }).then(out => JSON.parse(out) as T);
+  const call = <T>(action: string, cancelled?: () => boolean): Promise<T> => {
+    const go = async () => {
+      if (cancelled?.()) return { ok: false, error: "cancelled by Stop" } as T;
+      return once<T>(action);
+    };
     const next = queue.then(go, go);
     queue = next.catch(() => undefined);
     return next;
@@ -359,10 +385,11 @@ export function windowsStudioUi(run: PowerShellRunner = runPowerShell): StudioUi
         elements: raw.elements ?? 0,
       };
     },
-    press: target => call(target),
+    // Stop runs at once, in its own PowerShell, instead of waiting behind a read or a load.
+    press: (target, options) => (target === "stop" ? once(target) : call(target, options?.cancelled)),
     async load(spec) {
       const args = Buffer.from(JSON.stringify(spec), "utf8").toString("base64");
-      const go = async () => JSON.parse(await run(STUDIO_LOAD_SCRIPT.replace("__ARGS__", args), 300_000)) as StudioLoadResult;
+      const go = async () => JSON.parse(await run(STUDIO_LOAD_SCRIPT, 300_000, { FABPLANE_ARGS: args })) as StudioLoadResult;
       const next = queue.then(go, go);
       queue = next.catch(() => undefined);
       const result = await next;
@@ -405,12 +432,27 @@ export function studioBusy(state: StudioUiState): boolean {
   return state.startLabel !== null && !(isStartLabel(state.startLabel) && state.startEnabled);
 }
 
+/**
+ * Positive evidence that Studio is idle: an enabled "Start" button in a fully readable window. A missing
+ * button or a partly read window (Studio rebuilding its panel) is unknown, never "finished".
+ */
+export function studioIdle(state: StudioUiState): boolean {
+  return state.running && state.elements >= 10 && isStartLabel(state.startLabel) && state.startEnabled && state.dialogs.length === 0;
+}
+
 export class StudioWindowLaser implements LaserDriver {
   readonly name = "ComMarker Studio (window control)";
   /** Labels Studio showed while marking, for the log (the busy state is inferred, see the file header). */
   readonly seenBusyLabels = new Set<string>();
+  /** Bumped by stop(); a start that sees a different value does not press Start. */
+  private generation = 0;
 
   constructor(readonly ui: StudioUi, private readonly options: StudioWindowOptions) {}
+
+  /** In timer mode fabPlane waits the job time; checked against the time limit before the start. */
+  get expectedSeconds(): number | undefined {
+    return this.options.completion === "timer" ? this.options.markSeconds + this.options.marginSeconds : undefined;
+  }
 
   async status(): Promise<LaserStatus> {
     const s = await this.ui.read();
@@ -434,9 +476,12 @@ export class StudioWindowLaser implements LaserDriver {
   }
 
   async start(): Promise<void> {
+    const generation = this.generation;
     const status = await this.status();
+    if (generation !== this.generation) throw new LaserDriverError("stopped");
     if (status.state !== "idle") throw new LaserDriverError(`Studio is not ready to start: ${status.detail}`);
-    const result = await this.ui.press("start");
+    const result = await this.ui.press("start", { cancelled: () => generation !== this.generation });
+    if (generation !== this.generation) throw new LaserDriverError("stopped");
     if (!result.ok) throw new LaserDriverError(`could not press Start in Studio: ${result.error ?? "unknown"}`);
   }
 
@@ -444,14 +489,12 @@ export class StudioWindowLaser implements LaserDriver {
     const poll = this.options.pollMs ?? 1500;
     const started = Date.now();
     if (this.options.completion === "timer") {
-      const ms = (this.options.markSeconds + this.options.marginSeconds) * 1000;
-      if (ms > timeoutMs) throw new LaserDriverError(`job time ${Math.round(ms / 1000)} s is longer than the ${Math.round(timeoutMs / 1000)} s limit`);
-      await sleep(ms, signal);
+      await sleep((this.options.markSeconds + this.options.marginSeconds) * 1000, signal);
       // Still check Studio did finish before the arm goes in.
       for (;;) {
         const s = await this.ui.read();
         if (s.dialogs.length) throw new LaserDriverError(`Studio opened a dialog while marking (${s.dialogs.join(", ")})`);
-        if (!studioBusy(s)) return;
+        if (studioIdle(s)) return;
         if (Date.now() - started > timeoutMs) throw new LaserDriverError(`job still running after ${Math.round(timeoutMs / 1000)} s`);
         await sleep(poll, signal);
       }
@@ -464,11 +507,11 @@ export class StudioWindowLaser implements LaserDriver {
       if (!s.running) throw new LaserDriverError("ComMarker Studio closed while marking");
       if (s.dialogs.length) throw new LaserDriverError(`Studio opened a dialog while marking (${s.dialogs.join(", ")}); check the laser`);
       if (s.connection && /disconnect/i.test(s.connection)) throw new LaserDriverError("Studio lost the laser connection while marking");
-      if (studioBusy(s)) {
-        seenBusy = true;
-        idleStreak = 0;
-        this.seenBusyLabels.add(`${s.startLabel} / ${s.connection ?? "?"}`);
-      } else idleStreak++;
+      if (studioIdle(s)) idleStreak++;
+      else {
+        if (studioBusy(s)) { seenBusy = true; this.seenBusyLabels.add(`${s.startLabel} / ${s.connection ?? "?"}`); }
+        idleStreak = 0; // busy, or unknown (button missing, window partly read): never counted as finished
+      }
       if (seenBusy && idleStreak >= 2) return;
       if (!seenBusy && Date.now() - started > (this.options.startTimeoutMs ?? 10_000)) {
         throw new LaserDriverError("Studio's Start button never changed after fabPlane pressed it, so fabPlane cannot tell when the job ends. Check that Start runs the job in Studio, or set Completion to \"Job time\"");
@@ -505,6 +548,7 @@ export class StudioWindowLaser implements LaserDriver {
 
   /** Presses Studio's Stop button if it shows one. Not a safety stop: keep the Omni X E-stop within reach. */
   async stop(): Promise<void> {
+    this.generation++;
     await this.ui.press("stop").catch(() => undefined);
   }
 }

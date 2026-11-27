@@ -600,7 +600,8 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 export function estimateCopperJobSeconds(build: CopperLaserBuild): number {
   const s = build.settings;
   const perimeter = (mp: MultiPolygon) => mp.reduce((sum, poly) => sum + poly.reduce((ps, ring) => ps + ring.slice(1).reduce((rs, p, i) => rs + Math.hypot(p[0] - ring[i]![0], p[1] - ring[i]![1]), 0), 0), 0);
-  const fill = (p: CopperPassSettings) => (p.passes && p.intervalMm ? (build.areaMm2.ablate / p.intervalMm / p.speedMmPerS) * p.passes : 0);
+  // Cross-hatch (90° step) fills each pass in both directions (LightBurn "Crosshatch", Studio "Cross fill").
+  const fill = (p: CopperPassSettings) => (p.passes && p.intervalMm ? (build.areaMm2.ablate / p.intervalMm / p.speedMmPerS) * p.passes * (p.angleStepDeg === 90 ? 2 : 1) : 0);
   const edges = (s.edge.passes * perimeter(build.copper)) / s.edge.speedMmPerS;
   // Galvo jump and laser on/off delays add roughly 25 % on fills made of many short lines.
   return Math.round((fill(s.ablate) + fill(s.clean)) * 1.25 + edges);

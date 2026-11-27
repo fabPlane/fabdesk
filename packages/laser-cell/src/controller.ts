@@ -18,6 +18,9 @@ import { DEFAULT_BAUD, St3215Bus } from "./st3215";
 
 const PoseSchema = z.record(z.string().regex(/^\d+$/), z.number().int().min(0).max(4095));
 
+/** How long a laser status check is reused (ms). */
+const STATUS_CACHE_MS = 4000;
+
 export const LaserCellConfigSchema = z.object({
   version: z.literal(1).default(1),
   arm: z.object({
@@ -41,13 +44,13 @@ export const LaserCellConfigSchema = z.object({
     relayPort: z.string().nullable().default(null),
     relayChannel: z.number().int().min(1).max(8).default(1),
     /** Studio route: the job's marking time, read from Studio's estimate or timed on the first board. */
-    markSeconds: z.number().min(1).max(4 * 3600).default(600),
+    markSeconds: z.number().min(1).max(24 * 3600).default(600),
     marginSeconds: z.number().min(0).max(600).default(5),
     /** LightBurn route: the job file loaded before each board (absolute path). */
     jobPath: z.string().nullable().default(null),
     lightburnHost: z.string().default("127.0.0.1"),
     frameSeconds: z.number().min(0).max(60).default(0),
-    markTimeoutMinutes: z.number().min(1).max(600).default(120),
+    markTimeoutMinutes: z.number().min(1).max(24 * 60).default(120),
     /** usb-lmc: fabPlane's own USB driver for BJJCZ boards. Unverified on the Omni X: pins, source and axes are guesses. */
     lmc: z.object({
       fieldMm: z.number().min(10).max(400).default(70),
@@ -114,7 +117,12 @@ export type CellSnapshot = {
     error: string | null;
   };
   log: CellLogEntry[];
+  /** A non-run operation in progress (loading into Studio, preview, arm move); Stop ends it. */
+  operation: string | null;
 };
+
+/** Shown in snapshots instead of the Wi-Fi bridge's access key; sending it back keeps the saved key. */
+export const SAVED_SECRET = "__saved__";
 
 export type RunRequest = { boards: number; mode: "cycle" | "dry-run" | "laser-only" };
 
@@ -141,6 +149,8 @@ export class LaserCellController {
   private runState: CellSnapshot["run"] = { active: false, mode: null, step: null, visited: [], note: null, progress: 0, board: 0, boards: 0, done: 0, startedAt: null, error: null };
   private logEntries: CellLogEntry[] = [];
   private running: Promise<void> | null = null;
+  /** The one non-run operation allowed at a time; Stop aborts it. */
+  private operation: { kind: string; abort: AbortController } | null = null;
 
   constructor(private readonly deps: ControllerDeps) {
     this.configPath = join(deps.home, "laser-cell.json");
@@ -153,8 +163,15 @@ export class LaserCellController {
     try {
       this.config = LaserCellConfigSchema.parse(JSON.parse(await readFile(this.configPath, "utf8")));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.log("warn", `laser-cell.json could not be read (${error instanceof Error ? error.message : String(error)}); using defaults`);
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        // Keep the unreadable file (taught positions!) instead of overwriting it on the next save.
+        const kept = this.configPath.replace(/\.json$/, `.unreadable-${Date.now()}.json`);
+        await rename(this.configPath, kept).catch(() => undefined);
+        this.log("warn", `laser-cell.json could not be read (${error instanceof Error ? error.message : String(error)}); kept it as ${kept} and started from defaults`);
+      }
     }
+    // The UV-guard confirmation is about the cell as it is now: it never carries over from an earlier session.
+    this.config = { ...this.config, safetyConfirmed: false };
     this.loaded = true;
     return this.config;
   }
@@ -170,17 +187,30 @@ export class LaserCellController {
     await this.load();
     this.assertIdle();
     const { lmc, ...laserPatch } = patch.laser ?? {};
-    const next = LaserCellConfigSchema.parse({
+    const lmcPatch = Object.fromEntries(Object.entries(lmc ?? {}).filter(([k, v]) => v !== undefined && !(k === "token" && v === SAVED_SECRET)));
+    const parsed = LaserCellConfigSchema.safeParse({
       ...this.config,
       arm: { ...this.config.arm, ...patch.arm },
-      laser: { ...this.config.laser, ...laserPatch, lmc: { ...this.config.laser.lmc, ...Object.fromEntries(Object.entries(lmc ?? {}).filter(([, v]) => v !== undefined)) } },
+      laser: { ...this.config.laser, ...laserPatch, lmc: { ...this.config.laser.lmc, ...lmcPatch } },
       ...(patch.safetyConfirmed === undefined ? {} : { safetyConfirmed: patch.safetyConfirmed }),
     });
+    if (!parsed.success) {
+      throw new LaserCellError(`Settings not saved: ${parsed.error.issues.map(i => `${i.path.join(".") || "value"}: ${i.message}`).join("; ")}`);
+    }
+    const next = parsed.data;
+    // A different laser route is a different cell: the UV-guard confirmation has to be given again.
+    if (next.laser.driver !== this.config.laser.driver && patch.safetyConfirmed === undefined) next.safetyConfirmed = false;
     const armChanged = JSON.stringify(next.arm) !== JSON.stringify(this.config.arm);
     this.config = next;
     await this.save();
     if (armChanged && this.arm) await this.disconnectArm();
-    return this.config;
+    return this.publicConfig();
+  }
+
+  /** The config as shown outside the core: the bridge access key replaced by a placeholder. */
+  private publicConfig(): LaserCellConfig {
+    const lmc = this.config.laser.lmc;
+    return { ...this.config, laser: { ...this.config.laser, lmc: { ...lmc, token: lmc.token ? SAVED_SECRET : "" } } };
   }
 
   // ------------------------------------------------------------ logging
@@ -304,7 +334,10 @@ export class LaserCellController {
    */
   async footswitch(action: "press" | "hold" | "release"): Promise<boolean> {
     await this.load();
-    if (action !== "release") this.assertIdle();
+    if (action !== "release") {
+      this.assertIdle();
+      if (!this.config.safetyConfirmed) throw new LaserCellError("Confirm the UV guard first: a foot-switch press runs the whole job loaded in Studio");
+    }
     if (this.config.laser.driver !== "studio-footswitch") throw new LaserCellError("The foot switch is only used on the ComMarker Studio route");
     const laser = await this.laserDriver();
     if (!(laser instanceof StudioFootswitchLaser)) throw new LaserCellError("The foot-switch relay is not available");
@@ -331,14 +364,27 @@ export class LaserCellController {
    */
   async studioLoadJob(spec: StudioJobSpec): Promise<StudioLoadResult> {
     await this.load();
+    return this.exclusive("loading the job into ComMarker Studio", async () => {
+      if (this.config.laser.driver !== "studio-window") throw new LaserCellError("Choose \"ComMarker Studio (fabPlane presses Start in Studio)\" as the laser route first");
+      const laser = await this.laserDriver();
+      if (!(laser instanceof StudioWindowLaser)) throw new LaserCellError("The Studio window driver is not available");
+      if ((await launchStudio(laser.ui, this.config.laser.studioExe ?? DEFAULT_STUDIO_EXE)) === "started") this.log("info", "started ComMarker Studio");
+      const result = await laser.loadJob(spec);
+      for (const line of result.log) this.log(/check in Studio|no Power|not found|greyed/.test(line) ? "warn" : "info", `Studio: ${line}`);
+      return result;
+    });
+  }
+
+  /** Runs one non-run operation; refuses while anything else runs; Stop aborts it. */
+  private async exclusive<T>(kind: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
     this.assertIdle();
-    if (this.config.laser.driver !== "studio-window") throw new LaserCellError("Choose \"ComMarker Studio (fabPlane presses Start in Studio)\" as the laser route first");
-    const laser = await this.laserDriver();
-    if (!(laser instanceof StudioWindowLaser)) throw new LaserCellError("The Studio window driver is not available");
-    if ((await launchStudio(laser.ui, this.config.laser.studioExe ?? DEFAULT_STUDIO_EXE)) === "started") this.log("info", "started ComMarker Studio");
-    const result = await laser.loadJob(spec);
-    for (const line of result.log) this.log(/check in Studio|no Power|not found|greyed/.test(line) ? "warn" : "info", `Studio: ${line}`);
-    return result;
+    const op = { kind, abort: new AbortController() };
+    this.operation = op;
+    try {
+      return await fn(op.abort.signal);
+    } finally {
+      if (this.operation === op) this.operation = null;
+    }
   }
 
   // ------------------------------------------------------------ fabPlane USB driver (usb-lmc)
@@ -377,28 +423,32 @@ export class LaserCellController {
    * confirmed on the machine, a wrong pin could fire the UV source.
    */
   async preview(seconds: number): Promise<void> {
-    this.assertIdle();
+    await this.load();
     if (!this.config.safetyConfirmed) throw new LaserCellError("Confirm the UV guard first: the red-light pin is not yet verified on this laser");
-    const laser = await this.lmcLaser();
-    await laser.load(this.lmcJobPath());
-    this.log("info", `red-light preview for ${seconds} s`);
-    await laser.frame(seconds);
+    await this.exclusive("red-light preview", async signal => {
+      const laser = await this.lmcLaser();
+      await laser.load(this.lmcJobPath());
+      this.log("info", `red-light preview for ${seconds} s`);
+      await laser.frame(seconds, signal);
+    });
   }
 
   async moveTo(name: PoseName): Promise<void> {
-    this.assertIdle();
     await this.load();
     const pose = (this.config.poses as CellPoses)[name];
     if (!pose) throw new LaserCellError(`${POSE_LABELS[name]} has not been taught yet`);
     const arm = this.requireArm();
-    await arm.prepare();
-    await arm.moveTo(pose, { speed: this.config.arm.approachSpeed });
+    await this.exclusive(`moving the arm to ${POSE_LABELS[name]}`, async signal => {
+      await arm.prepare();
+      await arm.moveTo(pose, { speed: this.config.arm.approachSpeed, signal });
+    });
   }
 
   // ------------------------------------------------------------ running
 
   private assertIdle(): void {
     if (this.runState.active) throw new LaserCellError("The cell is running; stop it first");
+    if (this.operation) throw new LaserCellError(`The cell is busy (${this.operation.kind}); wait or press Stop`);
   }
 
   async run(request: RunRequest): Promise<void> {
@@ -411,15 +461,25 @@ export class LaserCellController {
     const missing = missingPoses(this.config.poses as CellPoses, request.mode === "laser-only");
     if (missing.length) throw new LaserCellError(`Teach these positions first: ${missing.join(", ")}`);
     if (request.mode !== "laser-only") this.requireArm();
-    const laser = request.mode === "dry-run" ? new SimulatedLaser(0) : await this.laserDriver();
-    if (this.config.laser.driver === "lightburn" && request.mode !== "dry-run") {
-      if (!this.config.laser.jobPath) throw new LaserCellError("Choose the LightBurn job file first");
-      await laser.load?.(this.config.laser.jobPath);
-    }
-    if (this.config.laser.driver === "usb-lmc" && request.mode !== "dry-run") await laser.load?.(this.lmcJobPath());
+    // Take the run lock before the first await: a second Start (another window, the agent) is refused, and
+    // a Stop during the job load below is not lost.
     const controller = new AbortController();
     this.abort = controller;
-    this.runState = { active: true, mode: request.mode, step: "preflight", visited: [], note: null, progress: 0, board: 0, boards, done: 0, startedAt: new Date().toISOString(), error: null };
+    this.runState = { active: true, mode: request.mode, step: "preflight", visited: [], note: "Preparing", progress: 0, board: 0, boards, done: 0, startedAt: new Date().toISOString(), error: null };
+    let laser: LaserDriver;
+    try {
+      laser = request.mode === "dry-run" ? new SimulatedLaser(0) : await this.laserDriver();
+      if (this.config.laser.driver === "lightburn" && request.mode !== "dry-run") {
+        if (!this.config.laser.jobPath) throw new LaserCellError("Choose the LightBurn job file first");
+        await laser.load?.(this.config.laser.jobPath);
+      }
+      if (this.config.laser.driver === "usb-lmc" && request.mode !== "dry-run") await laser.load?.(this.lmcJobPath());
+      if (controller.signal.aborted) throw new LaserCellError("Stopped by operator");
+    } catch (error) {
+      this.runState = { ...this.runState, active: false, error: error instanceof Error ? error.message : String(error) };
+      this.abort = null;
+      throw error;
+    }
     this.log("info", `${request.mode} started for ${boards} board(s) with ${laser.name}`);
     this.running = (async () => {
       try {
@@ -427,7 +487,7 @@ export class LaserCellController {
           this.runState.board = board;
           this.runState.visited = [];
           try {
-            await runCycle(request.mode === "laser-only" ? null : this.arm, laser, this.config.poses as CellPoses, {
+            await runCycle(this.arm, laser, this.config.poses as CellPoses, {
               frameSeconds: this.config.laser.frameSeconds,
               markTimeoutMs: this.config.laser.markTimeoutMinutes * 60_000,
               laserOnly: request.mode === "laser-only",
@@ -463,18 +523,45 @@ export class LaserCellController {
   }
 
   /** Stop now: abort the sequence, stop the laser where the route allows it, freeze the arm. */
-  async stop(): Promise<void> {
-    if (!this.abort) return;
-    this.log("warn", "stop requested");
-    this.abort.abort();
+  async stop(options: { quiet?: boolean } = {}): Promise<void> {
+    const active = !!this.abort || !!this.operation;
+    if (!active && options.quiet) return;
+    this.log("warn", active ? "stop requested" : "stop requested (nothing was running; laser and arm stopped anyway)");
+    this.abort?.abort();
+    this.operation?.abort.abort();
+    // Always: a preview, a Go move or a held foot switch is not a run, and must stop too.
     await this.laser?.stop().catch(() => undefined);
-    await this.arm?.stop();
+    await this.arm?.stop().catch(() => undefined);
     await this.running?.catch(() => undefined);
   }
 
   /** Wait for the current run (tests). */
   async settled(): Promise<void> {
     await this.running?.catch(() => undefined);
+  }
+
+  /**
+   * Laser status, cached for STATUS_CACHE_MS and shared between callers: the Laser Controller and the
+   * workspace both poll, and on the Studio route every check starts a PowerShell process.
+   */
+  private laserStatus: { at: number; key: string; value: LaserStatus } | null = null;
+  private laserProbing: Promise<LaserStatus> | null = null;
+
+  private probeLaser(): Promise<LaserStatus> {
+    const key = JSON.stringify(this.config.laser);
+    if (this.laserStatus && this.laserStatus.key === key && Date.now() - this.laserStatus.at < STATUS_CACHE_MS) return Promise.resolve(this.laserStatus.value);
+    if (this.laserProbing) return this.laserProbing;
+    this.laserProbing = (async () => {
+      let value: LaserStatus;
+      try {
+        value = await (await this.laserDriver()).status();
+      } catch (error) {
+        value = { state: "offline", detail: error instanceof Error ? error.message : String(error), driver: this.config.laser.driver };
+      }
+      this.laserStatus = { at: Date.now(), key, value };
+      return value;
+    })().finally(() => { this.laserProbing = null; });
+    return this.laserProbing;
   }
 
   async snapshot(options: { probe?: boolean } = {}): Promise<CellSnapshot> {
@@ -488,17 +575,18 @@ export class LaserCellController {
         this.armError = error instanceof Error ? error.message : String(error);
       }
     }
-    let laser: LaserStatus | null = null;
-    if (options.probe !== false && !this.runState.active) {
-      try {
-        laser = await (await this.laserDriver()).status();
-      } catch (error) {
-        laser = { state: "offline", detail: error instanceof Error ? error.message : String(error), driver: this.config.laser.driver };
-      }
+    let laser: LaserStatus | null = this.laserStatus?.value ?? null;
+    if (this.runState.active) {
+      laser = { state: "busy", detail: `running: board ${this.runState.board} of ${this.runState.boards}`, driver: this.config.laser.driver };
+    } else if (this.operation) {
+      laser = { state: "busy", detail: this.operation.kind, driver: this.config.laser.driver };
+    } else if (options.probe !== false) {
+      laser = await this.probeLaser();
     }
     const poses = this.config.poses as CellPoses;
     return {
-      config: this.config,
+      // The bridge access key never leaves the core (snapshots end up in agent transcripts).
+      config: this.publicConfig(),
       configPath: this.configPath,
       arm: { connected: !!this.arm, port: this.config.arm.port, joints, error: this.armError },
       laser,
@@ -506,11 +594,12 @@ export class LaserCellController {
       missing: missingPoses(poses),
       run: { ...this.runState, visited: [...this.runState.visited] },
       log: this.logEntries.slice(-60),
+      operation: this.operation?.kind ?? null,
     };
   }
 
   async dispose(): Promise<void> {
-    await this.stop();
+    await this.stop({ quiet: true });
     await this.arm?.bus.close().catch(() => undefined);
     await this.laser?.close?.().catch(() => undefined);
     this.arm = null;

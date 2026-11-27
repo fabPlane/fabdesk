@@ -5,7 +5,7 @@
  * The laser is behind `LaserDriver` so the same sequence works with ComMarker Studio / EZCAD
  * (foot-switch trigger + window automation), LightBurn (UDP) or a simulator.
  */
-import { Arm, assertPose, type Pose } from "./arm";
+import { Arm, assertPose, type Pose, poseReached } from "./arm";
 
 export type LaserState = "idle" | "busy" | "error" | "offline";
 
@@ -25,6 +25,11 @@ export interface LaserDriver {
   /** Stop marking as soon as possible. Must be safe to call at any time. */
   stop(): Promise<void>;
   close?(): Promise<void>;
+  /**
+   * Set by drivers that cannot see the job finish and wait a fixed time instead. Checked against the time
+   * limit before the laser starts, never after.
+   */
+  readonly expectedSeconds?: number | undefined;
 }
 
 /** Taught stations. Each "above" pose is the same spot lifted ~30 mm, used for straight approaches. */
@@ -128,7 +133,18 @@ export async function runCycle(arm: Arm | null, laser: LaserDriver, poses: CellP
       if (hot.length) throw new CellError(`Servo ${hot.map(j => `${j.id} (${j.temperature} °C)`).join(", ")} is too hot; let the arm cool down`, step);
       await arm.prepare();
     }
+    if (options.laserOnly && arm) {
+      // A connected arm must be parked out of the beam before a laser-only run.
+      const clear = poses.clear;
+      if (!clear || !Object.keys(clear).length) throw new CellError("The arm is connected: teach “Clear of laser” (or disconnect the arm) before a laser-only run", step);
+      if (!poseReached(clear, await arm.read(), arm.config.toleranceSteps * 3)) {
+        throw new CellError("The arm is not at “Clear of laser”: move it there (Arm setup → Go) before a laser-only run", step);
+      }
+    }
     if (!options.dryRun) {
+      if (laser.expectedSeconds !== undefined && laser.expectedSeconds * 1000 > options.markTimeoutMs) {
+        throw new CellError(`The job time (${Math.round(laser.expectedSeconds)} s) is longer than the time limit (${Math.round(options.markTimeoutMs / 1000)} s); raise “Give up after” in Settings`, step);
+      }
       const status = await laser.status();
       if (status.state !== "idle") throw new CellError(`Laser is not ready (${status.state}: ${status.detail})`, step);
     }
@@ -164,6 +180,8 @@ export async function runCycle(arm: Arm | null, laser: LaserDriver, poses: CellP
       }
       enter("mark", "Laser running");
       await laser.start();
+      // A stop that arrived while the laser was being started: stop it now (the catch below does).
+      if (signal?.aborted) throw new CellError("Stopped by operator", step);
       await laser.waitDone({ timeoutMs: options.markTimeoutMs, ...(signal ? { signal } : {}) });
     }
 

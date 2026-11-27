@@ -141,6 +141,23 @@ Verified 2026-11-27 without a laser: USB device listing on Windows, all mock-boa
 packets, power cap, Stop while a long job is still being sent), the bridge over TCP (key, one owner, a full
 job), and the app connecting to the bridge over the PC's Wi-Fi address. The Linux transport is untested.
 
+### Safety behaviour (review of 2026-11-27)
+
+- One thing at a time: a run, a job load into Studio, a red-light preview or an arm move. Everything else
+  is refused while one is in progress, and **Stop** ends any of them (not only runs).
+- Stop always wins: on every route a Start that has not been pressed yet is cancelled, and the USB driver
+  checks for a stop before every packet and every execute.
+- The UV-guard confirmation lasts for this session only, and is asked again after a change of laser route.
+  The foot-switch Press/Hold buttons need it too.
+- Laser only with the arm connected: the arm must be at “Clear of laser”.
+- Foot-switch route: a job longer than the time limit is refused before the relay fires; after a stop the
+  laser still counts as busy until the job time has passed (Studio cannot be stopped from fabPlane).
+- Studio route: only an enabled “Start” button in a fully read window counts as finished.
+- Wi-Fi bridge (protocol v2): every request has one answer; any error or timeout drops the link (no reply
+  can be read as the answer to a later request); a disconnect mid-job stops the board; a computer silent
+  for 15 s can be replaced by another with the key. The key is never shown back by fabPlane.
+- Cross-hatch (90° step) fills both directions on every pass on all routes, and the time estimate counts it.
+
 ## How the arm knows where things are
 
 No kinematics: positions are **taught**. Relax the arm (motors off), move it by hand to each station and

@@ -23,6 +23,8 @@ export interface LmcTransport {
   write(packet: Uint8Array): Promise<void>;
   /** 8-byte reply to the last single command. */
   read(): Promise<Uint8Array>;
+  /** Optional: write a single command and return its reply in one step (one round trip over a network). */
+  transact?(packet: Uint8Array): Promise<Uint8Array>;
   close(): Promise<void>;
 }
 
@@ -40,7 +42,14 @@ export function parseUsbPath(path: string): { vid: number; pid: number } | null 
 const USB_DEVICE_GUID = new Uint8Array([0x10, 0xbf, 0xdc, 0xa5, 0x30, 0x65, 0xd2, 0x11, 0x90, 0x1f, 0x00, 0xc0, 0x4f, 0xb9, 0x51, 0xed]);
 const DIGCF_PRESENT = 0x2, DIGCF_DEVICEINTERFACE = 0x10;
 
-async function win32() {
+let win32Libs: ReturnType<typeof loadWin32> | null = null;
+/** The Windows libraries, loaded once per process (status polling reconnects often while the laser is off). */
+function win32() {
+  win32Libs ??= loadWin32();
+  return win32Libs;
+}
+
+async function loadWin32() {
   const { dlopen, FFIType, ptr } = await import("bun:ffi");
   const setup = dlopen("setupapi.dll", {
     SetupDiGetClassDevsW: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.i64 },
@@ -53,7 +62,14 @@ async function win32() {
     CloseHandle: { args: [FFIType.i64], returns: FFIType.i32 },
     GetLastError: { args: [], returns: FFIType.u32 },
   });
-  return { setup: setup.symbols, k32: k32.symbols, ptr, FFIType, dlopen };
+  const wu = dlopen("winusb.dll", {
+    WinUsb_Initialize: { args: [FFIType.i64, FFIType.ptr], returns: FFIType.i32 },
+    WinUsb_Free: { args: [FFIType.i64], returns: FFIType.i32 },
+    WinUsb_SetPipePolicy: { args: [FFIType.i64, FFIType.u8, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.i32 },
+    WinUsb_WritePipe: { args: [FFIType.i64, FFIType.u8, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    WinUsb_ReadPipe: { args: [FFIType.i64, FFIType.u8, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+  });
+  return { setup: setup.symbols, k32: k32.symbols, wu: wu.symbols, ptr };
 }
 
 /** All present USB devices (vendor/product ids and device paths). Windows only. */
@@ -93,14 +109,7 @@ export async function openWinUsbLmc(index = 0, timeoutMs = 500): Promise<LmcTran
   const boards = (await listUsbDevices()).filter(d => d.vid === LMC_VID && d.pid === LMC_PID);
   const board = boards[index];
   if (!board) throw new LmcUsbError("no BJJCZ laser board (USB 9588:9899) found; plug in the laser and switch it on");
-  const { k32, ptr, FFIType, dlopen } = await win32();
-  const wu = dlopen("winusb.dll", {
-    WinUsb_Initialize: { args: [FFIType.i64, FFIType.ptr], returns: FFIType.i32 },
-    WinUsb_Free: { args: [FFIType.i64], returns: FFIType.i32 },
-    WinUsb_SetPipePolicy: { args: [FFIType.i64, FFIType.u8, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.i32 },
-    WinUsb_WritePipe: { args: [FFIType.i64, FFIType.u8, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-    WinUsb_ReadPipe: { args: [FFIType.i64, FFIType.u8, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-  }).symbols;
+  const { k32, wu, ptr } = await win32();
   const path = new Uint8Array(Buffer.from(`${board.path}\0`, "utf16le"));
   // GENERIC_READ|GENERIC_WRITE, share read/write, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OVERLAPPED
   const file = BigInt(k32.CreateFileW(ptr(path), 0xc0000000, 3, null, 3, 0x40000080, null) as number | bigint);
@@ -121,8 +130,10 @@ export async function openWinUsbLmc(index = 0, timeoutMs = 500): Promise<LmcTran
   wu.WinUsb_SetPipePolicy(h, LMC_OUT_ENDPOINT, 3 /* PIPE_TRANSFER_TIMEOUT */, 4, ptr(timeout));
   wu.WinUsb_SetPipePolicy(h, LMC_IN_ENDPOINT, 3, 4, ptr(timeout));
   let closed = false;
+  const open = () => { if (closed) throw new LmcUsbError("the USB link to the laser is closed"); };
   return {
     async write(packet) {
+      open();
       if (packet.length !== COMMAND_BYTES && packet.length !== LIST_PACKET_BYTES) throw new LmcUsbError(`bad packet size ${packet.length}`);
       const done = new Uint32Array(1);
       const copy = new Uint8Array(packet);
@@ -131,6 +142,7 @@ export async function openWinUsbLmc(index = 0, timeoutMs = 500): Promise<LmcTran
       }
     },
     async read() {
+      open();
       const buf = new Uint8Array(REPLY_BYTES);
       const done = new Uint32Array(1);
       if (!wu.WinUsb_ReadPipe(h, LMC_IN_ENDPOINT, ptr(buf), buf.length, ptr(done), null)) {
@@ -158,6 +170,9 @@ export class MockLmcTransport implements LmcTransport {
   readonly lists: Uint8Array[] = [];
   private busyLeft = 0;
   private reply: Uint8Array | null = null;
+  /** Optional hook awaited before each reply is handed out (tests: slow boards, races). */
+  replyDelay: ((op: number) => Promise<void>) | null = null;
+  private lastOp = 0;
   constructor(private readonly busyReads = 3, readonly version = [0x0001, 0x0002, 0x0003]) {}
 
   async write(packet: Uint8Array): Promise<void> {
@@ -165,6 +180,7 @@ export class MockLmcTransport implements LmcTransport {
     if (packet.length !== COMMAND_BYTES) throw new LmcUsbError(`bad packet size ${packet.length}`);
     const [cmd] = decodeList([packet]);
     this.singles.push(cmd!);
+    this.lastOp = cmd!.op;
     if (cmd!.op === Cmd.ExecuteList) this.busyLeft = this.busyReads;
     if (cmd!.op === Cmd.StopExecute) this.busyLeft = 0;
     const status = Status.READY | (this.busyLeft > 0 ? Status.BUSY : 0);
@@ -177,6 +193,7 @@ export class MockLmcTransport implements LmcTransport {
   }
 
   async read(): Promise<Uint8Array> {
+    if (this.replyDelay) await this.replyDelay(this.lastOp);
     if (!this.reply) throw new LmcUsbError("no reply pending");
     const r = this.reply;
     this.reply = null;
@@ -220,8 +237,8 @@ export async function openLinuxUsbLmc(index = 0, timeoutMs = 500): Promise<LmcTr
   try { fd = openSync(path, "r+"); } catch (e) {
     throw new LmcUsbError(`cannot open ${path} (${e instanceof Error ? e.message : String(e)}); run the bridge as root or add a udev rule for 9588:9899`);
   }
-  const { dlopen, FFIType, ptr } = await import("bun:ffi");
-  const libc = dlopen("libc.so.6", { ioctl: { args: [FFIType.i32, FFIType.u64, FFIType.ptr], returns: FFIType.i32 } }).symbols;
+  const { ptr } = await import("bun:ffi");
+  const libc = await linuxLibc();
   const USBDEVFS_CLAIMINTERFACE = 0x8004550fn, USBDEVFS_RELEASEINTERFACE = 0x80045510n, USBDEVFS_BULK = 0xc0185502n;
   const iface = new Uint32Array([0]);
   if (libc.ioctl(fd, USBDEVFS_CLAIMINTERFACE, ptr(iface)) < 0) { closeSync(fd); throw new LmcUsbError(`could not claim the laser board's USB interface at ${path} (in use?)`); }
@@ -233,22 +250,35 @@ export async function openLinuxUsbLmc(index = 0, timeoutMs = 500): Promise<LmcTr
     v.setBigUint64(16, BigInt(ptr(data)), true);
     return libc.ioctl(fd, USBDEVFS_BULK, ptr(req));
   };
+  let closed = false;
+  const open = () => { if (closed) throw new LmcUsbError("the USB link to the laser is closed"); };
   return {
     async write(packet) {
+      open();
       const copy = new Uint8Array(packet);
       if (bulk(LMC_OUT_ENDPOINT, copy) !== copy.length) throw new LmcUsbError("USB write to the laser board failed");
     },
     async read() {
+      open();
       const buf = new Uint8Array(REPLY_BYTES);
       const n = bulk(LMC_IN_ENDPOINT, buf);
       if (n < 0) throw new LmcUsbError("USB read from the laser board failed");
       return buf.subarray(0, n);
     },
     async close() {
+      if (closed) return; // never close a reused fd number twice
+      closed = true;
       libc.ioctl(fd, USBDEVFS_RELEASEINTERFACE, ptr(iface));
       closeSync(fd);
     },
   };
+}
+
+let libcSymbols: Promise<{ ioctl: (fd: number, request: bigint, arg: unknown) => number }> | null = null;
+function linuxLibc() {
+  libcSymbols ??= import("bun:ffi").then(({ dlopen, FFIType }) =>
+    dlopen("libc.so.6", { ioctl: { args: [FFIType.i32, FFIType.u64, FFIType.ptr], returns: FFIType.i32 } }).symbols as unknown as { ioctl: (fd: number, request: bigint, arg: unknown) => number });
+  return libcSymbols;
 }
 
 /** The USB transport for this platform. */

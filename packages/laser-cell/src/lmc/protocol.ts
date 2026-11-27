@@ -125,11 +125,22 @@ export class ListPackets {
     return this;
   }
 
+  private taken = 0;
+
   get commandCount(): number {
-    return this.packets.length * LIST_COMMANDS_PER_PACKET - (this.current ? (LIST_PACKET_BYTES - this.index) / COMMAND_BYTES : 0);
+    return (this.packets.length + this.taken) * LIST_COMMANDS_PER_PACKET - (this.current ? (LIST_PACKET_BYTES - this.index) / COMMAND_BYTES : 0);
   }
 
-  /** All packets; the list always ends with an end-of-list command. */
+  /** Packets that are complete (all but the one being filled), removed from the list. */
+  takeFull(): Uint8Array[] {
+    if (this.packets.length <= 1) return [];
+    const full = this.packets.slice(0, -1);
+    this.taken += full.length;
+    this.packets = this.packets.slice(-1);
+    return full;
+  }
+
+  /** The remaining packets; the list always ends with an end-of-list command. */
   finish(): Uint8Array[] {
     this.add(List.EndOfList);
     return this.packets.slice();
