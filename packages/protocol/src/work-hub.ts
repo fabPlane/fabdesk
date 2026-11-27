@@ -147,6 +147,11 @@ export type PublishProject = z.input<typeof PublishProject>;
 export type ProjectGitHubLink = {
   /** The `origin` remote when it points at github.com. */
   repo: { fullName: string; url: string } | null;
+  /**
+   * Whether the current branch has been pushed there (it tracks a remote branch). False after a
+   * first push that failed: the repository exists and is `origin`, and publishing again finishes it.
+   */
+  pushed: boolean;
   /** An `origin` that is not GitHub; publishing will not replace it. */
   otherRemote: boolean;
 };

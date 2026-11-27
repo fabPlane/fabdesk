@@ -101,10 +101,13 @@ function fakeGitHub(options: { status?: number; scopes?: string; create?: (path:
                 { id: "R3", state: "PENDING", submittedAt: null, url: "", author: user("matt") },
               ] } },
             { number: 7, title: "Bigger pads", url: `https://github.com/${full}/pull/7`, state: "OPEN", isDraft: true, createdAt: "2026-11-25T00:00:00Z", mergedAt: null, closedAt: null, author: user("ana"), mergedBy: null, reviews: { nodes: [] } },
-            { number: 5, title: "Abandoned", url: `https://github.com/${full}/pull/5`, state: "CLOSED", isDraft: false, createdAt: "2026-10-01T00:00:00Z", mergedAt: null, closedAt: "2026-11-24T00:00:00Z", author: user("bo"), mergedBy: null, reviews: { nodes: [] } },
+            { number: 5, title: "Abandoned", url: `https://github.com/${full}/pull/5`, state: "CLOSED", isDraft: false, createdAt: "2026-10-01T00:00:00Z", mergedAt: null, closedAt: "2026-11-24T00:00:00Z", author: user("bo"), mergedBy: null, closer: { nodes: [{ actor: user("matt") }] }, reviews: { nodes: [] } },
           ] },
           issues: { nodes: [
-            { number: 12, title: "Fix silkscreen", url: `https://github.com/${full}/issues/12`, createdAt: "2026-11-23T00:00:00Z", closedAt: null, author: user("matt") },
+            { number: 12, title: "Fix silkscreen", url: `https://github.com/${full}/issues/12`, createdAt: "2026-11-23T00:00:00Z", closedAt: null, author: user("matt"), closer: { nodes: [] } },
+            // Filed by one person, closed by another, and one whose closer GitHub does not report.
+            { number: 13, title: "Wrong footprint", url: `https://github.com/${full}/issues/13`, createdAt: "2026-10-01T00:00:00Z", closedAt: "2026-11-22T00:00:00Z", author: user("bo"), closer: { nodes: [{ actor: user("ana") }] } },
+            { number: 14, title: "Stale", url: `https://github.com/${full}/issues/14`, createdAt: "2026-10-01T00:00:00Z", closedAt: "2026-11-21T00:00:00Z", author: user("bo"), closer: { nodes: [{}] } },
             { number: 3, title: "Ancient", url: `https://github.com/${full}/issues/3`, createdAt: "2025-01-01T00:00:00Z", closedAt: "2025-02-01T00:00:00Z", author: user("matt") },
           ] },
         };
@@ -191,15 +194,16 @@ test("overview: ranks what needs the person, builds the feed and the team from r
     ["commit", "Unlinked Person", "Tune stencil"],
     ["commit", "dependabot[bot]", "Bump deps"],
     ["pr_opened", "ana", 7],
-    ["pr_closed", "bo", 5],
+    ["pr_closed", "matt", 5],
     ["issue_opened", "matt", 12],
+    ["issue_closed", "ana", 13],
+    ["issue_closed", undefined, 14],
   ]);
   expect(all.feed.find(event => event.kind === "review")?.review).toBe("approved");
   // Bots and commits without a GitHub account are in the feed but are not team members.
   expect(all.team.map(member => [member.login, member.commits, member.pullRequests, member.reviews, member.issues, member.openPullRequests.map(pr => pr.number)])).toEqual([
-    ["ana", 1, 1, 0, 0, [7]],
+    ["ana", 1, 1, 0, 1, [7]],
     ["matt", 0, 1, 1, 1, []],
-    ["bo", 0, 0, 0, 0, []],
   ]);
   expect(all.team[0]!.latest.title).toBe("Route the power stage");
 
@@ -210,7 +214,7 @@ test("overview: ranks what needs the person, builds the feed and the team from r
   const hardware = await work.overview("hardware");
   expect(hardware.repos).toEqual(["fabPlane/viagrid"]);
   expect(hardware.attention.map(item => item.number)).toEqual([7, 12]);
-  expect(hardware.feed).toHaveLength(8);
+  expect(hardware.feed).toHaveLength(10);
 });
 
 test("without a token the hub says so instead of asking GitHub", async () => {
@@ -235,11 +239,11 @@ test("publish: commits the project, creates the repository, pushes with the toke
   const work = new WorkHub({ home: join(root, "home"), fetch: github.fetchImpl, ghToken: async () => TOKEN, now: () => NOW,
     git: (args, opts) => { git.push(args); return defaultGit(args, opts); } });
 
-  expect(await work.projectLink(dir)).toEqual({ repo: null, otherRemote: false });
+  expect(await work.projectLink(dir)).toEqual({ repo: null, pushed: false, otherRemote: false });
   await expect(work.publish(dir, { owner: "someone-else", name: "blinky", private: true })).rejects.toMatchObject({ code: "cannot_publish" });
   expect(created).toEqual([]);
 
-  expect(await work.publish(dir, { owner: "fabPlane", name: "blinky", private: true, description: "A blinker" })).toEqual({ repo: { fullName: "fabPlane/blinky", url: "https://github.com/fabPlane/blinky" }, otherRemote: false });
+  expect(await work.publish(dir, { owner: "fabPlane", name: "blinky", private: true, description: "A blinker" })).toEqual({ repo: { fullName: "fabPlane/blinky", url: "https://github.com/fabPlane/blinky" }, pushed: true, otherRemote: false });
   expect(created).toEqual([{ path: "/orgs/fabPlane/repos", body: { name: "blinky", private: true, description: "A blinker" } }]);
   const pushed = await defaultGit(["log", "--format=%s", "--all"], { cwd: bare });
   expect(pushed.stdout.trim()).toBe("Publish to GitHub");
@@ -249,11 +253,11 @@ test("publish: commits the project, creates the repository, pushes with the toke
   expect(await readFile(join(dir, ".git", "config"), "utf8")).not.toMatch(/ghp_|x-access-token|extraheader/i);
 
   // The test remote is a folder, so the project now has a non-GitHub origin: publishing again must not touch it.
-  expect(await work.projectLink(dir)).toEqual({ repo: null, otherRemote: true });
+  expect(await work.projectLink(dir)).toEqual({ repo: null, pushed: false, otherRemote: true });
   await expect(work.publish(dir, { owner: "fabPlane", name: "again", private: true })).rejects.toMatchObject({ code: "other_remote" });
   expect(created).toHaveLength(1);
   expect((await defaultGit(["remote", "set-url", "origin", "git@github.com:fabPlane/blinky.git"], { cwd: dir })).exitCode).toBe(0);
-  expect((await work.projectLink(dir)).repo?.fullName).toBe("fabPlane/blinky");
+  expect(await work.projectLink(dir)).toMatchObject({ repo: { fullName: "fabPlane/blinky" }, pushed: true });
   await expect(work.publish(dir, { owner: "fabPlane", name: "again", private: true })).rejects.toMatchObject({ code: "already_published" });
 
   const taken = join(root, "taken");
@@ -262,6 +266,34 @@ test("publish: commits the project, creates the repository, pushes with the toke
     fetch: fakeGitHub({ create: () => new Response(JSON.stringify({ errors: [{ message: "name already exists on this account" }] }), { status: 422 }) }).fetchImpl });
   await expect(conflict.publish(taken, { owner: "matt", name: "taken", private: true })).rejects.toMatchObject({ code: "repo_exists", message: "name already exists on this account" });
   expect((await defaultGit(["remote"], { cwd: taken })).stdout.trim()).toBe("");
+});
+
+test("publish: a first push that fails can be retried without creating a second repository", async () => {
+  const root = await temp("retry");
+  const dir = join(root, "blinky"), bare = join(root, "remote.git");
+  await mkdir(dir);
+  await writeFile(join(dir, "fabdesk.json"), "{}");
+  expect((await defaultGit(["init", "--bare", bare], { cwd: root })).exitCode).toBe(0);
+  let created = 0, offline = true;
+  // The remote looks like GitHub to the hub, and git is pointed at the local folder instead.
+  const github = fakeGitHub({ create: () => { created++; return new Response(JSON.stringify({ full_name: "matt/blinky", html_url: "https://github.com/matt/blinky", clone_url: "https://github.com/matt/blinky.git" }), { status: 201 }); } });
+  const work = new WorkHub({ home: join(root, "home"), fetch: github.fetchImpl, ghToken: async () => TOKEN, now: () => NOW,
+    git: (args, opts) => args[0] !== "push" ? defaultGit(args, opts)
+      : offline ? Promise.resolve({ exitCode: 128, stdout: "", stderr: "fatal: unable to access: Could not resolve host" })
+      : defaultGit(["-c", `url.${bare}.insteadOf=https://github.com/matt/blinky.git`, ...args], { cwd: opts.cwd }) });
+
+  await expect(work.publish(dir, { owner: "matt", name: "blinky", private: true })).rejects.toMatchObject({ code: "push_failed" });
+  expect(await work.projectLink(dir)).toEqual({ repo: { fullName: "matt/blinky", url: "https://github.com/matt/blinky" }, pushed: false, otherRemote: false });
+  // Another name is still refused: the project already has its repository.
+  await expect(work.publish(dir, { owner: "matt", name: "other", private: true })).rejects.toMatchObject({ code: "already_published" });
+  await expect(work.publish(dir, { owner: "matt", name: "blinky", private: true })).rejects.toMatchObject({ code: "push_failed" });
+
+  offline = false;
+  expect(await work.publish(dir, { owner: "Matt", name: "blinky", private: true })).toMatchObject({ repo: { fullName: "matt/blinky" }, pushed: true });
+  expect(created).toBe(1);
+  expect((await defaultGit(["log", "--format=%s", "--all"], { cwd: bare })).stdout.trim()).toBe("Publish to GitHub");
+  expect((await work.projectLink(dir)).pushed).toBe(true);
+  await expect(work.publish(dir, { owner: "matt", name: "blinky", private: true })).rejects.toMatchObject({ code: "already_published" });
 });
 
 test("HTTP: reads work for any client, keeps token changes and publishing on the local desktop connection, and maps hub errors", async () => {

@@ -191,10 +191,15 @@ function RepoCard({ repo }: { repo: WorkRepo }) {
 
 function ProjectRow({ project, connection, onPublish }: { project: ProjectSummary; connection: Connected; onPublish: () => void }) {
   const link = useProjectGitHub(project.id);
+  const { publish } = useWorkMutations();
+  // The repository exists and is this project's remote, but nothing was pushed: offer to finish.
+  const unpushed = link.data?.repo && !link.data.pushed ? link.data.repo : null;
+  const finishPush = () => { const [owner = "", name = ""] = (unpushed?.fullName ?? "").split("/"); publish.mutate({ projectId: project.id, input: { owner, name } }); };
   return <li className="fd-work-project">
     <Icon name="folder" width={16} height={16} />
-    <span className="fd-work-row-copy"><strong>{project.name}</strong><small>{link.isPending ? "Checking…" : link.data?.repo ? link.data.repo.fullName : link.data?.otherRemote ? "Has another git remote" : "Only on this computer"}</small></span>
-    {link.data?.repo ? <ExternalRow url={link.data.repo.url} className="fd-work-link" label={`Open ${link.data.repo.fullName} on GitHub`}>On GitHub<Icon name="externalLink" width={14} height={14} /></ExternalRow>
+    <span className="fd-work-row-copy"><strong>{project.name}</strong><small>{link.isPending ? "Checking…" : publish.isError ? errorText(publish.error) : unpushed ? `${unpushed.fullName} · not pushed yet` : link.data?.repo ? link.data.repo.fullName : link.data?.otherRemote ? "Has another git remote" : "Only on this computer"}</small></span>
+    {unpushed ? <Button size="sm" disabled={publish.isPending || !connection.canPublish} title="The repository was created but the push did not finish" onClick={finishPush}>{publish.isPending ? "Pushing…" : "Finish push"}</Button>
+      : link.data?.repo ? <ExternalRow url={link.data.repo.url} className="fd-work-link" label={`Open ${link.data.repo.fullName} on GitHub`}>On GitHub<Icon name="externalLink" width={14} height={14} /></ExternalRow>
       : link.data && !link.data.otherRemote && <Button size="sm" disabled={!connection.canPublish} title={connection.canPublish ? "Create a GitHub repository for this project and push it" : "The GitHub token needs the repo scope to create repositories"} onClick={onPublish}>Move to GitHub</Button>}
   </li>;
 }

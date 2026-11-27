@@ -34,7 +34,7 @@ import type {
   RouteResult,
   RouterCatalogId,
 } from "@fabdesk/protocol";
-import { useInfiniteQuery, useIsMutating, useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useInfiniteQuery, useIsMutating, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useCoreClient } from "./provider";
 import { messagesKey } from "./events";
@@ -1246,7 +1246,7 @@ export function useWorkRepos(enabled = true) {
 /** Refetches every two minutes while mounted; the core caches GitHub for one. */
 export function useWorkOverview(scope: WorkScope, enabled = true) {
   const client = useCoreClient();
-  return useQuery({ queryKey: ["work", "overview", scope, client.baseUrl], queryFn: () => client.workOverview(scope), enabled, staleTime: 60_000, refetchInterval: 120_000, retry: false, placeholderData: keepPreviousData });
+  return useQuery({ queryKey: ["work", "overview", scope, client.baseUrl], queryFn: () => client.workOverview(scope), enabled, staleTime: 60_000, refetchInterval: 120_000, retry: false });
 }
 
 export function useProjectGitHub(projectId: string | null, enabled = true) {

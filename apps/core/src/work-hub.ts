@@ -110,6 +110,9 @@ type SearchPr = {
   commits?: { nodes: Array<{ commit: { statusCheckRollup: { state: string } | null } }> };
 };
 
+/** The newest "closed" timeline event: who closed it, which is often not the author. */
+type Closer = { nodes: Array<{ actor?: Actor } | null> } | null;
+
 type ActivityRepo = {
   nameWithOwner: string;
   defaultBranchRef: { target: { history?: { nodes: Array<{
@@ -118,11 +121,11 @@ type ActivityRepo = {
   }> } } | null } | null;
   pullRequests: { nodes: Array<{
     number: number; title: string; url: string; state: "OPEN" | "CLOSED" | "MERGED"; isDraft: boolean;
-    createdAt: string; mergedAt: string | null; closedAt: string | null; author: Actor; mergedBy: Actor;
+    createdAt: string; mergedAt: string | null; closedAt: string | null; author: Actor; mergedBy: Actor; closer: Closer;
     reviews: { nodes: Array<{ id: string; state: string; submittedAt: string | null; url: string; author: Actor }> };
   }> };
   issues: { nodes: Array<{
-    number: number; title: string; url: string; createdAt: string; closedAt: string | null; author: Actor;
+    number: number; title: string; url: string; createdAt: string; closedAt: string | null; author: Actor; closer: Closer;
   }> };
 } | null;
 
@@ -130,6 +133,7 @@ const REPO_FIELDS = `nameWithOwner name owner{login} url description isPrivate i
   primaryLanguage{name} languages(first:3,orderBy:{field:SIZE,direction:DESC}){nodes{name}} repositoryTopics(first:15){nodes{topic{name}}}
   object(expression:"HEAD:"){... on Tree{entries{name type}}}`;
 const ACTOR = `__typename login avatarUrl`;
+const CLOSER = `closer:timelineItems(last:1,itemTypes:[CLOSED_EVENT]){nodes{... on ClosedEvent{actor{${ACTOR}}}}}`;
 
 export class WorkHub {
   private readonly file: string;
@@ -422,8 +426,8 @@ export class WorkHub {
     const fields = `nameWithOwner
       defaultBranchRef{target{... on Commit{history(first:15,since:$since){nodes{oid messageHeadline committedDate url author{name user{${ACTOR}}}}}}}}
       pullRequests(first:15,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url state isDraft createdAt mergedAt closedAt
-        author{${ACTOR}} mergedBy{${ACTOR}} reviews(last:5){nodes{id state submittedAt url author{${ACTOR}}}}}}
-      issues(first:15,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url createdAt closedAt author{${ACTOR}}}}`;
+        author{${ACTOR}} mergedBy{${ACTOR}} ${CLOSER} reviews(last:5){nodes{id state submittedAt url author{${ACTOR}}}}}}
+      issues(first:15,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url createdAt closedAt author{${ACTOR}} ${CLOSER}}}`;
     // A few repositories per request, in parallel: one large query is answered several times slower.
     const batches: WorkRepo[][] = [];
     for (let index = 0; index < repos.length; index += ACTIVITY_BATCH) batches.push(repos.slice(index, index + ACTIVITY_BATCH));
@@ -452,7 +456,7 @@ export class WorkHub {
         }
         if (pr.createdAt >= since) feed.push({ ...base, id: `pr:${name}#${pr.number}:opened`, kind: "pr_opened", actor: author, at: pr.createdAt });
         if (pr.mergedAt && pr.mergedAt >= since) feed.push({ ...base, id: `pr:${name}#${pr.number}:merged`, kind: "pr_merged", actor: actor(pr.mergedBy) ?? author, at: pr.mergedAt });
-        else if (pr.state === "CLOSED" && pr.closedAt && pr.closedAt >= since) feed.push({ ...base, id: `pr:${name}#${pr.number}:closed`, kind: "pr_closed", actor: author, at: pr.closedAt });
+        else if (pr.state === "CLOSED" && pr.closedAt && pr.closedAt >= since) feed.push({ ...base, id: `pr:${name}#${pr.number}:closed`, kind: "pr_closed", actor: actor(pr.closer?.nodes[0]?.actor), at: pr.closedAt });
         for (const review of pr.reviews.nodes) {
           const state = review.state === "APPROVED" ? "approved" : review.state === "CHANGES_REQUESTED" ? "changes_requested" : review.state === "COMMENTED" ? "commented" : null;
           const reviewer = actor(review.author);
@@ -463,9 +467,10 @@ export class WorkHub {
         }
       }
       for (const issue of repo.issues.nodes) {
-        const base = { repo: name, title: issue.title, number: issue.number, url: issue.url, actor: actor(issue.author) };
-        if (issue.createdAt >= since) feed.push({ ...base, id: `issue:${name}#${issue.number}:opened`, kind: "issue_opened", at: issue.createdAt });
-        if (issue.closedAt && issue.closedAt >= since) feed.push({ ...base, id: `issue:${name}#${issue.number}:closed`, kind: "issue_closed", at: issue.closedAt });
+        const base = { repo: name, title: issue.title, number: issue.number, url: issue.url };
+        if (issue.createdAt >= since) feed.push({ ...base, id: `issue:${name}#${issue.number}:opened`, kind: "issue_opened", actor: actor(issue.author), at: issue.createdAt });
+        // Whoever closed it, not whoever filed it; unknown rather than misattributed when GitHub does not say.
+        if (issue.closedAt && issue.closedAt >= since) feed.push({ ...base, id: `issue:${name}#${issue.number}:closed`, kind: "issue_closed", actor: actor(issue.closer?.nodes[0]?.actor), at: issue.closedAt });
       }
     }
     feed.sort((a, b) => b.at.localeCompare(a.at));
@@ -491,11 +496,14 @@ export class WorkHub {
   async projectLink(dir: string): Promise<ProjectGitHubLink> {
     const top = await this.git(["rev-parse", "--show-toplevel"], { cwd: dir }).catch(() => null);
     // A project folder inside someone else's checkout has no repository of its own.
-    if (!top || top.exitCode !== 0 || !(await sameDirectory(top.stdout.trim(), dir))) return { repo: null, otherRemote: false };
+    if (!top || top.exitCode !== 0 || !(await sameDirectory(top.stdout.trim(), dir))) return { repo: null, pushed: false, otherRemote: false };
     const remote = await this.git(["remote", "get-url", "origin"], { cwd: dir });
-    if (remote.exitCode !== 0 || !remote.stdout.trim()) return { repo: null, otherRemote: false };
+    if (remote.exitCode !== 0 || !remote.stdout.trim()) return { repo: null, pushed: false, otherRemote: false };
     const repo = gitHubRepoFromRemote(remote.stdout);
-    return { repo, otherRemote: !repo };
+    if (!repo) return { repo: null, pushed: false, otherRemote: true };
+    // `push --set-upstream` records the tracking branch only when the push succeeds.
+    const upstream = await this.git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], { cwd: dir });
+    return { repo, pushed: upstream.exitCode === 0, otherRemote: false };
   }
 
   /**
@@ -509,7 +517,10 @@ export class WorkHub {
     try {
       const { token } = await this.need();
       const link = await this.projectLink(dir);
-      if (link.repo) throw new WorkHubError("already_published", 409, `This project is already on GitHub as ${link.repo.fullName}.`);
+      // A first push that failed left the new repository as `origin`. Asking again for that same
+      // repository finishes the push instead of refusing or creating a second one.
+      const resume = link.repo && !link.pushed && link.repo.fullName.toLowerCase() === `${input.owner}/${input.name}`.toLowerCase() ? link.repo : null;
+      if (link.repo && !resume) throw new WorkHubError("already_published", 409, `This project is already on GitHub as ${link.repo.fullName}.`);
       if (link.otherRemote) throw new WorkHubError("other_remote", 409, "This project already has a git remote named origin that is not GitHub.");
       const connection = await this.connection();
       if (!connection.connected) throw new WorkHubError("github_not_connected", 401, connection.message);
@@ -520,6 +531,8 @@ export class WorkHub {
       const head = await this.git(["rev-parse", "--verify", "HEAD"], { cwd: dir });
       if (head.exitCode !== 0) throw new WorkHubError("push_failed", 412, "This project has no files to publish yet.");
 
+      let repo = resume;
+      if (!repo) {
       const res = await this.call(token, own ? "/user/repos" : `/orgs/${encodeURIComponent(input.owner)}/repos`, {
         method: "POST",
         body: { name: input.name, private: input.private, ...(input.description ? { description: input.description } : {}) },
@@ -529,9 +542,10 @@ export class WorkHub {
       if (res.status === 403 || res.status === 404) throw new WorkHubError("cannot_publish", 403, `GitHub did not allow creating a repository in ${input.owner}. The token needs the repo scope and permission in that account.`);
       if (!res.ok || !body?.full_name || !body.clone_url) throw new WorkHubError("github_error", 502, body?.message ?? `GitHub answered ${res.status}.`);
 
-      const repo = { fullName: body.full_name, url: body.html_url ?? `https://github.com/${body.full_name}` };
+      repo = { fullName: body.full_name, url: body.html_url ?? `https://github.com/${body.full_name}` };
       const add = await this.git(["remote", "add", "origin", body.clone_url], { cwd: dir });
       if (add.exitCode !== 0) throw new WorkHubError("push_failed", 500, `Created ${repo.fullName}, but could not add it as a remote: ${add.stderr.trim()}`);
+      }
       const push = await this.git(["push", "--set-upstream", "origin", "HEAD"], {
         cwd: dir,
         env: {
@@ -543,9 +557,9 @@ export class WorkHub {
         },
       });
       if (push.exitCode !== 0)
-        throw new WorkHubError("push_failed", 502, `Created ${repo.fullName}, but the first push failed: ${push.stderr.trim().split("\n").pop() ?? "git push failed"}`);
+        throw new WorkHubError("push_failed", 502, `${resume ? "The push" : `Created ${repo.fullName}, but the first push`} failed: ${push.stderr.trim().split("\n").pop() ?? "git push failed"}. Try again to finish it.`);
       this.reposCache = null; this.overviewCache.clear();
-      return { repo, otherRemote: false };
+      return { repo, pushed: true, otherRemote: false };
     } finally {
       this.publishing.delete(dir);
     }
