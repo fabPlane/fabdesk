@@ -193,6 +193,6 @@ test("the streamed mark list is byte-identical to the whole list, and checks the
   const whole = buildMarkJob(shape, field, s, opts).packets;
   expect(streamed.length).toBe(whole.length);
   expect(streamed.every((p, i) => p.every((b, k) => b === whole[i]![k]))).toBe(true);
-  const outside = markPackets(shape, { ...field, centerMm: [40, 0] }, s, opts);
-  expect(() => outside.next()).toThrow(/outside the 70 mm lens field/);
+  // Checked when the list is made, before any packet exists.
+  expect(() => markPackets(shape, { ...field, centerMm: [40, 0] }, s, opts)).toThrow(/outside the 70 mm lens field/);
 });

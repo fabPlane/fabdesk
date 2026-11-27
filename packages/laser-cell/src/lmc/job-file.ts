@@ -17,7 +17,10 @@ import { hatchLines, passAngles, type Ring, type Vec } from "./job";
 export const DEFAULT_TIMING = { travelMmPerS: 2000, laserOnDelayUs: 100, laserOffDelayUs: 100, polygonDelayUs: 100, jumpDelayUs: 200 };
 
 const num = z.number().refine(Number.isFinite, "must be a number");
-const vec = z.tuple([num, num]);
+/** No lens is bigger than this: anything beyond is a broken file, refused before any work is done on it. */
+const MAX_MM = 2000;
+const coord = num.min(-MAX_MM).max(MAX_MM);
+const vec = z.tuple([coord, coord]);
 
 export const JobSettingsSchema = z.object({
   powerPct: num.min(0).max(100),
@@ -44,7 +47,9 @@ export type EdgeSettings = z.infer<typeof EdgeSettingsSchema>;
 export const LmcJobFileSchema = z.object({
   name: z.string().max(200).optional(),
   source: z.enum(["board", "file"]).optional(),
-  boardMm: z.object({ width: num.positive(), height: num.positive() }),
+  /** File name of the drawing this job was made from (imports only): reopening the same file keeps its settings. */
+  sourceName: z.string().max(260).optional(),
+  boardMm: z.object({ width: num.positive().max(MAX_MM), height: num.positive().max(MAX_MM) }),
   /** Shapes to fill (rings, even-odd: holes are just more rings). */
   ablate: z.array(z.array(vec)),
   /** Lines to mark (open or closed polylines); never filled. */
@@ -52,7 +57,7 @@ export const LmcJobFileSchema = z.object({
   settings: JobSettingsSchema,
   edge: EdgeSettingsSchema.optional(),
   /** Job centre on the lens field, mm from the field centre. */
-  positionMm: z.object({ x: num, y: num }).optional(),
+  positionMm: z.object({ x: coord, y: coord }).optional(),
 });
 export type LmcJob = z.infer<typeof LmcJobFileSchema>;
 
@@ -114,25 +119,47 @@ const polyLength = (pts: Vec[], closed: boolean) => {
  * Marking time: fill lines and outlines at mark speed, jumps at travel speed, plus the board's fixed delays
  * per line (laser on/off, jump settle, corner). Walks the fill lines without building any commands.
  */
+/** Scan lines walked per fill angle at most; beyond that every k-th line is walked and the time scaled by k. */
+const ESTIMATE_LINES = 3000;
+
 export function estimateJobSeconds(job: Pick<LmcJob, "ablate" | "lines" | "settings" | "edge">, timing = DEFAULT_TIMING): number {
   const s = job.settings;
   const perLine = (timing.laserOnDelayUs + timing.laserOffDelayUs + timing.jumpDelayUs) / 1e6;
-  let t = 0;
-  let last: Vec | null = null;
-  const jump = (to: Vec) => { if (last) t += Math.hypot(to[0] - last[0], to[1] - last[1]) / timing.travelMmPerS; };
   const rings = job.ablate.filter(r => r.length >= 3);
   const lines = (job.lines ?? []).filter(l => l.length >= 2);
-  const outlinePass = (speed: number) => {
-    for (const r of rings) { jump(r[0]!); t += polyLength(r, true) / speed + perLine + (r.length * timing.polygonDelayUs) / 1e6; last = r[0]!; }
-  };
-  for (let pass = 0; pass < s.passes; pass++) {
-    for (const angle of passAngles(s, pass)) {
-      for (const [p, q] of hatchLines(rings, s.intervalMm, angle)) { jump(p); t += Math.hypot(q[0] - p[0], q[1] - p[1]) / s.speedMmPerS + perLine; last = q; }
+  const travel = (a: Vec, b: Vec) => Math.hypot(b[0] - a[0], b[1] - a[1]) / timing.travelMmPerS;
+  // Fill time of one pass at one angle: a sample of the scan lines when there are many (fast on any job).
+  const fillCache = new Map<number, number>();
+  const fill = (angle: number): number => {
+    const cached = fillCache.get(angle);
+    if (cached !== undefined) return cached;
+    let t = 0;
+    if (s.intervalMm > 0 && rings.length) {
+      const a = (-angle * Math.PI) / 180, sin = Math.sin(a), cos = Math.cos(a);
+      let lo = Infinity, hi = -Infinity;
+      for (const r of rings) for (const [x, y] of r) { const v = x * sin + y * cos; if (v < lo) lo = v; if (v > hi) hi = v; }
+      const k = Math.max(1, Math.ceil((hi - lo) / s.intervalMm / ESTIMATE_LINES));
+      let last: Vec | null = null;
+      for (const [p, q] of hatchLines(rings, s.intervalMm * k, angle)) {
+        if (last) t += travel(last, p);
+        t += Math.hypot(q[0] - p[0], q[1] - p[1]) / s.speedMmPerS + perLine;
+        last = q;
+      }
+      t *= k;
     }
-    if (s.intervalMm <= 0 && !job.edge) outlinePass(s.speedMmPerS);
-    for (const l of lines) { jump(l[0]!); t += polyLength(l, false) / s.speedMmPerS + perLine + (l.length * timing.polygonDelayUs) / 1e6; last = l.at(-1)!; }
+    fillCache.set(angle, t);
+    return t;
+  };
+  const outline = (speed: number) => rings.reduce((t, r) => t + polyLength(r, true) / speed + perLine + (r.length * timing.polygonDelayUs) / 1e6, 0);
+  const lineTime = lines.reduce((t, l) => t + polyLength(l, false) / s.speedMmPerS + perLine + (l.length * timing.polygonDelayUs) / 1e6, 0);
+  const edgePasses = job.edge?.passes ?? 0;
+  let t = 0;
+  for (let pass = 0; pass < s.passes; pass++) {
+    for (const angle of passAngles(s, pass)) t += fill(angle);
+    if (s.intervalMm <= 0 && edgePasses <= 0) t += outline(s.speedMmPerS); // traced when there is no fill
+    t += lineTime;
   }
-  if (job.edge) for (let pass = 0; pass < job.edge.passes; pass++) outlinePass(job.edge.speedMmPerS);
+  if (edgePasses > 0) t += edgePasses * outline(job.edge!.speedMmPerS);
   return t;
 }
 
@@ -235,7 +262,7 @@ export type ArtPlacement = { widthMm?: number; heightMm?: number; rotateDeg?: nu
  * proportions) so the result is `widthMm` wide (or `heightMm` high), and moved so its bottom-left corner is
  * at 0,0. The size is the size after turning: what the person sees on the lens field.
  */
-export function artToJob(art: ArtGeometry, place: ArtPlacement, base: { name: string; settings: JobSettings; edge?: EdgeSettings; positionMm?: { x: number; y: number } }): LmcJob {
+export function artToJob(art: ArtGeometry, place: ArtPlacement, base: { name: string; sourceName?: string; settings: JobSettings; edge?: EdgeSettings; positionMm?: { x: number; y: number } }): LmcJob {
   if (!art.fills.length && !art.lines.length) throw new LaserJobError("the drawing has nothing to mark (no filled shapes or lines)");
   const a = ((place.rotateDeg ?? 0) * Math.PI) / 180;
   const cos = Math.cos(a), sin = Math.sin(a);
@@ -258,6 +285,7 @@ export function artToJob(art: ArtGeometry, place: ArtPlacement, base: { name: st
   const shift = (p: Vec): Vec => [p[0] - box.minX, p[1] - box.minY];
   return {
     name: base.name,
+    ...(base.sourceName ? { sourceName: base.sourceName } : {}),
     source: "file",
     boardMm: { width: Math.max(0.001, box.maxX - box.minX), height: Math.max(0.001, box.maxY - box.minY) },
     ablate: fills.map(r => r.map(shift)),
@@ -270,7 +298,7 @@ export function artToJob(art: ArtGeometry, place: ArtPlacement, base: { name: st
 
 /** A safe file stem from a user's file name ("My Logo (v2).svg" → "My-Logo-v2"). */
 export function jobStem(fileName: string): string {
-  const stem = fileName.replace(/^.*[\\/]/, "").replace(/\.(svg|dxf)$/i, "").replace(/[^\w.-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").slice(0, 60);
+  const stem = fileName.replace(/^.*[\\/]/, "").replace(/\.(svg|dxf)$/i, "").replace(/[^\p{L}\p{M}\p{N}_.-]+/gu, "-").replace(/^[-.]+|[-.]+$/g, "").slice(0, 60);
   return stem || "drawing";
 }
 

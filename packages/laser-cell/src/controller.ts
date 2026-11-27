@@ -13,7 +13,7 @@ import { listSerialPorts, openSerial, type SerialPortInfo } from "./serial";
 import { LmcLaser } from "./lmc/laser";
 import { importArt, type ArtFormat } from "./art";
 import { validateSettings } from "./lmc/job";
-import { DEFAULT_TIMING, MATERIAL_PRESETS, artToJob, jobStem, jobView, readJob, writeJob, type EdgeSettings, type JobSettings, type JobView, type LmcJob } from "./lmc/job-file";
+import { DEFAULT_TIMING, LmcJobFileSchema, MATERIAL_PRESETS, artToJob, jobStem, jobView, readJob, writeJob, type EdgeSettings, type JobSettings, type JobView, type LmcJob } from "./lmc/job-file";
 import { listUsbDevices, openUsbLmc, LMC_PID, LMC_VID } from "./lmc/usb";
 import { BRIDGE_DEFAULT_PORT, openBridgeLmc } from "./lmc/bridge";
 import { DEFAULT_STUDIO_EXE, StudioWindowLaser, launchStudio, windowsStudioUi, type StudioJobSpec, type StudioLoadResult } from "./studio-window";
@@ -122,6 +122,8 @@ export type CellSnapshot = {
     paused?: boolean;
     /** Estimated seconds left of the laser job being marked, when the driver knows. */
     remainingSeconds?: number | null;
+    /** Pause can work right now (a job is being marked by fabPlane's own driver and no stop is under way). */
+    pausable?: boolean;
   };
   log: CellLogEntry[];
   /** A non-run operation in progress (loading into Studio, preview, arm move); Stop ends it. */
@@ -472,7 +474,11 @@ export class LaserCellController {
   /** Changes the current job's fill / outline settings or its place on the lens (null = the jig position). */
   async updateJob(patch: { settings?: JobSettings; edge?: EdgeSettings | null; positionMm?: { x: number; y: number } | null }): Promise<JobView> {
     await this.load();
-    this.assertIdle();
+    // Under the cell's lock: a run cannot start in the middle and mark a half-saved job.
+    return this.exclusive("saving the laser job", () => this.saveJobPatch(patch));
+  }
+
+  private async saveJobPatch(patch: { settings?: JobSettings; edge?: EdgeSettings | null; positionMm?: { x: number; y: number } | null }): Promise<JobView> {
     const path = this.lmcJobPath();
     const next: LmcJob = { ...(await readJob(path).catch(error => { throw new LaserCellError(error instanceof Error ? error.message : String(error)); })) };
     if (patch.settings) next.settings = patch.settings;
@@ -495,43 +501,66 @@ export class LaserCellController {
    */
   async importArt(input: { fileName: string; format: ArtFormat; text: string; widthMm?: number; heightMm?: number; rotateDeg?: number; mirror?: boolean }): Promise<{ job: JobView; warnings: string[] }> {
     await this.load();
-    this.assertIdle();
+    return this.exclusive("opening a drawing", () => this.importArtLocked(input));
+  }
+
+  private async importArtLocked(input: { fileName: string; format: ArtFormat; text: string; widthMm?: number; heightMm?: number; rotateDeg?: number; mirror?: boolean }): Promise<{ job: JobView; warnings: string[] }> {
     let art;
     try {
       art = await importArt(input.text, input.format);
     } catch (error) {
       throw new LaserCellError(`Could not open ${input.fileName}: ${error instanceof Error ? error.message : String(error)}`);
     }
-    const name = jobStem(input.fileName);
+    const sourceName = input.fileName.replace(/^.*[\\/]/, "");
+    const stem = jobStem(sourceName);
     const dir = join(this.deps.home, "laser-jobs");
     await mkdir(dir, { recursive: true });
-    const path = join(dir, `${name}.lmc.json`);
-    const previous = await readJob(path).catch(() => null);
+    // The job file of this very drawing (same file name), or a free name: two drawings whose names look alike
+    // ("a b.svg" / "a-b.svg", "logo.svg" / "logo.dxf") never share settings, power or position.
+    let name = stem, path = join(dir, `${stem}.lmc.json`), previous: LmcJob | null = null;
+    for (let n = 1; ; n++) {
+      name = n === 1 ? stem : `${stem}-${n}`;
+      path = join(dir, `${name}.lmc.json`);
+      const existing = await readJob(path).catch(() => null);
+      if (!existing && !(await Bun.file(path).exists())) break;
+      if (existing?.sourceName === sourceName) { previous = existing; break; }
+      if (n > 999) throw new LaserCellError("Too many drawings with this name; rename the file");
+    }
     const gentle = MATERIAL_PRESETS.find(p => p.id === "fr4-mark")!;
     let job: LmcJob;
+    const warnings = [...art.warnings];
+    const base = {
+      name,
+      sourceName,
+      settings: previous?.settings ?? gentle.settings,
+      ...(previous?.edge ? { edge: previous.edge } : {}),
+      ...(previous?.positionMm ? { positionMm: previous.positionMm } : {}),
+    };
+    const turn = { rotateDeg: input.rotateDeg ?? 0, mirror: input.mirror ?? false };
     try {
-      job = artToJob(art, {
-        ...(input.widthMm !== undefined ? { widthMm: input.widthMm } : input.heightMm !== undefined ? { heightMm: input.heightMm } : {}),
-        rotateDeg: input.rotateDeg ?? 0,
-        mirror: input.mirror ?? false,
-      }, {
-        name,
-        settings: previous?.settings ?? gentle.settings,
-        ...(previous?.edge ? { edge: previous.edge } : {}),
-        ...(previous?.positionMm ? { positionMm: previous.positionMm } : {}),
-      });
+      job = artToJob(art, { ...(input.widthMm !== undefined ? { widthMm: input.widthMm } : input.heightMm !== undefined ? { heightMm: input.heightMm } : {}), ...turn }, base);
+      // No size asked and bigger than the lens (often a drawing in metres or inches): fit it, and say so.
+      const field = this.config.laser.lmc.fieldMm;
+      if (input.widthMm === undefined && input.heightMm === undefined && Math.max(job.boardMm.width, job.boardMm.height) > field) {
+        const was = `${job.boardMm.width.toFixed(1)} × ${job.boardMm.height.toFixed(1)} mm`;
+        const fit = Math.round(field * 0.9);
+        job = artToJob(art, { ...(job.boardMm.width >= job.boardMm.height ? { widthMm: fit } : { heightMm: fit }), ...turn }, base);
+        warnings.unshift(`The drawing is ${was}, bigger than the ${field} mm lens field; scaled down to ${job.boardMm.width.toFixed(1)} × ${job.boardMm.height.toFixed(1)} mm. Check its units and set the width you want.`);
+      }
+      LmcJobFileSchema.parse(job);
     } catch (error) {
-      throw new LaserCellError(`Could not open ${input.fileName}: ${error instanceof Error ? error.message : String(error)}`);
+      const why = error instanceof z.ZodError ? "it is far bigger than any lens field; set a width" : error instanceof Error ? error.message : String(error);
+      throw new LaserCellError(`Could not open ${input.fileName}: ${why}`);
     }
     await writeJob(path, job);
     this.config = { ...this.config, laser: { ...this.config.laser, jobPath: path } };
     await this.save();
     this.log("info", `opened ${input.fileName}: ${job.boardMm.width.toFixed(1)} × ${job.boardMm.height.toFixed(1)} mm`);
-    return { job: jobView(job, path, this.jobViewOptions()), warnings: art.warnings };
+    return { job: jobView(job, path, this.jobViewOptions()), warnings };
   }
 
   private runningLmc(): LmcLaser {
-    if (!this.runState.active) throw new LaserCellError("Nothing is running");
+    if (!this.runState.active || this.abort?.signal.aborted) throw new LaserCellError("Nothing is running");
     if (!(this.laser instanceof LmcLaser)) throw new LaserCellError("Pause works with fabPlane's own laser driver; on the Studio route use Studio's own Pause");
     return this.laser;
   }
@@ -762,7 +791,8 @@ export class LaserCellController {
   private runWithProgress(): CellSnapshot["run"] {
     const run = { ...this.runState, visited: [...this.runState.visited] };
     const p = run.active && run.step === "mark" && this.laser instanceof LmcLaser ? this.laser.progress() : null;
-    return p ? { ...run, progress: p.fraction, remainingSeconds: p.remainingSeconds, paused: p.paused } : run;
+    const lmc = this.laser instanceof LmcLaser ? this.laser : null;
+    return p ? { ...run, progress: p.fraction, remainingSeconds: p.remainingSeconds, paused: p.paused, pausable: !!lmc?.canPause && !this.abort?.signal.aborted } : { ...run, pausable: false };
   }
 
   async snapshot(options: { probe?: boolean } = {}): Promise<CellSnapshot> {

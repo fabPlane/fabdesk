@@ -192,7 +192,7 @@ function RunStep({ snap }: { snap: LaserCellSnapshot }) {
       <span>The UV guard is closed, everyone nearby wears UV glasses, and the Omni X E-stop is within reach. (Asked again after a restart or a change of laser route.)</span>
     </label>
     <div className="fd-lc-actions">
-      {cellBusy && ownDriver && r.active && r.step === "mark" && (r.paused
+      {cellBusy && ownDriver && r.active && r.step === "mark" && (r.paused || r.pausable) && (r.paused
         ? <Button className="fd-lc-big" disabled={!!busy} onClick={() => run("resume", () => act({ action: "resume" }))}>Resume</Button>
         : <Button className="fd-lc-big" disabled={!!busy} title="The laser stops after the line it is on; Resume continues from there" onClick={() => run("pause", () => act({ action: "pause" }))}>Pause</Button>)}
       {cellBusy

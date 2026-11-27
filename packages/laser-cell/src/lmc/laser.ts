@@ -73,8 +73,14 @@ export class LmcLaser implements LaserDriver {
   private pausedMs = 0;
   private markStartedAt = 0;
   private estimate = 0;
-  /** The board is executing the list (only then does a resume send RestartList). */
+  /** ExecuteList has been sent (set just before it goes out, so a pause then sends StopList after it). */
   private executing = false;
+  /** Every packet of the job has been sent to the board. */
+  private fed = false;
+  /** The generation the current operation began in; pause / resume are refused after a stop. */
+  private opGeneration = -1;
+  /** Job mode: the bridge has the job; before that a pause is only recorded and sent once it has. */
+  private handedOver = false;
   /** The current operation runs on the Wi-Fi bridge (job mode); its last reported progress. */
   private remote = false;
   private remoteProgress: LmcProgress | null = null;
@@ -166,6 +172,21 @@ export class LmcLaser implements LaserDriver {
     return this.serial(async t => parseReply(await exchange(t, command(op, ...params))));
   }
 
+  /** A command that is dropped if a stop happened before its turn on the link came (pause / resume). */
+  private guardedSingle(generation: number, op: number): Promise<Reply> {
+    return this.serial(async t => {
+      if (generation !== this.generation) throw new LaserDriverError("stopped");
+      return parseReply(await exchange(t, command(op)));
+    });
+  }
+
+  private guardedRpc(generation: number, type: "U" | "V"): Promise<unknown> {
+    return this.serial(async t => {
+      if (generation !== this.generation) throw new LaserDriverError("stopped");
+      return t.rpc!(type);
+    });
+  }
+
   // ------------------------------------------------------------ status and job
 
   /** Read-only check: serial and version words, status. */
@@ -230,6 +251,10 @@ export class LmcLaser implements LaserDriver {
     this.cleanSinceHalt = false;
     this.remote = false;
     this.remoteProgress = null;
+    this.handedOver = false;
+    this.fed = false;
+    this.executing = false;
+    this.opGeneration = this.generation;
     return this.generation;
   }
 
@@ -246,33 +271,45 @@ export class LmcLaser implements LaserDriver {
     let executing = false;
     let i = 0;
     for (const packet of packets) {
-      let deadline = Date.now() + (this.options.readyTimeoutMs ?? 10 * 60_000);
-      for (;;) {
-        this.checkNotStopped(generation, signal);
-        if (this.paused) { // nothing more goes to the board until Resume
-          await sleep(this.options.pollMs ?? 50, signal);
-          deadline = Date.now() + (this.options.readyTimeoutMs ?? 10 * 60_000);
-          continue;
-        }
-        if (isReady((await this.single(Cmd.GetVersion)).status)) break;
-        if (Date.now() > deadline) throw new LaserDriverError("the laser board did not take the next part of the job in time");
-        await sleep(this.options.pollMs ?? 10, signal);
-      }
-      if (this.paused) continue;
+      // The packet in hand is always sent (never skipped): it may hold the power, speed and laser-pin settings.
+      await this.waitToSend(generation, signal);
       this.checkNotStopped(generation, signal);
       await this.serial(t => t.write(packet));
       await this.single(Cmd.SetEndOfList, 0);
       if (i >= 2 && !executing) {
-        this.checkNotStopped(generation, signal);
-        await this.single(Cmd.ExecuteList);
+        await this.executeList(generation, signal);
         executing = true;
-        this.executing = true;
       }
       i++;
     }
+    if (!executing) await this.executeList(generation, signal);
+    this.fed = true;
+  }
+
+  /** Waits until the board can take the next packet and the job is not paused. */
+  private async waitToSend(generation: number, signal?: AbortSignal) {
+    let deadline = Date.now() + (this.options.readyTimeoutMs ?? 10 * 60_000);
+    for (;;) {
+      this.checkNotStopped(generation, signal);
+      if (this.paused) { // nothing more goes to the board until Resume; paused time does not count
+        await sleep(this.options.pollMs ?? 50, signal);
+        deadline = Date.now() + (this.options.readyTimeoutMs ?? 10 * 60_000);
+        continue;
+      }
+      const ready = isReady((await this.single(Cmd.GetVersion)).status);
+      if (this.paused) continue; // paused while asking: ask again after Resume
+      if (ready) return;
+      if (Date.now() > deadline) throw new LaserDriverError("the laser board did not take the next part of the job in time");
+      await sleep(this.options.pollMs ?? 10, signal);
+    }
+  }
+
+  /** Starts the list, never while paused; a pause arriving while ExecuteList is on its way sends StopList after it. */
+  private async executeList(generation: number, signal?: AbortSignal) {
     while (this.paused) { this.checkNotStopped(generation, signal); await sleep(this.options.pollMs ?? 50, signal); }
     this.checkNotStopped(generation, signal);
-    if (!executing) { await this.single(Cmd.ExecuteList); this.executing = true; }
+    this.executing = true;
+    await this.single(Cmd.ExecuteList);
   }
 
   private async waitIdle(generation: number, timeoutMs: number, signal?: AbortSignal) {
@@ -344,14 +381,17 @@ export class LmcLaser implements LaserDriver {
     const generation = this.begin("marking");
     this.paused = false;
     this.pausedMs = 0;
-    this.executing = false;
     this.markStartedAt = Date.now();
     try {
       if (await this.bridgeRuns()) {
         // Job mode: the bridge builds and feeds the job itself; nothing per packet crosses the Wi-Fi.
         this.checkNotStopped(generation);
-        await this.serial(t => t.rpc!("J", { op: "mark", job, options: this.bridgeOptions() }));
         this.remote = true;
+        await this.serial(t => t.rpc!("J", { op: "mark", job, options: this.bridgeOptions() }, 60_000));
+        this.handedOver = true;
+        this.checkNotStopped(generation);
+        // Pause pressed while the job was on its way: hold it now.
+        if (this.paused) await this.guardedRpc(generation, "U");
         return;
       }
       if (this.options.source === "fiber") await this.single(Cmd.FiberSetMo, 1);
@@ -382,23 +422,48 @@ export class LmcLaser implements LaserDriver {
    * Holds the job: the board stops after the command it is on (StopList) and nothing more is sent until
    * resume(). Galvoplotter's pause. Stop still works while paused.
    */
+  /** A job is being marked and no stop is under way: Pause can work. */
+  get canPause(): boolean {
+    return this.operation === "marking" && !this.halting && this.generation === this.opGeneration;
+  }
+
   async pause(): Promise<void> {
-    if (this.operation !== "marking") throw new LaserDriverError("nothing is being marked");
+    if (!this.canPause) throw new LaserDriverError("nothing is being marked");
     if (this.paused) return;
+    const generation = this.generation;
+    if (!this.remote && this.fed) {
+      // The whole job is on the board. If it has already finished there is nothing to hold, and a later
+      // RestartList must never run a finished list again.
+      if (!isBusy((await this.single(Cmd.GetVersion)).status)) throw new LaserDriverError("the job is finishing; nothing to pause");
+      if (generation !== this.generation) throw new LaserDriverError("stopped");
+    }
     this.paused = true;
     this.pausedAt = Date.now();
-    if (this.remote) await this.serial(t => t.rpc!("U"));
-    else if (this.executing) await this.single(Cmd.StopList);
+    try {
+      if (this.remote) { if (this.handedOver) await this.guardedRpc(generation, "U"); } // else sent once the bridge has the job
+      else if (this.executing) await this.guardedSingle(generation, Cmd.StopList);
+    } catch (error) {
+      // The board was not held: the job runs on, and its time counts again.
+      if (generation === this.generation) this.paused = false;
+      throw error;
+    }
   }
 
   /** Continues a paused job where it stopped (RestartList). */
   async resume(): Promise<void> {
     if (!this.paused) return;
-    if (this.operation !== "marking") { this.paused = false; return; }
-    if (this.remote) await this.serial(t => t.rpc!("V"));
-    else if (this.executing) await this.single(Cmd.RestartList);
+    if (!this.canPause) { this.paused = false; return; } // stopped or finished: nothing to continue
+    const generation = this.generation;
+    if (this.remote) { if (this.handedOver) await this.guardedRpc(generation, "V"); }
+    else if (this.executing) await this.guardedSingle(generation, Cmd.RestartList);
+    if (generation !== this.generation) return;
     this.pausedMs += Date.now() - this.pausedAt;
     this.paused = false;
+  }
+
+  /** Estimated marking time of the loaded job, checked against the time limit before a run starts. */
+  get expectedSeconds(): number | undefined {
+    return this.job ? this.estimate : undefined;
   }
 
   // ------------------------------------------------------------ job mode (Wi-Fi bridge runs the job)

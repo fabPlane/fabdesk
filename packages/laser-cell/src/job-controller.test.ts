@@ -56,6 +56,25 @@ describe("job editor", () => {
     expect(await failure(c.updateJob({ settings: { ...settings, intervalMm: 0.0005 } }))).toMatch(/line spacing .* out of range/);
   });
 
+  test("look-alike file names (a b.svg / a-b.svg, logo.svg / logo.dxf) never share a job or its settings", async () => {
+    const { c } = await cell();
+    await c.importArt({ fileName: "a b.svg", format: "svg", text: svg(10, 10) });
+    await c.updateJob({ settings: { powerPct: 90, speedMmPerS: 300, frequencyKhz: 40, passes: 8, intervalMm: 0.015, angleDeg: 0, angleStepDeg: 90 }, positionMm: { x: 20, y: 0 } });
+    const other = await c.importArt({ fileName: "a-b.svg", format: "svg", text: svg(10, 10) });
+    expect(other.job.name).toBe("a-b-2");
+    expect(other.job.settings.powerPct).toBeLessThanOrEqual(30);
+    expect(other.job.positionFromJob).toBe(false);
+    const same = await c.importArt({ fileName: "a b.svg", format: "svg", text: svg(10, 10) });
+    expect(same.job.settings.powerPct).toBe(90); // the same file keeps what was set for it
+  });
+
+  test("a drawing far bigger than the lens (drawn in metres) is fitted and the person is told", async () => {
+    const { c } = await cell();
+    const r = await c.importArt({ fileName: "plan.svg", format: "svg", text: svg(1000, 500) });
+    expect(r.job.boardMm.width).toBeCloseTo(63, 3);
+    expect(r.warnings[0]).toMatch(/bigger than the 70 mm lens field; scaled down/);
+  });
+
   test("a file that is not a drawing gets a clear message", async () => {
     const { c } = await cell();
     expect(await failure(c.importArt({ fileName: "notes.svg", format: "svg", text: "hello" }))).toMatch(/Could not open notes\.svg/);

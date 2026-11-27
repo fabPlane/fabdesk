@@ -26,7 +26,7 @@ export interface LmcTransport {
   /** The bridge can run whole jobs itself (job mode): see ./bridge.ts. */
   readonly jobs?: boolean;
   /** Job-mode request to the bridge; resolves with the JSON answer (or null for a plain OK). */
-  rpc?(type: "J" | "Q" | "S" | "U" | "V", body?: unknown): Promise<unknown>;
+  rpc?(type: "J" | "Q" | "S" | "U" | "V", body?: unknown, timeoutMs?: number): Promise<unknown>;
   /** 12-byte single command or 3072-byte list packet. */
   write(packet: Uint8Array): Promise<void>;
   /** 8-byte reply to the last single command. */

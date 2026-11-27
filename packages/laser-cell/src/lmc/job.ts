@@ -281,18 +281,28 @@ const penMm = (field: FieldMap, g: Vec | null): Vec | null => {
 
 const ringSegments = (rings: Ring[], closed: boolean): Segment[] => (closed ? outlines(rings) : polylines(rings));
 
-export function* markPackets(shape: Shape, field: FieldMap, s: MarkSettings, opts: { source: SourceMode; pins: Pins } & MarkExtras): Generator<Uint8Array> {
+/**
+ * Checks everything and puts outlines and lines in travel order before the first packet (that can take a
+ * second on a huge job: never in the middle of marking, where it would delay a Stop), then streams packets.
+ */
+export function markPackets(shape: Shape, field: FieldMap, s: MarkSettings, opts: { source: SourceMode; pins: Pins } & MarkExtras): Generator<Uint8Array> {
   validateSettings(s);
   if (opts.edge) validateSettings(opts.edge.settings);
   const lines = (opts.lines ?? []).filter(l => l.length >= 2);
   assertInField([...shape, ...lines], field);
+  const traceRings = (opts.outline || s.intervalMm <= 0) || (opts.edge && opts.edge.passes > 0) ? orderPaths(shape, true, null) : [];
+  const traceLines = lines.length ? orderPaths(lines, false, null) : [];
+  return markPacketStream(shape, field, s, opts, traceRings, traceLines);
+}
+
+function* markPacketStream(shape: Shape, field: FieldMap, s: MarkSettings, opts: { source: SourceMode; pins: Pins } & MarkExtras, rings: Ring[], lines: Ring[]): Generator<Uint8Array> {
   const list = new ListPackets();
   list.add(List.ReadyMark);
   list.add(List.WritePort, 1 << opts.pins.laser);
   writeSettings(list, field, s, opts.source);
   let last: Vec | null = [GALVO_CENTER, GALVO_CENTER];
   const trace = (paths: Ring[], closed: boolean) => {
-    for (const p of orderPaths(paths, closed, penMm(field, last))) last = addMoves(list, field, ringSegments([p], closed), true, last);
+    for (const p of paths) last = addMoves(list, field, ringSegments([p], closed), true, last);
   };
   for (let pass = 0; pass < s.passes; pass++) {
     for (const angle of passAngles(s, pass)) {
@@ -301,12 +311,12 @@ export function* markPackets(shape: Shape, field: FieldMap, s: MarkSettings, opt
         yield* list.takeFull();
       }
     }
-    if ((opts.outline || s.intervalMm <= 0) && !opts.edge) { trace(shape, true); yield* list.takeFull(); }
+    if ((opts.outline || s.intervalMm <= 0) && !opts.edge) { trace(rings, true); yield* list.takeFull(); }
     if (lines.length) { trace(lines, false); yield* list.takeFull(); }
   }
   if (opts.edge && opts.edge.passes > 0) {
     writeSettings(list, field, opts.edge.settings, opts.source);
-    for (let pass = 0; pass < opts.edge.passes; pass++) { trace(shape, true); yield* list.takeFull(); }
+    for (let pass = 0; pass < opts.edge.passes; pass++) { trace(rings, true); yield* list.takeFull(); }
   }
   list.add(List.WritePort, 0);
   yield* list.finish();

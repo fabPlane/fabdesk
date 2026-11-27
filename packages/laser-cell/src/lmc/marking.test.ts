@@ -110,16 +110,29 @@ describe("pause and resume", () => {
   });
 
   test("a paused job is never taken as finished, and Stop still works while paused", async () => {
-    const mock = new MockLmcTransport(0); // the board reports idle at once
+    const mock = new MockLmcTransport(1_000_000); // marking
     const l = new LmcLaser(async () => mock, lmcOptions);
     await l.load(await jobFile(base));
     await l.start();
     await l.pause();
+    // While held, the board reports idle (its list is stopped): that must not count as finished.
+    const read = mock.read.bind(mock);
+    mock.read = async () => { const r = await read(); new DataView(r.buffer).setUint16(6, 0x20, true); return r; };
     const done = failure(l.waitDone({ timeoutMs: 100 }));
     await Bun.sleep(150); // longer than the time limit: paused time does not count
     await l.stop();
     expect(await done).toMatch(/stopped/);
     expect(l.progress()).toBeNull();
+  });
+
+  test("pause when the board has already finished the whole job is refused (a later RestartList could run it again)", async () => {
+    const mock = new MockLmcTransport(0);
+    const l = new LmcLaser(async () => mock, lmcOptions);
+    await l.load(await jobFile(base));
+    await l.start();
+    expect(await failure(l.pause())).toMatch(/finishing/);
+    expect(l.isPaused).toBe(false);
+    await l.stop();
   });
 
   test("pause with nothing being marked is refused", async () => {

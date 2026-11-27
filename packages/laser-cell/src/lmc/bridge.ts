@@ -193,12 +193,14 @@ export async function startLmcBridge(options: BridgeOptions) {
     await local?.laser.stop();
   };
 
+  /** Clean-up after a driving computer went away; a new job waits for it. */
+  let cleanup: Promise<unknown> = Promise.resolve();
   const release = (s: Socket<Session>, why: string) => {
     s.data.closed = true;
     if (owner !== s) return;
     owner = null;
     log(`${why}: ${s.remoteAddress}`);
-    void stopJob().finally(() => stopBoard(why));
+    cleanup = cleanup.then(() => stopJob().finally(() => stopBoard(why))).catch(() => undefined);
   };
 
   const server = Bun.listen<Session>({
@@ -231,7 +233,7 @@ export async function startLmcBridge(options: BridgeOptions) {
           if ("JQSUV".includes(f.type)) {
             if (owner !== s) { s.write(frame("E", "this computer is no longer driving the laser")); continue; }
             const reply = async (): Promise<Uint8Array> => {
-              if (f.type === "J") { startJob(JSON.parse(new TextDecoder().decode(f.payload))); return frame("O"); }
+              if (f.type === "J") { await cleanup; startJob(JSON.parse(new TextDecoder().decode(f.payload))); return frame("O"); }
               if (f.type === "Q") return frame("D", JSON.stringify(jobStatus()));
               if (f.type === "S") { await stopJob(); return frame("O"); }
               if (!local || job.phase !== "running") throw new LmcUsbError("no job is running on the bridge");
@@ -375,9 +377,9 @@ export async function openBridgeLmc(host: string, port: number, token: string, t
     remote: true,
     jobs,
     get closed() { return closed; },
-    async rpc(type, body) {
+    async rpc(type, body, ms) {
       const payload = body === undefined ? undefined : new TextEncoder().encode(JSON.stringify(body));
-      const answer = await touch(request(type, payload, type === "Q" ? "D" : "O"));
+      const answer = await touch(request(type, payload, type === "Q" ? "D" : "O", ms ?? timeoutMs));
       return type === "Q" ? JSON.parse(text(answer)) : null;
     },
     async write(packet) { await touch(request("W", packet, "O")); },

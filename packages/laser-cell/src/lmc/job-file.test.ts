@@ -47,7 +47,7 @@ describe("time estimate", () => {
 
   test("lines are marked once per pass", () => {
     const t = estimateJobSeconds({ ablate: [], lines: [[[0, 0], [10, 0]]], settings: { ...settings, passes: 3 } });
-    expect(t).toBeCloseTo(3 * (10 / 100 + 0.0004 + 2 * 0.0001) + 2 * 10 / 2000, 4);
+    expect(t).toBeCloseTo(3 * (10 / 100 + 0.0004 + 2 * 0.0001), 3); // jumps between passes are left out (a few ms)
   });
 });
 
@@ -99,5 +99,6 @@ describe("imported drawings", () => {
     expect(jobStem("C:\\Users\\me\\My Logo (v2).svg")).toBe("My-Logo-v2");
     expect(jobStem("../../etc/passwd")).toBe("passwd");
     expect(jobStem("....svg")).toBe("drawing");
+    expect(jobStem("ป้าย ร้าน.svg")).toBe("ป้าย-ร้าน"); // Thai letters and their vowel marks are kept
   });
 });

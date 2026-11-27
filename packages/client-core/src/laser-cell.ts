@@ -79,6 +79,8 @@ export type LaserCellSnapshot = {
     paused?: boolean;
     /** Estimated seconds left of the current laser job, when known. */
     remainingSeconds?: number | null;
+    /** Pause can work right now. */
+    pausable?: boolean;
   };
   log: Array<{ at: string; level: "info" | "warn" | "error"; message: string }>;
   /** A non-run operation in progress (loading into Studio, preview, arm move); Stop ends it. */
