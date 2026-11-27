@@ -18,19 +18,25 @@ export interface JlcExport {
   failing: string[];
 }
 
-export async function writeJlcExports(input: { exportGerbers: (outDir: string) => Promise<unknown>; projectDir: string; pcb: string; stem: string; posCsv: string; outDir: string; signal?: AbortSignal }): Promise<JlcExport> {
+/**
+ * JLC CPL/BOM beside a placement export. Reads the project's BOM check (`projectDir`); its own working files (an offline
+ * BOM check when none is current, the copper Gerbers) go under `scratchDir` when given (the caller owns and removes it),
+ * else under the project's release folder.
+ */
+export async function writeJlcExports(input: { exportGerbers: (outDir: string) => Promise<unknown>; projectDir: string; pcb: string; stem: string; posCsv: string; outDir: string; scratchDir?: string; signal?: AbortSignal }): Promise<JlcExport> {
   const state = await readBomState(input.projectDir, input.pcb);
+  const work = input.scratchDir ?? releaseHome(input.projectDir);
   let bomDir = state.dir;
   let source: JlcExport["source"] = "current BOM check";
   if (state.state !== "current") {
     source = "evidence cache (no current BOM check)";
-    bomDir = join(releaseHome(input.projectDir), "pos-bom");
+    bomDir = join(work, "pos-bom");
     await rm(bomDir, { recursive: true, force: true });
     await mkdir(bomDir, { recursive: true });
     await cp(join(bomDirOf(input.projectDir), "cache"), join(bomDir, "cache"), { recursive: true }).catch(() => {});
     await release.bomCheck({ project: input.projectDir, stem: input.stem, out: bomDir, offline: true, ...(input.signal ? { signal: input.signal } : {}) });
   }
-  const gdir = join(releaseHome(input.projectDir), "pos-gerbers");
+  const gdir = join(work, "pos-gerbers");
   await rm(gdir, { recursive: true, force: true });
   await mkdir(gdir, { recursive: true });
   await input.exportGerbers(gdir);
