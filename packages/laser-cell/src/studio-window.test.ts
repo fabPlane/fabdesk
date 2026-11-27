@@ -128,3 +128,9 @@ describe("loading a job into Studio", () => {
     expect(studioMismatches(spec, { width: "70", speed: "abc" })).toEqual(["width is 70 (wanted 20)", "speed is abc (wanted 500)"]);
   });
 });
+
+test("default Studio path is a real Windows path", async () => {
+  const { DEFAULT_STUDIO_EXE } = await import("./studio-window");
+  const { join } = await import("node:path");
+  expect(DEFAULT_STUDIO_EXE.endsWith(join("Programs", "ComMarker_Studio", "ComMarker_Studio.exe"))).toBe(true);
+});

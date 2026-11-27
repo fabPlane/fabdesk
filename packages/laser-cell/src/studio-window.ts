@@ -14,6 +14,8 @@
  * NOT verified with a laser attached: which label/state Studio shows while marking is inferred (the Start
  * button changing or disabling). `completion: "timer"` falls back to the job time if that inference is wrong.
  */
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import type { LaserDriver, LaserStatus } from "./cell";
 import { LaserDriverError } from "./lasers";
 
@@ -161,8 +163,14 @@ public static class FabW {
 $A = [Windows.Automation.AutomationElement]
 $S = [Windows.Automation.TreeScope]
 $log = New-Object System.Collections.Generic.List[string]
-function Send($o) { [Console]::Out.Write(($o | ConvertTo-Json -Compress -Depth 5)) }
-function Fail($msg) { Send @{ ok = $false; error = $msg; log = $log }; exit }
+# Exit hard: a background UI Automation call blocked by a modal dialog would otherwise keep PowerShell alive.
+function Send($o) { [Console]::Out.Write(($o | ConvertTo-Json -Compress -Depth 5)); [Console]::Out.Flush(); [Environment]::Exit(0) }
+# On failure, cancel a file dialog fabPlane opened so Studio is not left blocked.
+$script:dialogOpened = $false
+function Fail($msg) {
+  if ($script:dialogOpened) { $d = [FabW]::FileDialog([uint32]$p.Id); if ($d -ne [IntPtr]::Zero) { [void][FabW]::PostMessage($d, 0x0111, [IntPtr]2, [IntPtr]::Zero) } }
+  Send @{ ok = $false; error = $msg; log = $log }
+}
 $p = Get-Process ComMarker_Studio -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $p) { Fail 'ComMarker Studio is not open' }
 function MainWin {
@@ -225,15 +233,23 @@ if ((Items) -gt 0) { Fail 'could not get an empty document in Studio' }
 $vec = WaitPick 'DrawToolBar.dxf' 5000
 if (-not $vec) { Fail 'Studio''s Vector import button was not found' }
 $importCall = InvokeAsync $vec.Current.AutomationId
-$t = [Diagnostics.Stopwatch]::StartNew(); $dlg = [IntPtr]::Zero
-while ($t.ElapsedMilliseconds -lt 10000 -and $dlg -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 250; $dlg = [FabW]::FileDialog([uint32]$p.Id) }
+$script:dialogOpened = $true
+# The dialog window appears before its controls (slowly the first time after Studio starts): wait for the
+# file name box itself.
+$t = [Diagnostics.Stopwatch]::StartNew(); $dlg = [IntPtr]::Zero; $ed = [IntPtr]::Zero
+while ($t.ElapsedMilliseconds -lt 30000 -and $ed -eq [IntPtr]::Zero) {
+  Start-Sleep -Milliseconds 250
+  $dlg = [FabW]::FileDialog([uint32]$p.Id)
+  if ($dlg -ne [IntPtr]::Zero) { $cbx = [FabW]::FindWindowEx($dlg, [IntPtr]::Zero, 'ComboBoxEx32', $null); $cb = [FabW]::FindWindowEx($cbx, [IntPtr]::Zero, 'ComboBox', $null); $ed = [FabW]::FindWindowEx($cb, [IntPtr]::Zero, 'Edit', $null) }
+}
 if ($dlg -eq [IntPtr]::Zero) { Fail 'Studio did not open its file dialog for the Vector import' }
-$cbx = [FabW]::FindWindowEx($dlg, [IntPtr]::Zero, 'ComboBoxEx32', $null); $cb = [FabW]::FindWindowEx($cbx, [IntPtr]::Zero, 'ComboBox', $null); $ed = [FabW]::FindWindowEx($cb, [IntPtr]::Zero, 'Edit', $null)
 if ($ed -eq [IntPtr]::Zero) { Fail 'could not find the file name box in Studio''s file dialog' }
+Start-Sleep -Milliseconds 300
 [void][FabW]::SendMessage($ed, 0x000C, [IntPtr]::Zero, [string]$cfg.file)
 [void][FabW]::PostMessage($dlg, 0x0111, [IntPtr]1, [IntPtr]::Zero)
-$t = [Diagnostics.Stopwatch]::StartNew(); while ($t.ElapsedMilliseconds -lt 15000 -and (Items) -lt 1) { Start-Sleep -Milliseconds 300 }
+$t = [Diagnostics.Stopwatch]::StartNew(); while ($t.ElapsedMilliseconds -lt 60000 -and (Items) -lt 1) { Start-Sleep -Milliseconds 300 }
 if ((Items) -lt 1) { if ([FabW]::FileDialog([uint32]$p.Id) -ne [IntPtr]::Zero) { Fail 'Studio''s file dialog did not accept the job file' }; Fail 'the job did not appear in Studio after the import' }
+$script:dialogOpened = $false
 $log.Add("imported $($cfg.file)")
 if ($importCall.handle.AsyncWaitHandle.WaitOne(5000)) { try { [void]$importCall.ps.EndInvoke($importCall.handle) } catch { }; $importCall.ps.Dispose() }
 
@@ -302,9 +318,11 @@ export const runPowerShell: PowerShellRunner = async (script, timeoutMs) => {
     stderr: "pipe",
     windowsHide: true,
   });
-  const timer = setTimeout(() => proc.kill(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; proc.kill(); }, timeoutMs);
   try {
     const [out, err, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    if (timedOut) throw new LaserDriverError(`ComMarker Studio did not respond within ${Math.round(timeoutMs / 1000)} s; check Studio for an open dialog`);
     if (code !== 0 || !out.trim()) {
       throw new LaserDriverError(`could not read ComMarker Studio's window (${powerShellError(err) || `exit ${code}`})`);
     }
@@ -344,7 +362,7 @@ export function windowsStudioUi(run: PowerShellRunner = runPowerShell): StudioUi
     press: target => call(target),
     async load(spec) {
       const args = Buffer.from(JSON.stringify(spec), "utf8").toString("base64");
-      const go = async () => JSON.parse(await run(STUDIO_LOAD_SCRIPT.replace("__ARGS__", args), 120_000)) as StudioLoadResult;
+      const go = async () => JSON.parse(await run(STUDIO_LOAD_SCRIPT.replace("__ARGS__", args), 300_000)) as StudioLoadResult;
       const next = queue.then(go, go);
       queue = next.catch(() => undefined);
       const result = await next;
@@ -493,7 +511,7 @@ export class StudioWindowLaser implements LaserDriver {
 
 // ---------------------------------------------------------------- launching Studio
 
-export const DEFAULT_STUDIO_EXE = `${process.env.LOCALAPPDATA ?? "C:\Users\Default\AppData\Local"}\Programs\ComMarker_Studio\ComMarker_Studio.exe`;
+export const DEFAULT_STUDIO_EXE = join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "Programs", "ComMarker_Studio", "ComMarker_Studio.exe");
 
 /**
  * Starts ComMarker Studio without administrator rights (`__COMPAT_LAYER=RunAsInvoker`) so fabPlane may press
@@ -503,7 +521,7 @@ export async function launchStudio(ui: StudioUi, exe = DEFAULT_STUDIO_EXE, timeo
   if ((await ui.read()).running) return "running";
   if (process.platform !== "win32") throw new LaserDriverError("ComMarker Studio needs Windows");
   if (!(await Bun.file(exe).exists())) throw new LaserDriverError(`ComMarker Studio was not found at ${exe}; install it or set its path`);
-  const dir = exe.replace(/[\/][^\/]+$/, "");
+  const dir = dirname(exe);
   Bun.spawn(["cmd.exe", "/c", "start", "", exe], { cwd: dir, env: { ...process.env, __COMPAT_LAYER: "RunAsInvoker" }, stdout: "ignore", stderr: "ignore", windowsHide: true });
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
