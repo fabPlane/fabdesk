@@ -42,3 +42,4 @@
 .fd-lc-log li[data-level=warn] { color:#b45309; }
 .fd-lc-log li[data-level=error] { color:var(--fd-danger, #dc2626); }
 .fd-lc-log time { color:var(--fd-muted); margin-right:6px; font-variant-numeric:tabular-nums; }
+.fd-lc-more-settings > summary { cursor:pointer; font-size:12px; color:var(--fd-muted); margin-bottom:8px; }

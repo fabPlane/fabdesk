@@ -7,7 +7,22 @@ import { useCoreClient } from "./provider";
 
 export type LaserCellPoseName = "home" | "stackAbove" | "stackPick" | "jigAbove" | "jigPlace" | "clear" | "trayAbove" | "trayPlace";
 export type LaserCellTeachName = LaserCellPoseName | "gripperOpen" | "gripperClosed";
-export type LaserCellDriver = "studio-window" | "studio-footswitch" | "lightburn" | "simulator";
+export type LaserCellDriver = "studio-window" | "studio-footswitch" | "lightburn" | "usb-lmc" | "simulator";
+
+/** fabPlane's own USB driver for BJJCZ boards (experimental). */
+export type LaserCellLmcConfig = {
+  fieldMm: number;
+  centerMm: { x: number; y: number };
+  flipX: boolean;
+  flipY: boolean;
+  swapXY: boolean;
+  source: "co2" | "fiber";
+  laserPin: number;
+  lightPin: number;
+  maxPowerPct: number;
+  initBoard: boolean;
+  usbIndex: number;
+};
 export type LaserCellRunMode = "cycle" | "dry-run" | "laser-only";
 
 export type LaserCellConfig = {
@@ -26,6 +41,7 @@ export type LaserCellConfig = {
     lightburnHost: string;
     frameSeconds: number;
     markTimeoutMinutes: number;
+    lmc: LaserCellLmcConfig;
   };
   poses: Partial<Record<LaserCellPoseName, Record<string, number>>> & { gripperOpen?: number; gripperClosed?: number };
   safetyConfirmed: boolean;
@@ -77,6 +93,7 @@ export const LASER_DRIVER_LABELS: Record<LaserCellDriver, string> = {
   "studio-window": "ComMarker Studio (fabPlane presses Start in Studio)",
   "studio-footswitch": "ComMarker Studio (USB relay on the foot switch)",
   lightburn: "LightBurn (UDP automation)",
+  "usb-lmc": "fabPlane USB driver (experimental)",
   simulator: "Simulator (no laser)",
 };
 

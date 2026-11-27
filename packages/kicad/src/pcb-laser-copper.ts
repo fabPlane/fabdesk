@@ -725,7 +725,7 @@ export type CopperLaserSummary = {
   estimatedSeconds: number;
   settings: CopperJobSettings;
   warnings: string[];
-  files: { lbrn2: string; svg: string; json: string; studioSvg: string };
+  files: { lbrn2: string; svg: string; json: string; studioSvg: string; lmc: string };
   /** Size and offset of the Studio SVG's shape within the board (mm, origin bottom-left, Y up). */
   studio: { x: number; y: number; width: number; height: number } | null;
 };
@@ -734,7 +734,7 @@ export async function exportCopperLaserJob(opts: CopperLaserOptions & { board: s
   const built = buildCopperLaserJob(await Bun.file(opts.board).text(), opts, await solidKernel());
   await mkdir(opts.outDir, { recursive: true });
   const stem = `${built.side}-Cu-laser-${built.mode}`;
-  const files = { lbrn2: join(opts.outDir, `${stem}.lbrn2`), svg: join(opts.outDir, `${stem}.svg`), json: join(opts.outDir, `${stem}.json`), studioSvg: join(opts.outDir, `${stem}.studio.svg`) };
+  const files = { lbrn2: join(opts.outDir, `${stem}.lbrn2`), svg: join(opts.outDir, `${stem}.svg`), json: join(opts.outDir, `${stem}.json`), studioSvg: join(opts.outDir, `${stem}.studio.svg`), lmc: join(opts.outDir, `${stem}.lmc.json`) };
   const bounds = ablateBounds(built);
   const summary: CopperLaserSummary = {
     preset: built.preset,
@@ -754,6 +754,13 @@ export async function exportCopperLaserJob(opts: CopperLaserOptions & { board: s
   await writeFile(files.lbrn2, copperLaserLbrn2(built));
   await writeFile(files.svg, copperLaserSvg(built));
   await writeFile(files.studioSvg, copperLaserStudioSvg(built));
+  // fabPlane's own USB laser driver (packages/laser-cell/src/lmc): rings in mm + the copper-removal pass.
+  const a = built.settings.ablate;
+  await writeFile(files.lmc, JSON.stringify({
+    boardMm: { width: built.board.widthMm, height: built.board.heightMm },
+    ablate: built.ablate.flatMap(poly => poly.map(ring => ring.map(([x, y]) => [+x.toFixed(4), +y.toFixed(4)]))),
+    settings: { powerPct: a.powerPct, speedMmPerS: a.speedMmPerS, frequencyKhz: a.frequencyKhz, passes: a.passes, intervalMm: a.intervalMm, angleDeg: a.angleDeg, angleStepDeg: a.angleStepDeg },
+  }));
   await writeFile(files.json, JSON.stringify({ ...summary, drillsMm: built.drills }, null, 2));
   return summary;
 }

@@ -10,6 +10,8 @@ import { Arm, DEFAULT_ARM_CONFIG, type JointState, type Pose } from "./arm";
 import { CellError, POSE_LABELS, POSE_NAMES, missingPoses, runCycle, type CellPoses, type CycleStep, type LaserDriver, type LaserStatus, type PoseName } from "./cell";
 import { LightBurnLaser, SimulatedLaser, StudioFootswitchLaser, openLightBurnUdp, openRelay } from "./lasers";
 import { listSerialPorts, openSerial, type SerialPortInfo } from "./serial";
+import { LmcLaser } from "./lmc/laser";
+import { listUsbDevices, openWinUsbLmc, LMC_PID, LMC_VID } from "./lmc/usb";
 import { DEFAULT_STUDIO_EXE, StudioWindowLaser, launchStudio, windowsStudioUi, type StudioJobSpec, type StudioLoadResult } from "./studio-window";
 import { DEFAULT_BAUD, St3215Bus } from "./st3215";
 
@@ -26,7 +28,7 @@ export const LaserCellConfigSchema = z.object({
     approachSpeed: z.number().int().min(20).max(3400).default(DEFAULT_ARM_CONFIG.approachSpeed),
   }).default({ port: null, baud: DEFAULT_BAUD, jointIds: DEFAULT_ARM_CONFIG.jointIds, gripperId: DEFAULT_ARM_CONFIG.gripperId, speed: DEFAULT_ARM_CONFIG.speed, approachSpeed: DEFAULT_ARM_CONFIG.approachSpeed }),
   laser: z.object({
-    driver: z.enum(["studio-footswitch", "studio-window", "lightburn", "simulator"]).default("studio-window"),
+    driver: z.enum(["studio-footswitch", "studio-window", "lightburn", "usb-lmc", "simulator"]).default("studio-window"),
     /** studio-window: how fabPlane knows the job ended. watch = Studio's Start button; timer = markSeconds + marginSeconds. */
     studioCompletion: z.enum(["watch", "timer"]).default("watch"),
     /** studio-window: ComMarker_Studio.exe (null = the default install folder). */
@@ -45,7 +47,22 @@ export const LaserCellConfigSchema = z.object({
     lightburnHost: z.string().default("127.0.0.1"),
     frameSeconds: z.number().min(0).max(60).default(0),
     markTimeoutMinutes: z.number().min(1).max(600).default(120),
-  }).default({ driver: "studio-window", studioCompletion: "watch", studioExe: null, studioBoardCenterMm: { x: 0, y: 0 }, relayKind: "lcus", relayPort: null, relayChannel: 1, markSeconds: 600, marginSeconds: 5, jobPath: null, lightburnHost: "127.0.0.1", frameSeconds: 0, markTimeoutMinutes: 120 }),
+    /** usb-lmc: fabPlane's own USB driver for BJJCZ boards. Unverified on the Omni X: pins, source and axes are guesses. */
+    lmc: z.object({
+      fieldMm: z.number().min(10).max(400).default(70),
+      centerMm: z.object({ x: z.number().min(-200).max(200), y: z.number().min(-200).max(200) }).default({ x: 0, y: 0 }),
+      flipX: z.boolean().default(false),
+      flipY: z.boolean().default(false),
+      swapXY: z.boolean().default(false),
+      source: z.enum(["co2", "fiber"]).default("co2"),
+      laserPin: z.number().int().min(0).max(15).default(0),
+      lightPin: z.number().int().min(0).max(15).default(8),
+      /** Hard power cap for every mark; starts low until the machine has been tested. */
+      maxPowerPct: z.number().min(1).max(100).default(20),
+      initBoard: z.boolean().default(true),
+      usbIndex: z.number().int().min(0).max(8).default(0),
+    }).default({ fieldMm: 70, centerMm: { x: 0, y: 0 }, flipX: false, flipY: false, swapXY: false, source: "co2", laserPin: 0, lightPin: 8, maxPowerPct: 20, initBoard: true, usbIndex: 0 }),
+  }).default({ driver: "studio-window", studioCompletion: "watch", studioExe: null, studioBoardCenterMm: { x: 0, y: 0 }, relayKind: "lcus", relayPort: null, relayChannel: 1, markSeconds: 600, marginSeconds: 5, jobPath: null, lightburnHost: "127.0.0.1", frameSeconds: 0, markTimeoutMinutes: 120, lmc: { fieldMm: 70, centerMm: { x: 0, y: 0 }, flipX: false, flipY: false, swapXY: false, source: "co2", laserPin: 0, lightPin: 8, maxPowerPct: 20, initBoard: true, usbIndex: 0 } }),
   poses: z.object({
     home: PoseSchema.optional(),
     stackAbove: PoseSchema.optional(),
@@ -143,13 +160,14 @@ export class LaserCellController {
     await rename(tmp, this.configPath);
   }
 
-  async configure(patch: { arm?: Partial<LaserCellConfig["arm"]>; laser?: Partial<LaserCellConfig["laser"]>; safetyConfirmed?: boolean }): Promise<LaserCellConfig> {
+  async configure(patch: { arm?: Partial<LaserCellConfig["arm"]>; laser?: Partial<Omit<LaserCellConfig["laser"], "lmc">> & { lmc?: { [K in keyof LaserCellConfig["laser"]["lmc"]]?: LaserCellConfig["laser"]["lmc"][K] | undefined } }; safetyConfirmed?: boolean }): Promise<LaserCellConfig> {
     await this.load();
     this.assertIdle();
+    const { lmc, ...laserPatch } = patch.laser ?? {};
     const next = LaserCellConfigSchema.parse({
       ...this.config,
       arm: { ...this.config.arm, ...patch.arm },
-      laser: { ...this.config.laser, ...patch.laser },
+      laser: { ...this.config.laser, ...laserPatch, lmc: { ...this.config.laser.lmc, ...Object.fromEntries(Object.entries(lmc ?? {}).filter(([, v]) => v !== undefined)) } },
       ...(patch.safetyConfirmed === undefined ? {} : { safetyConfirmed: patch.safetyConfirmed }),
     });
     const armChanged = JSON.stringify(next.arm) !== JSON.stringify(this.config.arm);
@@ -217,6 +235,13 @@ export class LaserCellController {
     if (this.deps.makeLaser) this.laser = await this.deps.makeLaser(this.config);
     else if (l.driver === "simulator") this.laser = new SimulatedLaser();
     else if (l.driver === "lightburn") this.laser = new LightBurnLaser(await openLightBurnUdp(l.lightburnHost));
+    else if (l.driver === "usb-lmc") {
+      const m = l.lmc;
+      this.laser = new LmcLaser(() => openWinUsbLmc(m.usbIndex), {
+        field: { sizeMm: m.fieldMm, centerMm: [m.centerMm.x, m.centerMm.y], flipX: m.flipX, flipY: m.flipY, swapXY: m.swapXY },
+        source: m.source, pins: { laser: m.laserPin, light: m.lightPin }, maxPowerPct: m.maxPowerPct, initBoard: m.initBoard, frameSeconds: Math.max(2, l.frameSeconds),
+      });
+    }
     else if (l.driver === "studio-window") this.laser = new StudioWindowLaser(windowsStudioUi(), { completion: l.studioCompletion, markSeconds: l.markSeconds, marginSeconds: l.marginSeconds });
     else {
       if (!l.relayPort) throw new LaserCellError("Choose the USB relay's port (the relay wired to the Omni X foot-switch input)");
@@ -304,6 +329,50 @@ export class LaserCellController {
     return result;
   }
 
+  // ------------------------------------------------------------ fabPlane USB driver (usb-lmc)
+
+  private lmcJobPath(): string {
+    const job = this.config.laser.jobPath;
+    if (!job) throw new LaserCellError("No laser job chosen: Make laser job, then Use this job");
+    return job.replace(/\.(lbrn2|svg|json)$/i, "").replace(/\.lmc$/i, "") + ".lmc.json";
+  }
+
+  private async lmcLaser(): Promise<LmcLaser> {
+    await this.load();
+    if (this.config.laser.driver !== "usb-lmc") throw new LaserCellError('Choose "fabPlane USB driver" as the laser route first');
+    const laser = await this.laserDriver();
+    if (!(laser instanceof LmcLaser)) throw new LaserCellError("The USB laser driver is not available");
+    return laser;
+  }
+
+  /** USB devices on this computer, the BJJCZ board (9588:9899) marked. */
+  async usbDevices(): Promise<Array<{ vid: string; pid: string; laser: boolean }>> {
+    const hex = (n: number) => n.toString(16).padStart(4, "0");
+    return (await listUsbDevices()).map(d => ({ vid: hex(d.vid), pid: hex(d.pid), laser: d.vid === LMC_VID && d.pid === LMC_PID }));
+  }
+
+  /** Read-only connection check: serial number, version and status words. */
+  async usbProbe(): Promise<{ serial: number[]; version: number[]; status: number }> {
+    this.assertIdle();
+    const laser = await this.lmcLaser();
+    const p = await laser.probe();
+    this.log("info", `USB laser board found: version ${p.version.map(w => w.toString(16)).join(".")}, status 0x${p.status.toString(16)}`);
+    return p;
+  }
+
+  /**
+   * Red-light frame around the loaded job. Needs the UV-guard confirmation: until the light pin is
+   * confirmed on the machine, a wrong pin could fire the UV source.
+   */
+  async preview(seconds: number): Promise<void> {
+    this.assertIdle();
+    if (!this.config.safetyConfirmed) throw new LaserCellError("Confirm the UV guard first: the red-light pin is not yet verified on this laser");
+    const laser = await this.lmcLaser();
+    await laser.load(this.lmcJobPath());
+    this.log("info", `red-light preview for ${seconds} s`);
+    await laser.frame(seconds);
+  }
+
   async moveTo(name: PoseName): Promise<void> {
     this.assertIdle();
     await this.load();
@@ -335,6 +404,7 @@ export class LaserCellController {
       if (!this.config.laser.jobPath) throw new LaserCellError("Choose the LightBurn job file first");
       await laser.load?.(this.config.laser.jobPath);
     }
+    if (this.config.laser.driver === "usb-lmc" && request.mode !== "dry-run") await laser.load?.(this.lmcJobPath());
     const controller = new AbortController();
     this.abort = controller;
     this.runState = { active: true, mode: request.mode, step: "preflight", visited: [], note: null, progress: 0, board: 0, boards, done: 0, startedAt: new Date().toISOString(), error: null };

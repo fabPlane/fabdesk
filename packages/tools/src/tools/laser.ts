@@ -81,7 +81,7 @@ export const export_laser_copper = defineTool({
       const s = summary.settings.ablate;
       const minutes = Math.max(1, Math.round(summary.estimatedSeconds / 60));
       const warn = summary.warnings.length ? `\nWarnings:\n${summary.warnings.map(w => `- ${w}`).join("\n")}` : "";
-      const files = [summary.files.lbrn2, summary.files.svg, summary.files.json];
+      const files = [summary.files.lbrn2, summary.files.svg, summary.files.studioSvg, summary.files.lmc, summary.files.json];
       return ok(
         `Exported ${summary.side}.Cu ${summary.mode} copper removal for a ${summary.boardMm.width} × ${summary.boardMm.height} mm blank (${summary.preset}${summary.mirror ? ", mirrored" : ""}): ${summary.areaMm2.ablate} mm² to remove, about ${minutes} min. Starting-point fill ${s.powerPct}% · ${s.speedMmPerS} mm/s · ${s.frequencyKhz} kHz · ${s.intervalMm} mm cross-hatch · ${s.passes} passes; edge ${summary.settings.edge.passes} passes. Run a material test on scrap and check isolation with a meter first.${warn}\n${files.map(f => `- ${rel(project, f)}`).join("\n")}`,
         { ...summary, files: files.map(f => rel(project, f)), path: rel(project, summary.files.lbrn2) },
@@ -116,9 +116,9 @@ export const laser_cell = defineTool({
   localOnly: true,
   title: "Laser cell (robot arm + Omni X)",
   description:
-    "Drive the laser cell on this machine: an ElRobot arm (ST3215 servos over USB) that loads copper-clad blanks into a ComMarker Omni X and starts it through ComMarker Studio (studio-window: fabPlane presses Studio's own Start button and watches it finish; or studio-footswitch: USB relay on the foot-switch input) or LightBurn (UDP). Actions: status, ports, configure (arm/laser settings, safetyConfirmed), connect, disconnect, relax (motors off for hand-teaching), hold, teach (record the current arm position as a named station), move (go to a taught station, slow), use_job (point the cell at a project's exported LightBurn job and set the Studio mark time from its estimate), studio_open (start ComMarker Studio without admin rights), studio_load_job (studio-window route: start ComMarker Studio if needed and build the project's newest export_laser_copper job in it: import, true size and position on the jig, hatch fill and the preset's speed/frequency/pulse/passes, then read back what Studio shows), run (boards N, mode cycle|dry-run|laser-only; returns at once, poll status), stop, footswitch_press (one 250 ms click of the foot-switch relay = one Studio job), footswitch_hold / footswitch_release (pedal down / up). The cell refuses an automatic run until safetyConfirmed: the Omni X lid has to be open or its cover sensor off for the arm to reach the bed, so a UV-blocking guard must enclose the cell. Moving hardware: only act when the user asked.",
+    "Drive the laser cell on this machine: an ElRobot arm (ST3215 servos over USB) that loads copper-clad blanks into a ComMarker Omni X and starts it through ComMarker Studio (studio-window: fabPlane presses Studio's own Start button and watches it finish; or studio-footswitch: USB relay on the foot-switch input) or LightBurn (UDP). Actions: status, ports, configure (arm/laser settings, safetyConfirmed), connect, disconnect, relax (motors off for hand-teaching), hold, teach (record the current arm position as a named station), move (go to a taught station, slow), use_job (point the cell at a project's exported LightBurn job and set the Studio mark time from its estimate), usb_devices / usb_probe / preview (usb-lmc route, fabPlane's own experimental USB driver for BJJCZ boards: list USB devices, read the board's version without moving anything, red-light frame around the job; preview needs safetyConfirmed), studio_open (start ComMarker Studio without admin rights), studio_load_job (studio-window route: start ComMarker Studio if needed and build the project's newest export_laser_copper job in it: import, true size and position on the jig, hatch fill and the preset's speed/frequency/pulse/passes, then read back what Studio shows), run (boards N, mode cycle|dry-run|laser-only; returns at once, poll status), stop, footswitch_press (one 250 ms click of the foot-switch relay = one Studio job), footswitch_hold / footswitch_release (pedal down / up). The cell refuses an automatic run until safetyConfirmed: the Omni X lid has to be open or its cover sensor off for the arm to reach the bed, so a UV-blocking guard must enclose the cell. Moving hardware: only act when the user asked.",
   inputSchema: {
-    action: z.enum(["status", "ports", "configure", "connect", "disconnect", "relax", "hold", "teach", "move", "use_job", "studio_open", "studio_load_job", "run", "stop", "footswitch_press", "footswitch_hold", "footswitch_release"]),
+    action: z.enum(["status", "ports", "configure", "connect", "disconnect", "relax", "hold", "teach", "move", "use_job", "studio_open", "studio_load_job", "usb_devices", "usb_probe", "preview", "run", "stop", "footswitch_press", "footswitch_hold", "footswitch_release"]),
     name: z.enum(TEACH_NAMES).optional().describe("Station for teach / move"),
     arm: z
       .object({
@@ -133,7 +133,20 @@ export const laser_cell = defineTool({
       .optional(),
     laser: z
       .object({
-        driver: z.enum(["studio-footswitch", "studio-window", "lightburn", "simulator"]).optional(),
+        driver: z.enum(["studio-footswitch", "studio-window", "lightburn", "usb-lmc", "simulator"]).optional(),
+        lmc: z.object({
+          fieldMm: z.number().min(10).max(400).optional(),
+          centerMm: z.object({ x: z.number(), y: z.number() }).optional(),
+          flipX: z.boolean().optional(),
+          flipY: z.boolean().optional(),
+          swapXY: z.boolean().optional(),
+          source: z.enum(["co2", "fiber"]).optional(),
+          laserPin: z.number().int().min(0).max(15).optional(),
+          lightPin: z.number().int().min(0).max(15).optional(),
+          maxPowerPct: z.number().min(1).max(100).optional(),
+          initBoard: z.boolean().optional(),
+          usbIndex: z.number().int().min(0).max(8).optional(),
+        }).strict().optional(),
         studioCompletion: z.enum(["watch", "timer"]).optional(),
         studioExe: z.string().nullable().optional(),
         studioBoardCenterMm: z.object({ x: z.number(), y: z.number() }).optional(),
@@ -151,6 +164,7 @@ export const laser_cell = defineTool({
     safetyConfirmed: z.boolean().optional(),
     project: z.string().optional().describe("use_job: project id or path whose exports/laser job to use"),
     job: z.string().optional().describe("use_job: path inside the project, default the newest exports/laser/*.lbrn2"),
+    seconds: z.number().min(1).max(60).optional().describe("preview: how long to show the red-light frame"),
     boards: z.number().int().min(1).max(500).optional().describe("run: number of boards (stops early when the stack is empty)"),
     mode: z.enum(["cycle", "dry-run", "laser-only"]).optional().describe("run: cycle (default), dry-run (arm only, laser never fires) or laser-only"),
   },
@@ -219,6 +233,18 @@ export const laser_cell = defineTool({
           const config = await cell.configure({ laser: { jobPath: job, ...(summary.estimatedSeconds ? { markSeconds: Math.ceil(summary.estimatedSeconds * 1.15) } : {}) } });
           return ok(`The cell now uses ${rel(project, job)}${summary.estimatedSeconds ? `; Studio mark time set to ${config.laser.markSeconds} s (estimate + 15 %). Replace it with Studio's own estimate after loading the job there.` : "."}`, { config });
         }
+        case "usb_devices": {
+          const devices = await cell.usbDevices();
+          const found = devices.some(d => d.laser);
+          return ok(`${devices.length} USB device(s): ${devices.map(d => `${d.vid}:${d.pid}${d.laser ? " (laser board)" : ""}`).join(", ")}.${found ? "" : " No BJJCZ laser board (9588:9899) is connected."}`, { devices });
+        }
+        case "usb_probe": {
+          const probe = await cell.usbProbe();
+          return ok(`Laser board answered over USB: version ${probe.version.map(w => w.toString(16)).join(".")}, status 0x${probe.status.toString(16)}.`, probe);
+        }
+        case "preview":
+          await cell.preview(args.seconds ?? 5);
+          break;
         case "studio_open": {
           const result = await cell.openStudio();
           return ok(result === "started" ? "Started ComMarker Studio." : "ComMarker Studio is already open.", { result });

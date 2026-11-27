@@ -38,6 +38,7 @@ const ROUTES: Array<{ id: LaserCellDriver; label: string }> = [
   { id: "studio-window", label: "ComMarker Studio (recommended)" },
   { id: "studio-footswitch", label: "ComMarker Studio + foot-switch relay" },
   { id: "lightburn", label: "LightBurn" },
+  { id: "usb-lmc", label: "fabPlane USB driver (experimental, no Studio)" },
   { id: "simulator", label: "Simulator (no laser)" },
 ];
 
@@ -132,7 +133,7 @@ function JobStep({ snap }: { snap: LaserCellSnapshot }) {
     <div className="fd-lc-actions">
       <Button variant="primary" disabled={!projectId || !!busy} onClick={make}>{busy === "make" && <Spinner />}Make laser job</Button>
       {route === "studio-window" && <Button disabled={!projectId || !!busy || snap.run.active} onClick={load}>{busy === "load" && <Spinner />}Load into ComMarker Studio</Button>}
-      {route === "lightburn" && <Button disabled={!projectId || !!busy} onClick={useForLightBurn}>Use for LightBurn</Button>}
+      {(route === "lightburn" || route === "usb-lmc") && <Button disabled={!projectId || !!busy} onClick={useForLightBurn}>Use this job</Button>}
     </div>
     {job && <p className="fd-lc-note">Job ready: <b>{job.boardMm.width} × {job.boardMm.height} mm</b>, about <b>{formatDuration(job.estimatedSeconds)}</b> per board, {job.preset.replace("omni-x-6w-", "").replace("mm", " mm")} lens.</p>}
     {job?.warnings.map(w => <p key={w} className="fd-lc-warn">{w}</p>)}
@@ -260,6 +261,7 @@ function Settings({ snap }: { snap: LaserCellSnapshot }) {
       </Field>
       {d.relayKind === "lcus" && <Field label="Relay channel"><Input type="number" min={1} max={8} value={d.relayChannel} onChange={num("relayChannel")} /></Field>}
     </div>}
+    {d.driver === "usb-lmc" && <UsbSettings snap={snap} d={d} setD={setD} />}
     {d.driver === "lightburn" && <div className="fd-lc-row">
       <Field label="LightBurn job file (.lbrn2)"><Input value={d.jobPath ?? ""} onChange={e => setD({ ...d, jobPath: e.target.value || null })} /></Field>
     </div>}
@@ -277,6 +279,52 @@ function Settings({ snap }: { snap: LaserCellSnapshot }) {
     </div>
     <Problem text={error} />
   </div>;
+}
+
+// ------------------------------------------------------------------ fabPlane USB driver
+
+/**
+ * Settings and checks for the experimental USB driver. Pins, power style and axis directions are guesses
+ * until tested on the machine; the power cap protects the first marks.
+ */
+function UsbSettings({ snap, d, setD }: { snap: LaserCellSnapshot; d: LaserCellConfig["laser"]; setD: (next: LaserCellConfig["laser"]) => void }) {
+  const act = useLaserCellAction();
+  const { busy, error, run } = useAction();
+  const [found, setFound] = useState<string | null>(null);
+  const m = d.lmc;
+  const set = (patch: Partial<LaserCellConfig["laser"]["lmc"]>) => setD({ ...d, lmc: { ...m, ...patch } });
+  const saved = snap.config.laser.driver === "usb-lmc";
+  const find = () => run("find", async () => {
+    const list = await act<{ devices: Array<{ vid: string; pid: string; laser: boolean }> }>({ action: "usb_devices" });
+    if (!list.devices.some(x => x.laser)) { setFound("No laser board found on USB (looking for 9588:9899). Plug in the laser, switch it on, and install the WinUSB driver for it."); return; }
+    const p = await act<{ version: number[]; status: number }>({ action: "usb_probe" });
+    setFound(`Laser board answered: version ${p.version.map(w => w.toString(16)).join(".")}, status 0x${p.status.toString(16)}.`);
+  });
+  return <>
+    <p className="fd-lc-warn">Experimental: fabPlane talks to the laser board directly (the protocol LightBurn uses). Not yet tested on an Omni X. Close ComMarker Studio first, and test in this order: Find laser → Preview → a small mark at low power.</p>
+    <div className="fd-lc-row">
+      <Field label="Lens field (mm)"><Select value={String(m.fieldMm)} onChange={e => set({ fieldMm: Number(e.target.value) })}><option value="70">70 mm lens</option><option value="150">150 mm lens</option></Select></Field>
+      <Field label="Board centre X on the laser (mm)"><Input type="number" step={0.1} value={m.centerMm.x} onChange={e => set({ centerMm: { ...m.centerMm, x: Number(e.target.value) } })} /></Field>
+      <Field label="Board centre Y on the laser (mm)"><Input type="number" step={0.1} value={m.centerMm.y} onChange={e => set({ centerMm: { ...m.centerMm, y: Number(e.target.value) } })} /></Field>
+      <Field label="Power cap (%)"><Input type="number" min={1} max={100} value={m.maxPowerPct} onChange={e => set({ maxPowerPct: Math.max(1, Math.min(100, Number(e.target.value) || 1)) })} /></Field>
+    </div>
+    <details className="fd-lc-more-settings"><summary>Machine details (change only after testing)</summary>
+      <div className="fd-lc-row">
+        <Field label="Power style"><Select value={m.source} onChange={e => set({ source: e.target.value as "co2" | "fiber" })}><option value="co2">PWM ratio (co2-style)</option><option value="fiber">Current (fiber-style)</option></Select></Field>
+        <Field label="Laser output pin"><Input type="number" min={0} max={15} value={m.laserPin} onChange={e => set({ laserPin: Number(e.target.value) })} /></Field>
+        <Field label="Red-light output pin"><Input type="number" min={0} max={15} value={m.lightPin} onChange={e => set({ lightPin: Number(e.target.value) })} /></Field>
+        <Field label="Mirror X"><Select value={m.flipX ? "1" : "0"} onChange={e => set({ flipX: e.target.value === "1" })}><option value="0">No</option><option value="1">Yes</option></Select></Field>
+        <Field label="Mirror Y"><Select value={m.flipY ? "1" : "0"} onChange={e => set({ flipY: e.target.value === "1" })}><option value="0">No</option><option value="1">Yes</option></Select></Field>
+        <Field label="Swap X and Y"><Select value={m.swapXY ? "1" : "0"} onChange={e => set({ swapXY: e.target.value === "1" })}><option value="0">No</option><option value="1">Yes</option></Select></Field>
+      </div>
+    </details>
+    <div className="fd-lc-actions">
+      <Button disabled={!!busy || snap.run.active} onClick={find}>{busy === "find" && <Spinner />}Find laser</Button>
+      <Button disabled={!!busy || snap.run.active || !saved || !snap.config.safetyConfirmed} title={!snap.config.safetyConfirmed ? "Confirm the UV guard first (in 2 · Run)" : !saved ? "Save settings first" : "Red-light frame around the job"} onClick={() => run("preview", () => act({ action: "preview", seconds: 5 }))}>{busy === "preview" && <Spinner />}Preview (red light)</Button>
+    </div>
+    {found && <p className="fd-lc-note">{found}</p>}
+    <Problem text={error} />
+  </>;
 }
 
 // ------------------------------------------------------------------ page
