@@ -1,0 +1,27 @@
+name: Omni X identification
+
+on:
+  pull_request:
+    paths:
+      - scripts/omni-x-identify*.mjs
+      - .github/workflows/omni-x-identify.yml
+
+permissions:
+  contents: read
+
+jobs:
+  loopback:
+    name: Identification on ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        include:
+          - { os: macos-arm64, runner: blacksmith-6vcpu-macos-15 }
+          - { os: windows-x64, runner: blacksmith-4vcpu-windows-2025 }
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Test against a simulated controller on localhost
+        run: node --test scripts/omni-x-identify.test.mjs
