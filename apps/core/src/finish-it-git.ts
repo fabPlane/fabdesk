@@ -17,7 +17,7 @@ export type GitRunner = (
   opts: { cwd: string; env?: NodeJS.ProcessEnv },
 ) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
 
-async function defaultGit(
+export async function defaultGit(
   args: string[],
   opts: { cwd: string; env?: NodeJS.ProcessEnv },
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {

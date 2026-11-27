@@ -12,7 +12,7 @@ import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
 import { inspectAssemblyPcbCheck } from "./assembly-checks";
 import { inspectAssemblyBoard } from "./assembly-scene";
-import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot, BomSyncOptions } from "@fabdesk/protocol";
+import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot, BomSyncOptions, PublishProject, UpdateWorkConnection, WorkScope } from "@fabdesk/protocol";
 import { inspectBoardModelRevision } from "./board-model-revision";
 import { inspectPcbCheckRevision } from "./check-revision";
 import { inspectPcbOutline } from "./pcb-outline";
@@ -34,7 +34,7 @@ import type {
   RouteResult,
   RouterCatalogId,
 } from "@fabdesk/protocol";
-import { useInfiniteQuery, useIsMutating, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useIsMutating, useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useCoreClient } from "./provider";
 import { messagesKey } from "./events";
@@ -1229,4 +1229,46 @@ export function useOutputTrashReview(projectId: string | null, files: Array<{ pa
     staleTime: 5000,
   });
   return { ...query, projectActive: activity.length > 0 };
+}
+
+/* ---------- GitHub work hub ---------- */
+
+export function useWorkConnection() {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["work", "connection", client.baseUrl], queryFn: () => client.workConnection(), staleTime: 30_000, retry: false });
+}
+
+export function useWorkRepos(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["work", "repos", client.baseUrl], queryFn: () => client.workRepos(), enabled, staleTime: 5 * 60_000, retry: false });
+}
+
+/** Refetches every two minutes while mounted; the core caches GitHub for one. */
+export function useWorkOverview(scope: WorkScope, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["work", "overview", scope, client.baseUrl], queryFn: () => client.workOverview(scope), enabled, staleTime: 60_000, refetchInterval: 120_000, retry: false, placeholderData: keepPreviousData });
+}
+
+export function useProjectGitHub(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["work", "project", projectId, client.baseUrl], queryFn: () => client.projectGitHub(projectId!), enabled: enabled && !!projectId, staleTime: 60_000, retry: false });
+}
+
+export function useWorkMutations() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  const refreshAll = () => qc.invalidateQueries({ queryKey: ["work"] });
+  return {
+    update: useMutation({ mutationFn: (input: UpdateWorkConnection) => client.updateWorkConnection(input), onSuccess: refreshAll }),
+    disconnect: useMutation({ mutationFn: () => client.disconnectWork(), onSuccess: refreshAll }),
+    /** Ask GitHub again now instead of waiting for the caches. */
+    refresh: useMutation({
+      mutationFn: async (scope: WorkScope) => { await client.workConnection(true); await client.workOverview(scope, true); },
+      onSuccess: refreshAll,
+    }),
+    publish: useMutation({
+      mutationFn: ({ projectId, input }: { projectId: string; input: PublishProject }) => client.publishProjectToGitHub(projectId, input),
+      onSuccess: refreshAll,
+    }),
+  };
 }

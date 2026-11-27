@@ -91,6 +91,8 @@ import { cloudRoutes } from "./cloud-routes";
 import { resolveNativeBoardBinding } from "../assembly-board-binding";
 import { commentRoutes } from "./comment-routes";
 import { outputTrashRoutes } from "./output-trash-routes";
+import { workRoutes } from "./work-routes";
+import { WorkHub } from "../work-hub";
 import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
 export type AppDeps = {
@@ -134,6 +136,8 @@ export type AppDeps = {
   speech?: SpeechService;
   /** Onboarding funnel snapshot + website handoff. */
   funnel?: Funnel;
+  /** GitHub work hub. Tests inject one with a fake fetch; otherwise built on the data folder. */
+  workHub?: WorkHub;
 };
 
 export type Env = { Variables: { token?: string; principalSubject?: string } };
@@ -443,6 +447,7 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   commentRoutes(app, deps);
   outputTrashRoutes(app, deps);
+  workRoutes(app, { projects: deps.projects, listener: deps.listener, workHub: deps.workHub ?? new WorkHub({ home: deps.config.home }) });
 
   app.get("/projects/:id/sketches", async (c) => {
     const h = await deps.projects.handle(c.req.param("id"));

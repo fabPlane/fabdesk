@@ -13,6 +13,7 @@ export * from "./fab-cad";
 export * from "./cloud";
 export * from "./privacy-region";
 export * from "./github";
+export * from "./work-hub";
 export * from "./cad-runtime";
 export * from "./comments";
 export * from "./board-workspace";

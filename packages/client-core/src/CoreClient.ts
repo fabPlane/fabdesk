@@ -17,6 +17,13 @@ import type {
   CloudStatus,
   Destination,
   InventoryItem,
+  ProjectGitHubLink,
+  PublishProject,
+  UpdateWorkConnection,
+  WorkConnection,
+  WorkOverview,
+  WorkRepoList,
+  WorkScope,
   InventoryItemInput,
   ShoppingListResponse,
   CoreEvent,
@@ -514,6 +521,28 @@ export class CoreClient {
       method: "POST", json: { url, name, ...(parentDirectory ? { parentDirectory } : {}) },
       ...(signal ? { signal } : {}),
     });
+  }
+  // GitHub work hub (the core holds the token)
+  workConnection(refresh = false): Promise<WorkConnection> {
+    return this.request(`/work/connection${refresh ? "?refresh=1" : ""}`);
+  }
+  updateWorkConnection(input: UpdateWorkConnection): Promise<WorkConnection> {
+    return this.request("/work/connection", { method: "PUT", json: input });
+  }
+  disconnectWork(): Promise<WorkConnection> {
+    return this.request("/work/connection", { method: "DELETE" });
+  }
+  workRepos(refresh = false): Promise<WorkRepoList> {
+    return this.request(`/work/repos${refresh ? "?refresh=1" : ""}`);
+  }
+  workOverview(scope: WorkScope, refresh = false): Promise<WorkOverview> {
+    return this.request(`/work/overview?scope=${scope}${refresh ? "&refresh=1" : ""}`);
+  }
+  projectGitHub(projectId: string): Promise<ProjectGitHubLink> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/github`);
+  }
+  publishProjectToGitHub(projectId: string, input: PublishProject): Promise<ProjectGitHubLink> {
+    return this.request(`/projects/${encodeURIComponent(projectId)}/github`, { method: "POST", json: input });
   }
   adoptImportedBoard(projectId: string, path: string): Promise<{ project: ProjectDetail; pcbPath: string }> {
     return this.request(`/projects/${encodeURIComponent(projectId)}/adopt-board`, { method: "POST", json: { path } });
