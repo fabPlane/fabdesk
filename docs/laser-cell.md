@@ -122,6 +122,11 @@ correction (a flat table is sent). Every mark is limited by **Power cap** (defau
 2. Laser Controller → Settings → *fabPlane USB driver* → Connect via *USB cable* → Save → **Find laser**
    (read-only: version and status words).
 
+**USB cable on a Mac**: macOS leaves the laser board unclaimed, so no driver swap is needed. Install libusb once
+(`brew install libusb`, Homebrew from brew.sh), plug in the laser, then Settings → *fabPlane USB driver* →
+Connect via *USB cable* → Save → **Find laser**. Set `FABPLANE_LIBUSB` to the library file if it lives elsewhere.
+A Mac can also be the bridge computer next to the laser (below).
+
 **Wi-Fi (fabPlane laser bridge)**: the Omni X's own Wi-Fi hotspot speaks ComMarker's private protocol and is
 not used. Instead the laser's USB cable goes into a small computer next to it (Raspberry Pi, mini PC, old
 laptop) that runs the bridge; fabPlane connects to it over the network.

@@ -83,9 +83,9 @@ async function loadWin32() {
   return { setup: setup.symbols, k32: k32.symbols, wu: wu.symbols, ptr };
 }
 
-/** All present USB devices (vendor/product ids and device paths). Windows only. */
+/** All present USB devices (vendor/product ids and device paths): SetupAPI on Windows, libusb elsewhere. */
 export async function listUsbDevices(): Promise<UsbDeviceInfo[]> {
-  if (process.platform !== "win32") throw new LmcUsbError("USB device listing is implemented for Windows");
+  if (process.platform !== "win32") return (await import("./libusb")).listLibusbDevices();
   const { setup, ptr } = await win32();
   const info = BigInt(setup.SetupDiGetClassDevsW(ptr(USB_DEVICE_GUID), null, null, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE) as number | bigint);
   if (info === -1n) throw new LmcUsbError("SetupDiGetClassDevs failed");
@@ -307,6 +307,16 @@ function linuxLibc() {
 }
 
 /** The USB transport for this platform. */
-export function openUsbLmc(index = 0): Promise<LmcTransport> {
-  return process.platform === "linux" ? openLinuxUsbLmc(index) : openWinUsbLmc(index);
+/**
+ * The laser board on this computer's USB: WinUSB on Windows, libusb on macOS, libusb (or raw usbfs when
+ * libusb is missing) on Linux.
+ */
+export async function openUsbLmc(index = 0): Promise<LmcTransport> {
+  if (process.platform === "win32") return openWinUsbLmc(index);
+  const { libusb, openLibusbLmc } = await import("./libusb");
+  if (process.platform === "linux") {
+    const lib = await libusb().catch(() => null);
+    return lib ? openLibusbLmc(index, 500, lib) : openLinuxUsbLmc(index);
+  }
+  return openLibusbLmc(index);
 }

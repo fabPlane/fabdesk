@@ -33,7 +33,8 @@ const hex = (n: number) => n.toString(16).padStart(4, "0");
 export function usbFindings(devices: UsbDeviceInfo[]): UsbLaser[] {
   return devices.filter(d => d.vid === LMC_VID && d.pid === LMC_PID).map(d => {
     const driver = d.driver ?? null;
-    const ready = !!driver && /^winusb$/i.test(driver);
+    // WinUSB (Windows) or libusb (macOS / Linux: no driver to bind) is what fabPlane's driver opens.
+    const ready = !!driver && /^(winusb|libusb)$/i.test(driver);
     const note = ready
       ? "Laser board on USB with the WinUSB driver: fabPlane's USB driver can talk to it."
       : driver
@@ -67,6 +68,37 @@ export function hotspotFindings(netsh: string): HotspotLaser[] {
     h.note = `The laser's own Wi-Fi (${h.ssid}) is on${h.signalPct !== null ? ` (signal ${h.signalPct} %)` : ""}. That link speaks ComMarker's app protocol, which fabPlane does not use: for fabPlane, connect the laser's USB cable to this computer, or to a small computer running the fabPlane laser bridge.`;
   }
   return out;
+}
+
+/**
+ * macOS: `system_profiler SPAirPortDataType` lists nearby networks under "Other Local Wi-Fi Networks". Returned
+ * in netsh's shape so one parser reads both. (Newer macOS may hide names without Location permission.)
+ */
+export function macWifiAsNetsh(profiler: string): string {
+  const lines = profiler.split(/\r?\n/);
+  const out: string[] = [];
+  let inOthers = false, n = 0, indent = -1;
+  for (const line of lines) {
+    if (/Other Local Wi-Fi Networks:/i.test(line)) { inOthers = true; indent = -1; continue; }
+    if (!inOthers) continue;
+    const m = /^(\s*)(.+):\s*$/.exec(line);
+    const lead = m ? m[1]!.length : -1;
+    if (m && (indent === -1 || lead === indent)) { indent = lead; out.push(`SSID ${++n} : ${m[2]!.trim()}`); continue; }
+    if (m && lead < indent) { inOthers = false; continue; }
+    const sig = /Signal \/ Noise:\s*(-?\d+)\s*dBm/i.exec(line);
+    if (sig) out.push(`    Signal : ${Math.max(0, Math.min(100, 2 * (Number(sig[1]) + 100)))}%`);
+  }
+  return out.join("\n");
+}
+
+async function scanMacWifi(): Promise<string> {
+  const proc = Bun.spawn(["system_profiler", "SPAirPortDataType"], { stdout: "pipe", stderr: "ignore" });
+  const timer = setTimeout(() => proc.kill(), 30_000);
+  try {
+    return macWifiAsNetsh(await new Response(proc.stdout).text());
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Windows: asks the Wi-Fi adapter for a fresh scan, then lists the networks it sees. */
@@ -163,7 +195,7 @@ export async function findLasers(options: FindLasersOptions = {}): Promise<{ fin
   const usb = options.usb === false ? Promise.resolve([]) : (options.listUsb ?? listUsbDevices)().then(usbFindings, (e: unknown) => { notes.push(`USB not checked: ${e instanceof Error ? e.message : String(e)}`); return []; });
   const wifi = options.wifi === false
     ? Promise.resolve([])
-    : (options.scanWifi ?? (process.platform === "win32" ? scanWindowsWifi : async () => ""))().then(hotspotFindings, (e: unknown) => { notes.push(`Wi-Fi not checked: ${e instanceof Error ? e.message : String(e)}`); return []; });
+    : (options.scanWifi ?? (process.platform === "win32" ? scanWindowsWifi : process.platform === "darwin" ? scanMacWifi : async () => ""))().then(hotspotFindings, (e: unknown) => { notes.push(`Wi-Fi not checked: ${e instanceof Error ? e.message : String(e)}`); return []; });
   const lan = options.lan === false ? Promise.resolve([]) : findBridges(options.hosts ?? lanHosts(), port);
   const [u, w, l] = await Promise.all([usb, wifi, lan]);
   return { findings: [...u, ...l, ...w], notes };
