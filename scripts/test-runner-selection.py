@@ -42,10 +42,11 @@ def main():
         ("LINUX_RUNNER blacksmith", str(NOW - 10), "", False, "", "blacksmith", FALLBACK),
         ("LINUX_RUNNER BLACKSMITH", str(NOW - 10), "", False, "", "BLACKSMITH", FALLBACK),
         ("LINUX_RUNNER other keeps NAS", str(NOW - 10), "", False, "", "nas", NAS),
-        ("GitHub-hosted bootstrap", "", "", False, "", "github-hosted", "ubuntu-latest"),
-        ("GitHub-hosted normalized", "", "", False, "", " GITHUB-HOSTED ", "ubuntu-latest"),
-        ("durable Blacksmith override beats bootstrap", "", "", False, "true", "github-hosted", FALLBACK),
-        ("fork stays isolated under bootstrap", "", "", True, "", "github-hosted", "ubuntu-latest"),
+        ("github-hosted value keeps NAS", "", "", False, "", "github-hosted", NAS),
+        ("github-hosted value normalized keeps NAS", "", "", False, "", " GITHUB-HOSTED ", NAS),
+        ("github-hosted value keeps idle NAS", str(NOW - 10), "", False, "", "github-hosted", NAS),
+        ("durable Blacksmith override beats github-hosted value", "", "", False, "true", "github-hosted", FALLBACK),
+        ("fork stays isolated under github-hosted value", "", "", True, "", "github-hosted", "ubuntu-latest"),
         ("fork stays isolated under force", "", str(NOW + 300), True, "true", "blacksmith", "ubuntu-latest"),
     ]
     for name, heartbeat, lease, fork, force, linux_runner, expected in cases:

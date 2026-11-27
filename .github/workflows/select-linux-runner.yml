@@ -1,16 +1,21 @@
 # Linux runner selector.
 #
-# Default: trusted work uses the existing ephemeral NAS label set
-#   ["self-hosted","Linux","X64","tf-nas-ephemeral","fabdesk"]
-# Fork PRs stay on isolated GitHub-hosted Ubuntu (never NAS).
+# Trusted work, first match:
+#   1. NAS labels ["self-hosted","Linux","X64","tf-nas-ephemeral","fabdesk"]
+#   2. Blacksmith, when a durable override or a live outage lease says so
+#   3. GitHub-hosted Ubuntu, for fork pull requests only
+#
+# A missing or stale NAS_RUNNER_HEARTBEAT stays on the NAS. Busy runners stop
+# publishing it, so that value is not an outage. LINUX_RUNNER=github-hosted does
+# not move trusted work off the NAS.
 #
 # Durable Blacksmith override (stays set until an admin unsets it):
 #   FORCE_BLACKSMITH_LINUX=true   (also 1 / yes / on)
 #   LINUX_RUNNER=blacksmith
 # Either repository Actions variable makes this selector always emit the
 # Blacksmith label for trusted work. Unset or set a non-matching value to
-# restore the default NAS path. This is the long-lived recovery switch when
-# the NAS host is offline or missing libraries.
+# restore the NAS path. This is the long-lived recovery switch when the NAS
+# host is offline or missing libraries.
 #
 # Bounded lease (existing, max 15 minutes):
 #   NAS_RUNNER_OUTAGE_UNTIL=<future unix timestamp>
@@ -77,20 +82,18 @@ jobs:
             force_blacksmith=true
           fi
           if [ "$FORK_PR" = true ]; then
+            # Third choice, and the only automatic GitHub-hosted path.
             runner='"ubuntu-latest"'
           elif [ "$force_blacksmith" = true ]; then
-            # Durable admin override. Idle evidence does not win; unset the
-            # variable to return trusted work to NAS.
+            # Second choice. Idle evidence does not win; unset the variable to
+            # return trusted work to the NAS.
             runner="$(jq -cn --arg label "$BLACKSMITH_RUNNER" '$label')"
-          elif [ "$linux_choice" = github-hosted ]; then
-            # Bootstrap a new repository without a private runner registration.
-            runner='"ubuntu-latest"'
           elif [ "$idle" = false ] &&
                [[ "${NAS_RUNNER_OUTAGE_UNTIL:-}" =~ ^[1-9][0-9]{0,9}$ ]] &&
                [ "$NAS_RUNNER_OUTAGE_UNTIL" -gt "$now" ] &&
                [ $((NAS_RUNNER_OUTAGE_UNTIL - now)) -le 900 ]; then
-            # An operator/health monitor confirms an outage with a bounded lease.
-            # The lease expires in at most 15 minutes; fresh idle evidence wins.
+            # Second choice for a short, confirmed outage. The lease expires in
+            # at most 15 minutes; fresh idle evidence wins.
             runner="$(jq -cn --arg label "$BLACKSMITH_RUNNER" '$label')"
           fi
           echo "runner=$runner" >> "$GITHUB_OUTPUT"
