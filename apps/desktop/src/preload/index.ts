@@ -10,6 +10,8 @@ export interface PickFileOptions {
 const api = {
   platform: process.platform,
   copyText: (text: string): Promise<void> => ipcRenderer.invoke("fabdesk:copy-text", text),
+  openInComMarkerStudio: (filename: string, file: Uint8Array) =>
+    ipcRenderer.invoke("fabdesk:open-in-commarker-studio", filename, file),
   nativeSpeech: {
     status: (language: string) => ipcRenderer.invoke("fabdesk:speech-status", language),
     prepare: (language: string, id: string) => ipcRenderer.invoke("fabdesk:speech-prepare", language, id),

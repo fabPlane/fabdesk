@@ -334,6 +334,7 @@ describe("registry", () => {
       "export_netlist",
       "export_zip",
       "export_dxf",
+      "export_commarker_copper",
       "silk_art",
       "export_stencil",
       "export_laser_stencil",

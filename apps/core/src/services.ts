@@ -165,6 +165,7 @@ export async function createServices(
       exportGerbers: (cli, o) => kicad.exportGerbers(cli, o),
       exportDrill: (cli, o) => kicad.exportDrill(cli, o),
       exportDxf: (cli, o) => kicad.exportDxf(cli, o),
+      copperRemovalArtwork: (cli, o) => kicad.copperRemovalArtwork(cli, o),
       exportPos: (cli, o) => kicad.exportPos(cli, o),
       exportBom: (cli, o) => kicad.exportBom(cli, o),
       exportNetlist: (cli, o) => kicad.exportNetlist(cli, o),

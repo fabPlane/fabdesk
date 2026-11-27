@@ -64,6 +64,25 @@ export function boardPreviewLayers(text: string): string[] {
 }
 const children = (node: Sexpr[], name: string): Sexpr[][] =>
   node.filter((n): n is Sexpr[] => head(n) === name);
+
+/** A native plot uses saved fills. Omitting an unfilled front zone would mark copper that should stay. */
+export function assertFrontZonesFilled(text: string): void {
+  if (!/\(\s*zone(?=[\s(])/.test(text)) return;
+  const root = parseSexpr(text).find((n): n is Sexpr[] => head(n) === "kicad_pcb");
+  if (!root) throw new Error("Not a KiCad PCB");
+  for (const owner of [root, ...children(root, "footprint")]) {
+    for (const zone of children(owner, "zone")) {
+      const layers = (child(zone, "layers") ?? child(zone, "layer") ?? []).slice(1);
+      if (child(zone, "keepout") || !layers.some(layer => layer === "F.Cu" || layer === "*.Cu" || layer === "F&B.Cu")) continue;
+      const filled = children(zone, "filled_polygon").some(polygon => {
+        const layer = child(polygon, "layer")?.[1];
+        return (layer === "F.Cu" || (!layer && layers.length === 1 && layers[0] === "F.Cu"))
+          && children(child(polygon, "pts") ?? [], "xy").length >= 3;
+      });
+      if (!filled) throw new Error("A front copper zone has no saved fill. Refill zones in KiCad, save the board, and export again.");
+    }
+  }
+}
 const numberAt = (node: Sexpr[] | undefined, index: number): number | null => {
   const value = node?.[index];
   if (typeof value !== "string") return null;

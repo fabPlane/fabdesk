@@ -6,6 +6,7 @@ import { resolveWindowTheme, titleBarOverlayFor, writeCachedThemeId } from "./wi
 import type { CoreSupervisor } from "./core-supervisor";
 import { localAuthAllowed, setLocalAuth } from "./local-mode";
 import { popupAppMenu } from "./app-menu";
+import { prepareComMarkerStudio, studioCandidates } from "./commarker-studio";
 import { setErrorReporting, setSentryUser } from "./sentry";
 
 export interface PickFileOptions {
@@ -68,7 +69,37 @@ export function registerIpc(supervisor: CoreSupervisor): void {
   });
   ipcMain.handle("fabdesk:copy-text", (_e, text: unknown) => {
     if (typeof text !== "string" || text.length > 16_384 || text.includes("\0")) throw new Error("Clipboard text must be a string under 16 KiB.");
-    clipboard.writeText(text);
+    return clipboard.writeText(text);
+  });
+  ipcMain.handle("fabdesk:open-in-commarker-studio", async (e, filename: unknown, file: unknown) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    return prepareComMarkerStudio(filename, file, {
+      platform: process.platform,
+      temp: app.getPath("temp"),
+      userData: app.getPath("userData"),
+      candidates: studioCandidates(process.platform, app.getPath("home"), process.env),
+      async pickStudio() {
+        const options: Electron.OpenDialogOptions = {
+          title: "Locate ComMarker Studio",
+          buttonLabel: "Open Studio",
+          properties: ["openFile"],
+          filters: [{ name: "ComMarker Studio", extensions: [process.platform === "darwin" ? "app" : "exe"] }],
+          ...(process.platform === "darwin" ? { defaultPath: "/Applications" } : {}),
+        };
+        const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+        return result.canceled ? undefined : result.filePaths[0];
+      },
+      openApplication: path => shell.openPath(path),
+      async copyPath(path) {
+        try {
+          await clipboard.writeText(path);
+          return (await clipboard.readText()) === path;
+        } catch {
+          return false;
+        }
+      },
+      reveal: path => shell.showItemInFolder(path),
+    });
   });
   ipcMain.handle("fabdesk:open-external", async (_e, url: unknown) => {
     if (typeof url !== "string" || !/^https?:\/\//i.test(url)) throw new Error("only http(s) URLs may be opened");

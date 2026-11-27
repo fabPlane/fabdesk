@@ -18,6 +18,7 @@ export {
   type RunResult,
 } from "./cli";
 export { boardPreviewLayers } from "./board-features";
+export { copperRemovalArtwork } from "./copper-removal";
 export {
   placeFootprints,
   readFootprintPlacements,
