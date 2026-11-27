@@ -454,7 +454,7 @@ export const circuit_build = defineTool({
       : `Build FAILED (${result.errors.length} errors):\n${formatErrors(result.errors)}${result.rejectedSchematicPath ? `\nRejected schematic preserved at ${result.rejectedSchematicPath}; the canonical schematic was restored.` : ""}`;
     const sourceGuide = result.ok ? undefined : compilerSourceHelp(result.errors);
     return {
-      text: sourceGuide ? text + "\n\n" + formatCompilerSourceHelp(sourceGuide) : text,
+      text: text + (sourceGuide ? "\n\n" + formatCompilerSourceHelp(sourceGuide) : ""),
       json: { ...summary, ...(sourceGuide ? { sourceGuide } : {}) },
       isError: !result.ok,
     };
