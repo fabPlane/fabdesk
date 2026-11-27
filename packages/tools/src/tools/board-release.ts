@@ -19,7 +19,7 @@ import { applyProjectRules, CHECK_KEYS, locateProject, openReviewProject, readRe
 import { runDurable } from "../durable";
 import { jailPath } from "../fs";
 import { boardMemGiB, governor } from "../resources";
-import { readAcceptanceState, readReviewGate } from "../board-state";
+import { gateLabels, readAcceptanceState, readReviewGate } from "../board-state";
 import { bomDirOf, readBomState, readLastFab, readProxies, releaseHome, sha256Of, writeBomMeta, writeLastFab, writeProxies } from "../release-state";
 import { ToolError, defineTool, type ToolContext, type ToolOutput } from "../registry";
 import { ok, requireKicad, runLiveDrc } from "./common";
@@ -221,7 +221,7 @@ async function checkAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
   ]);
   const ic = interconnectGate ? await interconnectGate({ projectDir: project.dir }) : { pass: true, text: "none (standalone project)" };
   const accText = acc.state === "none" ? "not measured: board_check" : acc.state === "stale" ? "measured on an earlier board: board_check" : acc.pass ? "A1-A9 pass" : `failing ${acc.failing.join(", ")}`;
-  const gateText = gate.state === "pass" ? "passes" : gate.state === "none" ? "not run" : gate.state === "stale" ? "stale (the design changed since: board_review run)" : gate.state === "errors" ? "check errors" : `${gate.open ?? "?"} findings open (${gate.mustFix ?? 0} must-fix)`;
+  const gateText = gate.state === "pass" ? release.reviewPassText(gate).replace(/^review gate /, "") : gate.state === "none" ? "not run" : gate.state === "stale" ? "stale (the design changed since: board_review run)" : gate.state === "errors" ? "check errors" : `${gate.open ?? "?"} findings open (${gate.mustFix ?? 0} must-fix)`;
   let bomReady = false;
   let bomProblem = "";
   if (bom.state === "current") {
@@ -269,7 +269,7 @@ async function fabAction(a: Args, ctx: ToolContext): Promise<ToolOutput> {
         // computed live from the review records of this board (never the saved status reading)
         review: async () => {
           const g = await reviewGate(await openReviewProject(project.dir, files.pcb));
-          return { state: g.state, open: g.open, mustFix: g.mustFix };
+          return { state: g.state, open: g.open, mustFix: g.mustFix, ...gateLabels(g) };
         },
         // the acceptance's net classes and rules on the project file before A1-A9 (no-op when the board keeps its native rules)
         rules: () => applyProjectRules(project.dir, files.pcb),

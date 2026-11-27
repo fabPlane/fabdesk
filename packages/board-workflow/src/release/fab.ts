@@ -30,7 +30,17 @@ import type { FetchRecord } from "./lookup";
 import { classifyVias, viaBindings } from "./viaproc";
 import { zipFiles } from "./zip";
 
-export type ReviewGateInfo = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string };
+/** The review gate as the release sees it; `independentReview` / `agentSettled` label a pass the agent settled itself. */
+export type ReviewGateInfo = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; independentReview?: "completed" | "deferred" | "missing"; agentSettled?: number };
+
+/** "review gate passes", with who settled it: an autonomous pass stays visible in the release. */
+export function reviewPassText(g: ReviewGateInfo): string {
+  const label = [
+    ...(g.independentReview ? [`independent review ${g.independentReview}`] : []),
+    ...(g.agentSettled ? [`${g.agentSettled} finding(s) settled by the agent`] : []),
+  ];
+  return `review gate passes${label.length ? ` (${label.join("; ")})` : ""}`;
+}
 
 export class ReleaseStop extends Error {
   constructor(
@@ -387,7 +397,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
       reproducible: rep,
       gerbcheck: { gerbers: join(final, "gerbers"), pcb: gc.pcb, dpi: gc.dpi, drill: gc.drill, pass: gc.pass },
       sources: { pcb: sha256(await readFile(inp.pcb)), ...(inp.schematic ? { schematic_root: sha256(await readFile(inp.schematic)) } : {}) },
-      review: { gate: rg.state, open: rg.open ?? 0, mustFix: rg.mustFix ?? 0, ...(rg.at ? { at: rg.at } : {}) },
+      review: { gate: rg.state, open: rg.open ?? 0, mustFix: rg.mustFix ?? 0, ...(rg.at ? { at: rg.at } : {}), ...(rg.independentReview ? { independent_review: rg.independentReview } : {}), agent_settled: rg.agentSettled ?? 0 },
       files: {} as Record<string, string>,
     };
     for (const f of (await walk(work)).sort()) man.files[relative(work, f)] = sha256(await readFile(f));
@@ -395,7 +405,7 @@ export async function releaseFab(inp: FabInput): Promise<FabResult> {
     await rename(work, final).catch((e: unknown) => {
       throw new ReleaseStop("output", `${final} could not be written (${e instanceof Error ? e.message : String(e)})`);
     });
-    return { out: final, manifest: man, gates: [ic.text, "review gate passes", `acceptance ${failing.length ? `with ${failing.length} accepted exception(s)` : "A1-A9 pass"}`, `vias: ${viaRec.counts.require_fill_cap} bound`] };
+    return { out: final, manifest: man, gates: [ic.text, reviewPassText(rg), `acceptance ${failing.length ? `with ${failing.length} accepted exception(s)` : "A1-A9 pass"}`, `vias: ${viaRec.counts.require_fill_cap} bound`] };
   } catch (e) {
     // a refusal leaves nothing behind: no half-package, no uploadable zip
     await rm(work, { recursive: true, force: true }).catch(() => {});

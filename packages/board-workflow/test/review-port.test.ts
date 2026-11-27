@@ -319,7 +319,7 @@ describe("the owner's intent file", () => {
       { id: "fixed", kind: "hard", text: 'fixed parts keep pose and face (requirements fixed: ["J1"])', source: join(req, "mechanical.json") },
       { id: "heights", kind: "hard", text: "top <= 6.5 mm, bottom <= 1000000000 mm", source: join(req, "acceptance.json") },
     ]);
-    expect(r.intent.preferences?.ask_owner_for).toContain("accepting a must-fix");
+    expect(r.intent.preferences?.ask_owner_for).toEqual(["changes to a hard constraint", "anything that spends money or orders"]); // autonomous: must-fix acceptance with evidence is not asked by default
     expect(JSON.parse(await readFile(r.path, "utf8")).schema).toBe("INTENT_V1");
     await expect(intentInit(p)).rejects.toThrow("exists");
     expect((await intentShow(p)).lines).toContain("  hard  heights: top <= 6.5 mm, bottom <= 1000000000 mm");

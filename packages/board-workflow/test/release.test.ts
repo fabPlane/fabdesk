@@ -493,6 +493,11 @@ describe("release gates", () => {
   });
 });
 
+test("an autonomous review pass is labelled in the release", () => {
+  expect(release.reviewPassText({ state: "pass" })).toBe("review gate passes");
+  expect(release.reviewPassText({ state: "pass", independentReview: "deferred", agentSettled: 3 })).toBe("review gate passes (independent review deferred; 3 finding(s) settled by the agent)");
+});
+
 describe("gated BOM completeness", () => {
   for (const status of ["UNRESOLVED", "PROPOSED", "OWNER"]) test(`${status} fitted choices refuse before export`, async () => {
     const dir = await mkdtemp(join(tmpdir(), "fab-bom-gate-"));

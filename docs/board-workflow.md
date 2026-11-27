@@ -116,9 +116,9 @@ and basis); `inner_neck_allowance_mm: 0` on a power class makes every inner segm
   the candidate's exclusions into the project (that key only). Never copy a candidate's board or project file by hand: adopt also carries the
   requirements (anchors, circuit) and works when the board was saved by a newer KiCad than the app's (it writes the file and says so).
 - **Review.** One design hash covers board, schematics, project files and requirements; any change makes the review stale. Settle each finding with
-  evidence: a must-fix is fixed, or accepted by the owner (or by you with evidence when intent allows); a false-positive needs a third source
-  (neither the design nor the check); a question closes when the owner settles it, or when you accept it citing a third source (or intent
-  delegates questions); only the owner defers one. A fix candidate is READY only when the proof
+  evidence: a must-fix is fixed, or accepted by the owner or by you with evidence (unless the owner's intent asks to be asked); a false-positive needs a third source
+  (neither the design nor the check); a question closes with any disposition that has a reason (the gate lists who settled it and
+  whether independent review ran). A fix candidate is READY only when the proof
   passes, the finding is gone, no new finding appears and 0 nets are collateral. `fix` with `apply` also proves every READY edit applied together
   (the combined candidate: one change per board) and writes a change picture beside each READY candidate; `try` puts your own plan
   through the same proof for the finding ids it should fix; `autopilot` is review if stale, then `fix` with `apply`, then only what needs

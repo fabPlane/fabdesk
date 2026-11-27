@@ -103,14 +103,20 @@ export async function initDoneMode(projectDir: string, boardAlreadyPlaced: boole
  * it, `board_release check`); `board_release fab` computes the gate live from the review records instead.
  * pass = the review is current and every finding is settled.
  */
-export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string };
+export type ReviewGate = { state: "none" | "stale" | "open" | "errors" | "pass"; open?: number; mustFix?: number; at?: string; pcb?: string; independentReview?: "completed" | "deferred" | "missing"; agentSettled?: number };
 const gateFile = (dir: string) => join(dir, ".fabdesk", "board", "review-gate.json");
 
-export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean }): Promise<void> {
+/** Who settled a review gate: whether independent review ran, and how many findings the agent settled itself. */
+export function gateLabels(g: { evidence?: { independentReview: "completed" | "deferred" | "missing"; dispositions: Array<{ by: string }> } }): { independentReview?: "completed" | "deferred" | "missing"; agentSettled?: number } {
+  if (!g.evidence) return {};
+  return { independentReview: g.evidence.independentReview, agentSettled: g.evidence.dispositions.filter((d) => d.by === "agent").length };
+}
+
+export async function recordReviewGate(projectDir: string, r: { current: boolean; open: number; mustFix: number; errors?: boolean; independentReview?: ReviewGate["independentReview"]; agentSettled?: number }): Promise<void> {
   const state: ReviewGate["state"] = r.errors ? "errors" : !r.current ? "stale" : r.open > 0 ? "open" : "pass";
   const basis = await reviewBasis(projectDir);
   await mkdir(join(projectDir, ".fabdesk", "board"), { recursive: true });
-  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, designHash: basis.design, basis, at: new Date().toISOString() }) + "\n");
+  await writeFile(gateFile(projectDir), JSON.stringify({ state, open: r.open, mustFix: r.mustFix, ...(r.independentReview ? { independentReview: r.independentReview } : {}), ...(r.agentSettled !== undefined ? { agentSettled: r.agentSettled } : {}), designHash: basis.design, basis, at: new Date().toISOString() }) + "\n");
 }
 
 /** Forget the saved gate (the review has no current record: never run, or its runs were removed). */
@@ -130,7 +136,7 @@ export async function readReviewGate(projectDir: string, pcb?: string): Promise<
   const want = pcb ? (isAbsolute(pcb) ? relative(projectDir, pcb) : pcb).split(sep).join("/").replace(/^\.\//, "") : await locateProject(projectDir).then((f) => relative(projectDir, f.pcb).split(sep).join("/"), () => null);
   const covered = d.basis?.pcb ?? null;
   if (covered && want && covered !== want) stale = true;
-  return { state: stale ? "stale" : d.state, ...(d.open !== undefined ? { open: d.open } : {}), ...(d.mustFix !== undefined ? { mustFix: d.mustFix } : {}), ...(d.at ? { at: d.at } : {}), ...(covered ? { pcb: covered } : {}) };
+  return { state: stale ? "stale" : d.state, ...(d.open !== undefined ? { open: d.open } : {}), ...(d.mustFix !== undefined ? { mustFix: d.mustFix } : {}), ...(d.at ? { at: d.at } : {}), ...(covered ? { pcb: covered } : {}), ...(d.independentReview ? { independentReview: d.independentReview } : {}), ...(d.agentSettled !== undefined ? { agentSettled: d.agentSettled } : {}) };
 }
 
 /**
