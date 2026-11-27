@@ -36,7 +36,8 @@ export interface LmcTransport {
   close(): Promise<void>;
 }
 
-export type UsbDeviceInfo = { vid: number; pid: number; path: string };
+/** `driver`: the Windows driver service bound to the device ("WinUSB" is the one fabPlane can use). */
+export type UsbDeviceInfo = { vid: number; pid: number; path: string; driver?: string | null; name?: string | null };
 
 /** `\\?\usb#vid_9588&pid_9899#...` → ids. */
 export function parseUsbPath(path: string): { vid: number; pid: number } | null {
@@ -64,6 +65,7 @@ async function loadWin32() {
     SetupDiEnumDeviceInterfaces: { args: [FFIType.i64, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.ptr], returns: FFIType.i32 },
     SetupDiGetDeviceInterfaceDetailW: { args: [FFIType.i64, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
     SetupDiDestroyDeviceInfoList: { args: [FFIType.i64], returns: FFIType.i32 },
+    SetupDiGetDeviceRegistryPropertyW: { args: [FFIType.i64, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr, FFIType.u32, FFIType.ptr], returns: FFIType.i32 },
   });
   const k32 = dlopen("kernel32.dll", {
     CreateFileW: { args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.i64 },
@@ -100,11 +102,21 @@ export async function listUsbDevices(): Promise<UsbDeviceInfo[]> {
       // SP_DEVICE_INTERFACE_DETAIL_DATA_W (x64): cbSize u32 = 8, then WCHAR DevicePath[]
       const detail = new Uint8Array(need[0]);
       new DataView(detail.buffer).setUint32(0, 8, true);
-      if (!setup.SetupDiGetDeviceInterfaceDetailW(info, ptr(iface), ptr(detail), need[0], null, null)) continue;
+      // SP_DEVINFO_DATA (x64): cbSize u32, GUID ClassGuid, DevInst u32, (pad), ULONG_PTR Reserved = 32 bytes
+      const devinfo = new Uint8Array(32);
+      new DataView(devinfo.buffer).setUint32(0, 32, true);
+      if (!setup.SetupDiGetDeviceInterfaceDetailW(info, ptr(iface), ptr(detail), need[0], null, ptr(devinfo))) continue;
       let path = Buffer.from(detail.buffer, 4, need[0] - 4).toString("utf16le");
       path = path.slice(0, Math.max(0, path.indexOf("\0")) || path.length);
       const ids = parseUsbPath(path);
-      if (ids) out.push({ ...ids, path });
+      // SPDRP_SERVICE = 4 (driver service, e.g. "WinUSB"), SPDRP_DEVICEDESC = 0 (name in Device Manager)
+      const property = (code: number): string | null => {
+        const buf = new Uint8Array(512);
+        if (!setup.SetupDiGetDeviceRegistryPropertyW(info, ptr(devinfo), code, null, ptr(buf), buf.length, null)) return null;
+        const text = Buffer.from(buf).toString("utf16le");
+        return text.slice(0, Math.max(0, text.indexOf("\0"))) || null;
+      };
+      if (ids) out.push({ ...ids, path, driver: property(4), name: property(0) });
     }
   } finally {
     setup.SetupDiDestroyDeviceInfoList(info);

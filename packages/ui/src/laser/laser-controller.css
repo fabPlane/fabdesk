@@ -67,3 +67,7 @@
 .fd-lc-check-inline { align-self:end; padding-bottom:8px; }
 .fd-lc-bar { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--fd-muted); }
 .fd-lc-bar progress { flex:1; height:8px; accent-color:var(--fd-primary); }
+.fd-lc-findings { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
+.fd-lc-findings li { display:grid; gap:4px; padding:8px 10px; border:1px solid var(--fd-border); border-radius:8px; font-size:12px; color:var(--fd-muted); justify-items:start; }
+.fd-lc-findings li b { color:#b45309; font-weight:600; }
+.fd-lc-findings li[data-ok] b { color:#15803d; }

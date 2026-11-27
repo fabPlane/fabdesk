@@ -89,6 +89,12 @@ export type LaserCellSnapshot = {
 
 export const LASER_CELL_KEY = "laser-cell";
 
+/** One way fabPlane can see a laser (Settings → Find laser). Mirrors @fabdesk/laser-cell lmc/discover.ts. */
+export type LaserFinding =
+  | { kind: "usb"; vid: string; pid: string; driver: string | null; name: string | null; ready: boolean; note: string }
+  | { kind: "hotspot"; ssid: string; bssid: string | null; signalPct: number | null; note: string }
+  | { kind: "bridge"; host: string; port: number; version: number; jobs: boolean; note: string };
+
 /** Laser job (fabPlane USB / Wi-Fi driver): fill and outline settings. Mirrors @fabdesk/laser-cell job-file.ts. */
 export type LaserJobSettings = { powerPct: number; speedMmPerS: number; frequencyKhz: number; passes: number; intervalMm: number; angleDeg: number; angleStepDeg: number };
 export type LaserEdgeSettings = { powerPct: number; speedMmPerS: number; frequencyKhz: number; passes: number };

@@ -11,6 +11,7 @@ import { CellError, POSE_LABELS, POSE_NAMES, missingPoses, runCycle, type CellPo
 import { LightBurnLaser, SimulatedLaser, StudioFootswitchLaser, openLightBurnUdp, openRelay } from "./lasers";
 import { listSerialPorts, openSerial, type SerialPortInfo } from "./serial";
 import { LmcLaser } from "./lmc/laser";
+import { findLasers, type LaserFinding } from "./lmc/discover";
 import { importArt, type ArtFormat } from "./art";
 import { validateSettings } from "./lmc/job";
 import { DEFAULT_TIMING, LmcJobFileSchema, MATERIAL_PRESETS, artToJob, jobStem, jobView, readJob, writeJob, type EdgeSettings, type JobSettings, type JobView, type LmcJob } from "./lmc/job-file";
@@ -617,6 +618,18 @@ export class LaserCellController {
     const laser = await this.laserDriver();
     if (!(laser instanceof LmcLaser)) throw new LaserCellError("The USB laser driver is not available");
     return laser;
+  }
+
+  /**
+   * Every laser this computer can see, read-only: a laser board on USB (and whether its Windows driver lets
+   * fabPlane open it), the Omni X's own Wi-Fi hotspot, and fabPlane laser bridges on this computer's networks.
+   */
+  async findLasers(): Promise<{ findings: LaserFinding[]; notes: string[] }> {
+    await this.load();
+    const result = await findLasers({ port: this.config.laser.lmc.port });
+    const summary = result.findings.map(f => (f.kind === "usb" ? `USB board ${f.vid}:${f.pid} (driver ${f.driver ?? "none"})` : f.kind === "bridge" ? `bridge ${f.host}:${f.port}` : `hotspot ${f.ssid}`));
+    this.log("info", summary.length ? `found: ${summary.join(", ")}` : "no laser found on USB, Wi-Fi or the network");
+    return result;
   }
 
   /** USB devices on this computer, the BJJCZ board (9588:9899) marked. */

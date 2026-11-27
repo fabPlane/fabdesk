@@ -20,6 +20,7 @@ import {
   useProjects,
   useSerialPorts,
   type LaserCellConfig,
+  type LaserFinding,
   type LaserCellDriver,
   type LaserCellRunMode,
   type LaserCellSnapshot,
@@ -319,16 +320,23 @@ function UsbSettings({ snap, d, setD }: { snap: LaserCellSnapshot; d: LaserCellC
   const act = useLaserCellAction();
   const { busy, error, run } = useAction();
   const [found, setFound] = useState<string | null>(null);
+  const [findings, setFindings] = useState<LaserFinding[] | null>(null);
   const m = d.lmc;
   const set = (patch: Partial<LaserCellConfig["laser"]["lmc"]>) => setD({ ...d, lmc: { ...m, ...patch } });
   const saved = snap.config.laser.driver === "usb-lmc";
   const find = () => run("find", async () => {
-    if (snap.config.laser.lmc.connection === "usb") {
-      const list = await act<{ devices: Array<{ vid: string; pid: string; laser: boolean }> }>({ action: "usb_devices" });
-      if (!list.devices.some(x => x.laser)) { setFound("No laser board found on USB (looking for 9588:9899). Plug in the laser, switch it on, and install the WinUSB driver for it."); return; }
+    setFound(null);
+    const r = await act<{ findings: LaserFinding[]; notes: string[] }>({ action: "find_lasers" });
+    setFindings(r.findings);
+    const lmc = snap.config.laser.lmc;
+    // Read-only check of the board itself, when the saved connection can reach it.
+    const reachable = saved && (lmc.connection === "network" ? !!lmc.host : r.findings.some(f => f.kind === "usb" && f.ready));
+    if (reachable) {
+      const p = await act<{ version: number[]; status: number }>({ action: "usb_probe" });
+      setFound(`Laser board answered: version ${p.version.map(w => w.toString(16)).join(".")}, status 0x${p.status.toString(16)}.`);
+    } else if (!r.findings.length) {
+      setFound(`No laser found on USB, on Wi-Fi or on the network${r.notes.length ? ` (${r.notes.join("; ")})` : ""}. Switch the laser on and connect its USB cable to this computer.`);
     }
-    const p = await act<{ version: number[]; status: number }>({ action: "usb_probe" });
-    setFound(`Laser board answered: version ${p.version.map(w => w.toString(16)).join(".")}, status 0x${p.status.toString(16)}.`);
   });
   return <>
     <p className="fd-lc-warn">Experimental: fabPlane talks to the laser board directly (the protocol LightBurn uses). Not yet tested on an Omni X. Close ComMarker Studio first, and test in this order: Find laser → Preview → a small mark at low power.</p>
@@ -361,6 +369,14 @@ function UsbSettings({ snap, d, setD }: { snap: LaserCellSnapshot; d: LaserCellC
       <Button disabled={!!busy || snap.run.active} onClick={find}>{busy === "find" && <Spinner />}Find laser</Button>
       <Button disabled={!!busy || snap.run.active || !saved || !snap.config.safetyConfirmed} title={!snap.config.safetyConfirmed ? "Confirm the UV guard first (in 2 · Run)" : !saved ? "Save settings first" : "Red-light frame around the job"} onClick={() => run("preview", () => act({ action: "preview", seconds: 5 }))}>{busy === "preview" && <Spinner />}Preview (red light)</Button>
     </div>
+    {findings && findings.length > 0 && <ul className="fd-lc-findings">
+      {findings.map(f => <li key={f.kind === "usb" ? `usb-${f.vid}-${f.pid}-${f.driver}` : f.kind === "bridge" ? `bridge-${f.host}-${f.port}` : `hotspot-${f.ssid}`} data-ok={(f.kind === "usb" && f.ready) || f.kind === "bridge" || undefined}>
+        <b>{f.kind === "usb" ? `USB: ${f.name ?? "laser board"} (${f.vid}:${f.pid})` : f.kind === "bridge" ? `Wi-Fi bridge: ${f.host}:${f.port}` : `Laser Wi-Fi: ${f.ssid}`}</b>
+        <span>{f.note}</span>
+        {f.kind === "bridge" && <Button size="sm" disabled={!!busy || snap.run.active} onClick={() => set({ connection: "network", host: f.host, port: f.port })}>Use this bridge</Button>}
+        {f.kind === "usb" && f.ready && m.connection !== "usb" && <Button size="sm" disabled={!!busy || snap.run.active} onClick={() => set({ connection: "usb" })}>Use USB</Button>}
+      </li>)}
+    </ul>}
     {found && <p className="fd-lc-note">{found}</p>}
     <Problem text={error} />
   </>;
