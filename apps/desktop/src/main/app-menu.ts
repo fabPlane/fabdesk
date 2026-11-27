@@ -26,6 +26,7 @@ function template(): MenuItemConstructorOptions[] {
       submenu: [
         { label: "New chat", accelerator: "CmdOrCtrl+Shift+O", click: () => send("new-chat") },
         { label: "Command palette…", accelerator: "CmdOrCtrl+K", click: () => send("palette") },
+        { label: "Laser Controller…", click: () => send("laser-controller") },
         { type: "separator" },
         { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => send("settings") },
         { type: "separator" },

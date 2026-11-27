@@ -1,0 +1,44 @@
+/* Laser Controller: one column, two numbered steps, folded extras. Same palette as the canvas workspace. */
+.fd-lc-root { --fd-bg:#fafbf9; --fd-panel:#fff; --fd-panel-2:#f0f3f1; --fd-border:#e3e8e7; --fd-fg:#152338; --fd-muted:#6c7b8f; --fd-primary:#00543d; --fd-primary-fg:#fff; min-height:100vh; background:var(--fd-bg); color:var(--fd-fg); overflow:auto; }
+.dark .fd-lc-root { --fd-bg:#151b1b; --fd-panel:#1d2626; --fd-panel-2:#263232; --fd-border:#354341; --fd-fg:#e3eee9; --fd-muted:#9aaea6; --fd-primary:#85d5b3; --fd-primary-fg:#10291f; }
+.fd-lc-inline { min-height:0; height:100%; padding-top:56px; }
+.fd-lc { display:flex; flex-direction:column; gap:14px; max-width:860px; margin:0 auto; padding:20px 24px 40px; box-sizing:border-box; color:var(--fd-fg); font-size:13px; }
+.fd-lc-center { align-items:center; justify-content:center; min-height:60vh; }
+.fd-lc-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
+.fd-lc-head h1 { margin:0; font-size:18px; font-weight:650; }
+.fd-lc-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.fd-lc-chip { padding:4px 10px; border-radius:999px; font-size:12px; border:1px solid var(--fd-border); background:var(--fd-panel-2); color:var(--fd-danger, #dc2626); }
+.fd-lc-chip[data-ok] { color:#15803d; }
+.fd-lc-chip[data-warn] { color:#b45309; }
+.fd-lc-step { display:grid; gap:12px; padding:16px 18px; border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); }
+.fd-lc-step h2 { display:flex; align-items:center; gap:10px; margin:0; font-size:15px; font-weight:650; }
+.fd-lc-step h2 b { display:inline-grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--fd-primary); color:var(--fd-primary-fg); font-size:12px; }
+.fd-lc-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; }
+.fd-lc-field { display:grid; gap:4px; font-size:12px; color:var(--fd-muted); }
+.fd-lc-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.fd-lc-big { min-width:140px; height:40px; font-size:14px; }
+.fd-lc-check { display:flex; gap:8px; align-items:flex-start; font-size:12px; line-height:1.4; }
+.fd-lc-check input { margin-top:2px; }
+.fd-lc-note { margin:0; font-size:12px; line-height:1.45; color:var(--fd-muted); }
+.fd-lc-good { color:#15803d; }
+.fd-lc-warn { margin:0; font-size:12px; color:#b45309; }
+.fd-lc-error { margin:0; font-size:12px; color:var(--fd-danger, #dc2626); }
+.fd-lc-progress { display:flex; flex-wrap:wrap; gap:4px; margin:0; padding:0; list-style:none; }
+.fd-lc-progress li { padding:3px 10px; border-radius:999px; font-size:11px; background:var(--fd-panel-2); color:var(--fd-muted); }
+.fd-lc-progress li[data-state=done] { background:rgba(21,128,61,.12); color:#15803d; }
+.fd-lc-progress li[data-state=active] { background:rgba(37,99,235,.14); color:var(--fd-primary, #2563eb); font-weight:600; }
+.fd-lc-progress li[data-state=failed] { background:rgba(220,38,38,.12); color:var(--fd-danger, #dc2626); }
+.fd-lc-status { margin:0; padding:8px 12px; border-radius:8px; background:var(--fd-panel-2); font-size:13px; }
+.fd-lc-status[data-error] { color:var(--fd-danger, #dc2626); }
+.fd-lc-fold { border:1px solid var(--fd-border); border-radius:12px; background:var(--fd-panel); }
+.fd-lc-fold > summary { cursor:pointer; padding:12px 18px; font-weight:600; font-size:13px; }
+.fd-lc-fold-body { display:grid; gap:10px; padding:0 18px 16px; }
+.fd-lc-poses { display:grid; gap:2px; margin:0; padding:0; list-style:none; }
+.fd-lc-poses li { display:grid; grid-template-columns:minmax(0, 1fr) 72px 56px; gap:8px; align-items:center; padding:4px 8px; border-radius:8px; font-size:12px; }
+.fd-lc-poses li:nth-child(odd) { background:var(--fd-panel-2); }
+.fd-lc-poses li[data-done] span:first-child::after { content:" ✓"; color:#15803d; }
+.fd-lc-log { margin:0; padding:0 18px 16px; list-style:none; font-size:12px; max-height:260px; overflow:auto; }
+.fd-lc-log li { padding:2px 0; }
+.fd-lc-log li[data-level=warn] { color:#b45309; }
+.fd-lc-log li[data-level=error] { color:var(--fd-danger, #dc2626); }
+.fd-lc-log time { color:var(--fd-muted); margin-right:6px; font-variant-numeric:tabular-nums; }

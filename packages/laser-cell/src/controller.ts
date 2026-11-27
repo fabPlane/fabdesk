@@ -277,6 +277,17 @@ export class LaserCellController {
     return laser.relay.pressed;
   }
 
+  /** Starts ComMarker Studio without admin rights (studio-window route); no-op when it is already open. */
+  async openStudio(): Promise<"running" | "started"> {
+    await this.load();
+    if (this.config.laser.driver !== "studio-window") throw new LaserCellError("Choose \"ComMarker Studio (fabPlane presses Start in Studio)\" as the laser route first");
+    const laser = await this.laserDriver();
+    if (!(laser instanceof StudioWindowLaser)) throw new LaserCellError("The Studio window driver is not available");
+    const result = await launchStudio(laser.ui, this.config.laser.studioExe ?? DEFAULT_STUDIO_EXE);
+    if (result === "started") this.log("info", "started ComMarker Studio");
+    return result;
+  }
+
   /**
    * Builds a job in ComMarker Studio (studio-window route): starts Studio if needed, imports the file, sets its
    * true size and place, the hatch fill and the laser settings, and reports what Studio shows afterwards.

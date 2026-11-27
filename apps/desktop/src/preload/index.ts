@@ -56,6 +56,8 @@ const api = {
   openExternal: (url: string) => ipcRenderer.invoke("fabdesk:open-external", url),
   openPath: (path: string) => ipcRenderer.invoke("fabdesk:open-path", path),
   openLogs: () => ipcRenderer.invoke("fabdesk:open-logs"),
+  /** Open (or focus) the Laser Controller window. */
+  openLaserWindow: () => ipcRenderer.invoke("fabdesk:open-laser-window"),
   pickDirectory: () => ipcRenderer.invoke("fabdesk:pick-directory"),
   pickFile: (opts?: PickFileOptions) => ipcRenderer.invoke("fabdesk:pick-file", opts ?? {}),
   localAuthAllowed: () => ipcRenderer.invoke("fabdesk:local-auth-allowed"),

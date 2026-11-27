@@ -8,6 +8,7 @@ import { CoreSupervisor } from "./core-supervisor";
 import { applyDesktopIdentity } from "./dev-profile";
 import { registerIpc } from "./ipc";
 import { installAppMenu } from "./app-menu";
+import { openLaserWindow } from "./laser-window";
 import { automationEnabled, startAppAutomation, type AppAutomation } from "./automation";
 import { localAuthEnabled } from "./local-mode";
 import {
@@ -352,6 +353,14 @@ if (!app.requestSingleInstanceLock()) {
     });
     installAppMenu();
     registerIpc(supervisor);
+    ipcMain.handle("fabdesk:open-laser-window", () => {
+      openLaserWindow({
+        preload: join(here, "../preload/index.cjs"),
+        html: join(here, "../renderer/index.html"),
+        icon: developmentIconPath(),
+        args: [...(sentryActive() ? ["--fabdesk-error-reporting"] : []), ...(identity.devProfile ? ["--fabdesk-dev-build"] : [])],
+      });
+    });
     ipcMain.handle("fabdesk:pending-open-shared-project", () => openSharedProject.take());
     ipcMain.handle("fabdesk:pending-open-catalog", () => openCatalog.take());
     const developmentCadReady = !app.isPackaged && Boolean(cadEnv["FABDESK_FAB_CAD_BRIDGE_URL"]);

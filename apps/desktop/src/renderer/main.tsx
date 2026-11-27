@@ -5,6 +5,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserApp } from "@fabdesk/ui";
 import { App } from "./App";
+import { LaserWindowApp } from "./LaserWindowApp";
 import { watchWindowChrome } from "./window-chrome";
 
 // Keep Windows chrome at the same physical size as its native caption controls.
@@ -25,7 +26,8 @@ const root = document.getElementById("root");
 if (!root) throw new Error("#root missing");
 // Without the Electron bridge this is the browser client: hosted pairing (`/pair`), saved
 // computers, or the legacy `?core=&token=` query — BrowserApp covers all three.
-const app = window.fabdesk ? <App /> : <BrowserApp />;
+// `#laser`: the separate Laser Controller window (apps/desktop/src/main/laser-window.ts).
+const app = window.fabdesk ? (location.hash === "#laser" ? <LaserWindowApp /> : <App />) : <BrowserApp />;
 createRoot(root).render(
   <StrictMode>
     {sentryEnabled ? (

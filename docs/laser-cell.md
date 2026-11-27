@@ -13,7 +13,10 @@ The laser cell turns a fabPlane board into copper on a blank, hands-free:
 3. **Laser** — fabPlane starts the job, waits until it has finished, then the arm moves the board to an
    output tray. Repeat for N boards; the batch ends early when the stack is empty.
 
-UI: **Laser cell** in the project workspace menu (`packages/ui/src/board/LaserCellWorkspace.tsx`).
+UI: the **Laser Controller** window (File → Laser Controller…, or *Open Laser Controller* in the project's **Laser cell**
+workspace). One page: 1 Job (project → Make laser job → Load into ComMarker Studio), 2 Run (boards, mode, UV-guard
+check, Start / Stop), then folded *Arm setup*, *Settings* and *Log*. Code: `packages/ui/src/laser/LaserController.tsx`;
+window: `apps/desktop/src/main/laser-window.ts` (same renderer, `#laser`). The browser client shows the page inline.
 Agent: `load_toolset laser` → `export_laser_copper`, `laser_cell`.
 
 ## One-day plan (fastest path to a working cell)

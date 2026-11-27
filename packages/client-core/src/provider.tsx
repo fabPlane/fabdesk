@@ -40,6 +40,8 @@ export interface HostAdapter {
   /** Commands from the host's application menu (new-chat, palette, settings, sidebar, board). */
   onMenu?: (cb: (command: string) => void) => () => void;
   openLogs?: () => Promise<void>;
+  /** Open (or focus) the separate Laser Controller window (Electron only). */
+  openLaserWindow?: () => Promise<void>;
   /** Last update-check result from the host (Electron main), if it performs checks. */
   updateStatus?: () => Promise<UpdateCheckResult | null>;
   checkForUpdates?: () => Promise<UpdateCheckResult>;

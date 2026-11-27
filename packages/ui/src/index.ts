@@ -125,6 +125,7 @@ export * from "./util";
 export { FabdeskApp } from "./app/FabdeskApp";
 export type { FabdeskAppProps } from "./app/FabdeskApp";
 export { CoreStatusScreen } from "./app/CoreStatusScreen";
+export { LaserController, setLaserProject } from "./laser/LaserController";
 export { useAppActions } from "./app/useAppActions";
 export type { AppActions } from "./app/useAppActions";
 export type { CoreState, CoreStatusInfo, CoreInfo } from "./app/types";

@@ -116,9 +116,9 @@ export const laser_cell = defineTool({
   localOnly: true,
   title: "Laser cell (robot arm + Omni X)",
   description:
-    "Drive the laser cell on this machine: an ElRobot arm (ST3215 servos over USB) that loads copper-clad blanks into a ComMarker Omni X and starts it through ComMarker Studio (studio-window: fabPlane presses Studio's own Start button and watches it finish; or studio-footswitch: USB relay on the foot-switch input) or LightBurn (UDP). Actions: status, ports, configure (arm/laser settings, safetyConfirmed), connect, disconnect, relax (motors off for hand-teaching), hold, teach (record the current arm position as a named station), move (go to a taught station, slow), use_job (point the cell at a project's exported LightBurn job and set the Studio mark time from its estimate), studio_load_job (studio-window route: start ComMarker Studio if needed and build the project's newest export_laser_copper job in it: import, true size and position on the jig, hatch fill and the preset's speed/frequency/pulse/passes, then read back what Studio shows), run (boards N, mode cycle|dry-run|laser-only; returns at once, poll status), stop, footswitch_press (one 250 ms click of the foot-switch relay = one Studio job), footswitch_hold / footswitch_release (pedal down / up). The cell refuses an automatic run until safetyConfirmed: the Omni X lid has to be open or its cover sensor off for the arm to reach the bed, so a UV-blocking guard must enclose the cell. Moving hardware: only act when the user asked.",
+    "Drive the laser cell on this machine: an ElRobot arm (ST3215 servos over USB) that loads copper-clad blanks into a ComMarker Omni X and starts it through ComMarker Studio (studio-window: fabPlane presses Studio's own Start button and watches it finish; or studio-footswitch: USB relay on the foot-switch input) or LightBurn (UDP). Actions: status, ports, configure (arm/laser settings, safetyConfirmed), connect, disconnect, relax (motors off for hand-teaching), hold, teach (record the current arm position as a named station), move (go to a taught station, slow), use_job (point the cell at a project's exported LightBurn job and set the Studio mark time from its estimate), studio_open (start ComMarker Studio without admin rights), studio_load_job (studio-window route: start ComMarker Studio if needed and build the project's newest export_laser_copper job in it: import, true size and position on the jig, hatch fill and the preset's speed/frequency/pulse/passes, then read back what Studio shows), run (boards N, mode cycle|dry-run|laser-only; returns at once, poll status), stop, footswitch_press (one 250 ms click of the foot-switch relay = one Studio job), footswitch_hold / footswitch_release (pedal down / up). The cell refuses an automatic run until safetyConfirmed: the Omni X lid has to be open or its cover sensor off for the arm to reach the bed, so a UV-blocking guard must enclose the cell. Moving hardware: only act when the user asked.",
   inputSchema: {
-    action: z.enum(["status", "ports", "configure", "connect", "disconnect", "relax", "hold", "teach", "move", "use_job", "studio_load_job", "run", "stop", "footswitch_press", "footswitch_hold", "footswitch_release"]),
+    action: z.enum(["status", "ports", "configure", "connect", "disconnect", "relax", "hold", "teach", "move", "use_job", "studio_open", "studio_load_job", "run", "stop", "footswitch_press", "footswitch_hold", "footswitch_release"]),
     name: z.enum(TEACH_NAMES).optional().describe("Station for teach / move"),
     arm: z
       .object({
@@ -219,6 +219,10 @@ export const laser_cell = defineTool({
           const config = await cell.configure({ laser: { jobPath: job, ...(summary.estimatedSeconds ? { markSeconds: Math.ceil(summary.estimatedSeconds * 1.15) } : {}) } });
           return ok(`The cell now uses ${rel(project, job)}${summary.estimatedSeconds ? `; Studio mark time set to ${config.laser.markSeconds} s (estimate + 15 %). Replace it with Studio's own estimate after loading the job there.` : "."}`, { config });
         }
+        case "studio_open": {
+          const result = await cell.openStudio();
+          return ok(result === "started" ? "Started ComMarker Studio." : "ComMarker Studio is already open.", { result });
+        }
         case "studio_load_job": {
           const project = args.project ? await ctx.services.projects.resolve(args.project) : ctx.project;
           if (!project) throw new ToolError(args.project ? `project ${args.project} not found` : "studio_load_job needs a project", "invalid_args");
@@ -226,21 +230,24 @@ export const laser_cell = defineTool({
           const dir = p(project, PROJECT_FILES.exports, "laser");
           let summaryPath = args.job ? join(project.dir, args.job).replace(/.(lbrn2|svg|studio.svg)$/, ".json") : null;
           if (!summaryPath) {
-            const files = (await readdir(dir).catch(() => [] as string[])).filter(f => f.endsWith(".json"));
+            // Job summaries only: the app writes *.revision.json records next to every exported file.
+            const files = (await readdir(dir).catch(() => [] as string[])).filter(f => /-Cu-laser-[a-z]+.json$/.test(f));
             const dated = await Promise.all(files.map(async f => ({ f, t: (await stat(join(dir, f))).mtimeMs })));
             const newest = dated.sort((a, b) => b.t - a.t)[0];
             if (!newest) throw new ToolError("No exports/laser job yet; run export_laser_copper first", "precondition");
             summaryPath = join(dir, newest.f);
           }
           if (!summaryPath.startsWith(project.dir + sep)) throw new ToolError("job must be inside the project", "invalid_args");
-          type Summary = { boardMm: { width: number; height: number }; estimatedSeconds?: number; settings: { ablate: { powerPct: number; speedMmPerS: number; frequencyKhz: number; pulseNs: number; passes: number; intervalMm: number; angleDeg: number; angleStepDeg: number } }; files: { studioSvg?: string }; studio?: { x: number; y: number; width: number; height: number } | null };
+          type Summary = { boardMm: { width: number; height: number }; estimatedSeconds?: number; settings: { ablate: { powerPct: number; speedMmPerS: number; frequencyKhz: number; pulseNs: number; passes: number; intervalMm: number; angleDeg: number; angleStepDeg: number } }; files?: unknown; studio?: { x: number; y: number; width: number; height: number } | null };
           const summary = JSON.parse(await readFile(summaryPath, "utf8")) as Summary;
-          if (!summary.files?.studioSvg || !summary.studio) throw new ToolError("This laser job was exported before Studio support; run export_laser_copper again", "precondition");
+          // The summary records where the export was built; the Studio SVG now sits next to the summary.
+          const studioSvg = summaryPath.replace(/.json$/, ".studio.svg");
+          if (!summary.studio || !(await stat(studioSvg).then(() => true, () => false))) throw new ToolError("This laser job was exported before Studio support; run export_laser_copper again", "precondition");
           const centre = (await cell.snapshot()).config.laser.studioBoardCenterMm;
           const b = summary.studio;
           const a = summary.settings.ablate;
           const result = await cell.studioLoadJob({
-            file: summary.files.studioSvg,
+            file: studioSvg,
             widthMm: b.width,
             heightMm: b.height,
             xMm: centre.x + (b.x + b.width / 2 - summary.boardMm.width / 2),
@@ -251,7 +258,7 @@ export const laser_cell = defineTool({
           if (summary.estimatedSeconds) await cell.configure({ laser: { markSeconds: Math.ceil(summary.estimatedSeconds * 1.15) } });
           const shown = Object.entries(result.values ?? {}).filter(([, v]) => typeof v !== "object").map(([k, v]) => `${k} ${String(v)}`).join(", ");
           const notes = result.log.map(l => `\n- ${l}`).join("");
-          return ok(`Loaded ${rel(project, summary.files.studioSvg)} into ComMarker Studio. Studio shows: ${shown}.${notes}\nCheck the position with Studio's Preview before the first board.`, { values: result.values, log: result.log });
+          return ok(`Loaded ${rel(project, studioSvg)} into ComMarker Studio. Studio shows: ${shown}.${notes}\nCheck the position with Studio's Preview before the first board.`, { values: result.values, log: result.log });
         }
         case "run":
           await cell.run({ boards: args.boards ?? 1, mode: args.mode ?? "cycle" });
