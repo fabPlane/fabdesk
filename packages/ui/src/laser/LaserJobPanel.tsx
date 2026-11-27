@@ -22,7 +22,7 @@ const ringPath = (rings: Vec[][], close: boolean) =>
   rings.map(r => `M${r.map(([x, y]) => `${x},${y}`).join("L")}${close ? "Z" : ""}`).join("");
 
 /** The lens field (mm, centre 0,0, Y up) with the job drawn where it will be marked. Click to move the job there. */
-function FieldPreview({ job, onPlace, disabled }: { job: LaserJobView; onPlace: (x: number, y: number) => void; disabled: boolean }) {
+export function FieldPreview({ job, onPlace, disabled }: { job: LaserJobView; onPlace: (x: number, y: number) => void; disabled: boolean }) {
   const half = job.fieldMm / 2;
   const { width, height } = job.boardMm;
   const left = job.positionMm.x - width / 2, bottom = job.positionMm.y - height / 2;
