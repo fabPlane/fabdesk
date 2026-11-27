@@ -281,3 +281,26 @@ describe("ComMarker Studio route", () => {
     expect(Number(out)).toBe(60_000);
   });
 });
+
+describe("arm moves", () => {
+  test("Stop ends an arm move (Arm setup → Go) at once, and the cell is free again", async () => {
+    const home = await mkdtemp(join(tmpdir(), "regress-arm-"));
+    // Joint 1 cannot go below 2000, so a move to 1000 never arrives on its own.
+    const servos = fakeServos([1, 2, 3], { blocked: { 1: 2000 } });
+    const c = new LaserCellController({ home, openArmBus: async () => new St3215Bus(servos.link), makeLaser: async () => new SimulatedLaser(1) });
+    await c.configure({ arm: { port: "COM7", jointIds: [1, 2], gripperId: 3 }, laser: { driver: "simulator" } });
+    await c.connectArm();
+    const setPos = (id: number, pos: number) => { const m = servos.regs.get(id)!; m[0x38] = pos & 0xff; m[0x39] = pos >> 8; };
+    setPos(1, 1000); setPos(2, 1800);
+    await c.teach("clear");
+    setPos(1, 2048); setPos(2, 2048);
+    const started = Date.now();
+    const move = failure(c.moveTo("clear"));
+    while (!(await c.snapshot({ probe: false })).operation) await Bun.sleep(2);
+    await c.stop();
+    expect(await move).toMatch(/stopped/);
+    expect(Date.now() - started).toBeLessThan(2000); // not the 8 s move timeout
+    expect((await c.snapshot({ probe: false })).operation).toBeNull();
+    await c.dispose();
+  });
+});
