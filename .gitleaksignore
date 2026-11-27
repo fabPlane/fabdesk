@@ -8,3 +8,5 @@ aee4b00efbcc9ad779bff7d84a237c7ad05fc381:apps/mobile/google-services.json:gcp-ap
 6e1993b2fc0708867607d76b4aac3a92c869ddb0:apps/mobile/google-services.json:gcp-api-key:23
 6870a8b1ea2fac5c9c6057ac5cb3726ecd0a2fd6:docs/mobile-testing-handoff.md:curl-auth-header:117
 6870a8b1ea2fac5c9c6057ac5cb3726ecd0a2fd6:docs/mobile-testing-handoff.md:curl-auth-header:122
+# A made-up GitHub token in the work hub test (PR #102); replaced by a run-time fixture in the next commit.
+10ecb4863e529ec57902050710bb5e34cdbb129b:apps/core/test/work-hub.test.ts:generic-api-key:20

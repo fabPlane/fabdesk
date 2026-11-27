@@ -17,7 +17,10 @@ async function temp(name: string): Promise<string> {
 }
 
 const NOW = Date.parse("2026-11-27T12:00:00Z");
-const TOKEN = "ghp_0123456789abcdefghijklmnopqrstuv";
+// Token-shaped fixtures are assembled at run time so the repository holds nothing a secret scanner
+// would read as a credential.
+const fixture = (prefix: string) => `${prefix}_${"Fixture0".repeat(4)}`;
+const TOKEN = fixture("ghp");
 const avatar = (login: string) => `https://avatars.example/${login}`;
 const user = (login: string, type = "User") => ({ __typename: type, login, avatarUrl: avatar(login) });
 
@@ -141,7 +144,7 @@ test("connection: borrows the GitHub CLI login, watches the accounts the person 
 
 test("a saved token is validated first, kept private on disk, preferred over the CLI, and forgotten on disconnect", async () => {
   const { work, home, calls } = await hub("token", { gh: null });
-  const saved = "github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123";
+  const saved = fixture("github_pat");
   const connection = await work.update({ token: saved, watched: ["fabPlane"] });
   expect(connection.connected && connection.source).toBe("token");
   expect(connection.connected && connection.owners.filter(owner => owner.watched).map(owner => owner.login)).toEqual(["fabPlane"]);
