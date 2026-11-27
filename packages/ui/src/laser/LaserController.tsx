@@ -3,7 +3,8 @@
  * Shown in its own desktop window (apps/desktop/src/main/laser-window.ts), or inline in the
  * "Laser cell" workspace when there is no desktop window (browser client).
  *
- *   1 Job  — pick a project, make the copper job, load it into ComMarker Studio
+ *   1 Job  — pick a project, make the copper job, load it into ComMarker Studio; on fabPlane's own driver
+ *            also open a drawing (SVG / DXF), see it on the lens field, place it and set power / speed
  *   2 Run  — boards, mode, UV-guard check, Start / Stop, progress
  *   Arm setup / Settings / Log — folded away until needed
  *
@@ -25,9 +26,11 @@ import {
   type LaserCellTeachName,
 } from "@fabdesk/client-core";
 import { Button, Input, Select, Spinner } from "../components/ui";
+import { DrawingImport, LaserJobPanel } from "./LaserJobPanel";
 import "./laser-controller.css";
 
 const PROJECT_KEY = "fabdesk.laser.project";
+const SOURCE_KEY = "fabdesk.laser.jobSource";
 
 /** Remembers the project chosen for the laser (shared with the main window, which sets it before opening this one). */
 export function setLaserProject(projectId: string): void {
@@ -51,7 +54,7 @@ const MODES: Array<{ id: LaserCellRunMode; label: string }> = [
 type JobSummary = { boardMm: { width: number; height: number }; estimatedSeconds: number; preset: string; warnings: string[] };
 
 /** The cell's own message (e.g. "there is no copper on B.Cu"), not the app's generic retry advice. */
-const errorText = (e: unknown) => errorPayload(e).message.replace(/^Error:s*/, "") || "Something went wrong";
+const errorText = (e: unknown) => errorPayload(e).message.replace(/^Error:\s*/, "") || "Something went wrong";
 
 /** One action at a time per section, with its error. */
 function useAction() {
@@ -105,9 +108,15 @@ function JobStep({ snap }: { snap: LaserCellSnapshot }) {
   }, []);
   const choose = (id: string) => { setProjectId(id); setJob(null); setInStudio(null); setLaserProject(id); };
   const route = snap.config.laser.driver;
+  /** fabPlane's own driver can also mark a drawing, and shows the job on the lens field. */
+  const ownDriver = route === "usb-lmc";
+  const [source, setSource] = useState<"board" | "drawing">(() => { try { return localStorage.getItem(SOURCE_KEY) === "drawing" ? "drawing" : "board"; } catch { return "board"; } });
+  const pickSource = (next: "board" | "drawing") => { setSource(next); try { localStorage.setItem(SOURCE_KEY, next); } catch { /* storage unavailable */ } };
+  const cellBusy = snap.run.active || !!snap.operation;
   const make = () => run("make", async () => {
     setInStudio(null);
     setJob(await act<JobSummary>({ projectId, side, mode: "isolation", isolationMm: Number(ring) }, "export_laser_copper"));
+    if (ownDriver) await act({ action: "use_job", project: projectId }); // the new job is the one to mark
   });
   const load = () => run("load", async () => {
     const result = await act<{ values?: Record<string, unknown>; log?: string[] }>({ action: "studio_load_job", project: projectId });
@@ -116,8 +125,14 @@ function JobStep({ snap }: { snap: LaserCellSnapshot }) {
   });
   const useForLightBurn = () => run("use", () => act({ action: "use_job", project: projectId }));
   const v = inStudio ?? {};
+  const drawing = ownDriver && source === "drawing";
   return <section className="fd-lc-step">
     <h2><b>1</b> Job</h2>
+    {ownDriver && <div className="fd-lc-tabs" role="tablist">
+      <button role="tab" aria-selected={source === "board"} disabled={cellBusy} onClick={() => pickSource("board")}>Board copper</button>
+      <button role="tab" aria-selected={source === "drawing"} disabled={cellBusy} onClick={() => pickSource("drawing")}>Drawing (SVG / DXF)</button>
+    </div>}
+    {drawing ? <DrawingImport busy={cellBusy} /> : <>
     <div className="fd-lc-row">
       <Field label="Project">
         <Select value={projectId} onChange={e => choose(e.target.value)}>
@@ -135,11 +150,13 @@ function JobStep({ snap }: { snap: LaserCellSnapshot }) {
       {route === "studio-window" && <Button disabled={!projectId || !!busy || snap.run.active} onClick={load}>{busy === "load" && <Spinner />}Load into ComMarker Studio</Button>}
       {(route === "lightburn" || route === "usb-lmc") && <Button disabled={!projectId || !!busy} onClick={useForLightBurn}>Use this job</Button>}
     </div>
+    </>}
     {job && <p className="fd-lc-note">Job ready: <b>{job.boardMm.width} × {job.boardMm.height} mm</b>, about <b>{formatDuration(job.estimatedSeconds)}</b> per board, {job.preset.replace("omni-x-6w-", "").replace("mm", " mm")} lens.</p>}
     {job?.warnings.map(w => <p key={w} className="fd-lc-warn">{w}</p>)}
     {inStudio && <p className="fd-lc-note fd-lc-good">In Studio: {String(v["width"])} × {String(v["height"])} mm at X {String(v["x"])}, Y {String(v["y"])} · speed {String(v["speed"])} mm/s · {String(v["frequency"])} kHz · {String(v["passes"])} passes · fill {String(v["interval"])} mm. Check the position with Studio's Preview before the first board.</p>}
     {notes.map(n => <p key={n} className="fd-lc-warn">{n}</p>)}
     <Problem text={error} />
+    {ownDriver && <LaserJobPanel busy={cellBusy} />}
   </section>;
 }
 
@@ -154,8 +171,9 @@ function RunStep({ snap }: { snap: LaserCellSnapshot }) {
   const studioClosed = snap.config.laser.driver === "studio-window" && snap.laser?.state === "offline" && /not open/.test(snap.laser.detail);
   const needsGuard = mode !== "dry-run" && !snap.config.safetyConfirmed;
   const cellBusy = r.active || !!snap.operation;
+  const ownDriver = snap.config.laser.driver === "usb-lmc";
   const status = r.active
-    ? `Board ${r.board} of ${r.boards}: ${r.note ?? "working…"}`
+    ? `Board ${r.board} of ${r.boards}: ${r.paused ? "paused" : r.note ?? "working…"}`
     : snap.operation ? `Busy: ${snap.operation}…`
     : r.error ? `Stopped: ${r.error}`
     : r.done ? `Finished ${r.done} of ${r.boards} board(s).`
@@ -174,6 +192,9 @@ function RunStep({ snap }: { snap: LaserCellSnapshot }) {
       <span>The UV guard is closed, everyone nearby wears UV glasses, and the Omni X E-stop is within reach. (Asked again after a restart or a change of laser route.)</span>
     </label>
     <div className="fd-lc-actions">
+      {cellBusy && ownDriver && r.active && r.step === "mark" && (r.paused
+        ? <Button className="fd-lc-big" disabled={!!busy} onClick={() => run("resume", () => act({ action: "resume" }))}>Resume</Button>
+        : <Button className="fd-lc-big" disabled={!!busy} title="The laser stops after the line it is on; Resume continues from there" onClick={() => run("pause", () => act({ action: "pause" }))}>Pause</Button>)}
       {cellBusy
         ? <Button variant="danger" className="fd-lc-big" onClick={() => run("stop", () => act({ action: "stop" }))}>Stop</Button>
         : <Button variant="primary" className="fd-lc-big" disabled={!!busy || needsGuard} title={needsGuard ? "Confirm the UV guard first" : undefined} onClick={() => run("start", () => act({ action: "run", boards, mode }))}>{busy === "start" && <Spinner />}Start</Button>}
@@ -183,6 +204,10 @@ function RunStep({ snap }: { snap: LaserCellSnapshot }) {
       {LASER_CELL_STEPS.filter(s => mode !== "laser-only" || !["pick", "place", "clear", "unload"].includes(s.step)).map(s =>
         <li key={s.step} data-state={s.step === r.step ? (r.active ? "active" : r.error ? "failed" : "done") : r.visited.includes(s.step) ? "done" : undefined}>{s.label}</li>)}
     </ol>
+    {r.active && r.step === "mark" && typeof r.remainingSeconds === "number" && <div className="fd-lc-bar">
+      <progress value={r.progress} max={1} />
+      <span>{Math.round(r.progress * 100)} % · about {formatDuration(r.remainingSeconds)} left</span>
+    </div>}
     <p className="fd-lc-status" data-error={!!r.error || undefined}>{status}</p>
     <Problem text={error} />
   </section>;

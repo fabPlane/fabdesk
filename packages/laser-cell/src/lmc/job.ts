@@ -132,13 +132,62 @@ export function outlines(shape: Shape): Segment[] {
   return out;
 }
 
+/** Open polylines as segments. */
+export function polylines(lines: Ring[]): Segment[] {
+  const out: Segment[] = [];
+  for (const l of lines) for (let i = 1; i < l.length; i++) out.push([l[i - 1]!, l[i]!]);
+  return out;
+}
+
+const dist2 = (a: Vec, b: Vec) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+
+/**
+ * Paths in a short travel order: serpentine strips across the job by path centre, then each closed ring is
+ * started at its vertex nearest the pen and each open line is drawn from its nearer end. Cuts the jumps of
+ * outline passes on boards with hundreds of pads from criss-crossing the board to short hops.
+ */
+export function orderPaths(paths: Ring[], closed: boolean, from: Vec | null): Ring[] {
+  const usable = paths.filter(p => p.length >= (closed ? 3 : 2));
+  const centres = usable.map(p => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x, y] of p) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    return [(minX + maxX) / 2, (minY + maxY) / 2] as Vec;
+  });
+  let minY = Infinity, maxY = -Infinity, minX = Infinity, maxX = -Infinity;
+  for (const [x, y] of centres) { if (y < minY) minY = y; if (y > maxY) maxY = y; if (x < minX) minX = x; if (x > maxX) maxX = x; }
+  const strip = Math.max(1e-6, Math.sqrt(((maxX - minX + 1) * (maxY - minY + 1)) / Math.max(1, usable.length)) * 2);
+  const order = usable.map((_, i) => i).sort((a, b) => {
+    const sa = Math.floor((centres[a]![1] - minY) / strip), sb = Math.floor((centres[b]![1] - minY) / strip);
+    if (sa !== sb) return sa - sb;
+    return sa % 2 === 0 ? centres[a]![0] - centres[b]![0] : centres[b]![0] - centres[a]![0];
+  });
+  const out: Ring[] = [];
+  let pen = from;
+  for (const i of order) {
+    const p = usable[i]!;
+    if (closed) {
+      let best = 0;
+      if (pen) { let d = Infinity; for (let k = 0; k < p.length; k++) { const dk = dist2(p[k]!, pen); if (dk < d) { d = dk; best = k; } } }
+      const r = best ? [...p.slice(best), ...p.slice(0, best)] : p;
+      out.push(r);
+      pen = r[0]!;
+    } else {
+      const flip = pen !== null && dist2(p.at(-1)!, pen) < dist2(p[0]!, pen);
+      const l = flip ? [...p].reverse() : p;
+      out.push(l);
+      pen = l.at(-1)!;
+    }
+  }
+  return out;
+}
+
 const length = ([p, q]: Segment) => Math.hypot(q[0] - p[0], q[1] - p[1]);
 
 /** Rough marking time: marked length at mark speed + travel at jump speed, per pass. */
 export function estimateSeconds(segmentsPerPass: Segment[][], s: Pick<MarkSettings, "speedMmPerS" | "travelMmPerS">): number {
   let t = 0;
+  let last: Vec | null = null; // segments are in mm: the pen's start is not known here
   for (const segs of segmentsPerPass) {
-    let last: Vec | null = [GALVO_CENTER, GALVO_CENTER];
     for (const seg of segs) {
       if (last) t += Math.hypot(seg[0][0] - last[0], seg[0][1] - last[1]) / s.travelMmPerS;
       t += length(seg) / s.speedMmPerS;
@@ -216,14 +265,35 @@ export function assertInField(shape: Shape, field: FieldMap): void {
  * The marking list as a stream of 3072-byte packets, built while it is sent: a large board (over a million
  * commands) starts marking at once instead of after the whole list has been built in memory.
  */
-export function* markPackets(shape: Shape, field: FieldMap, s: MarkSettings, opts: { source: SourceMode; pins: Pins; outline?: boolean }): Generator<Uint8Array> {
+/** Extra parts of a job beyond the fill: lines (drawings) and outline passes with their own settings (edges). */
+export type MarkExtras = { outline?: boolean; lines?: Ring[]; edge?: { settings: MarkSettings; passes: number } };
+
+/** Pen position in mm, for travel ordering, from the last galvo position. */
+const penMm = (field: FieldMap, g: Vec | null): Vec | null => {
+  if (!g) return null;
+  const k = galvosPerMm(field);
+  let fx = (g[0] - GALVO_CENTER) / k, fy = (g[1] - GALVO_CENTER) / k;
+  if (field.flipX) fx = -fx;
+  if (field.flipY) fy = -fy;
+  if (field.swapXY) [fx, fy] = [fy, fx];
+  return [fx + field.boardMm.width / 2 - field.centerMm[0], fy + field.boardMm.height / 2 - field.centerMm[1]];
+};
+
+const ringSegments = (rings: Ring[], closed: boolean): Segment[] => (closed ? outlines(rings) : polylines(rings));
+
+export function* markPackets(shape: Shape, field: FieldMap, s: MarkSettings, opts: { source: SourceMode; pins: Pins } & MarkExtras): Generator<Uint8Array> {
   validateSettings(s);
-  assertInField(shape, field);
+  if (opts.edge) validateSettings(opts.edge.settings);
+  const lines = (opts.lines ?? []).filter(l => l.length >= 2);
+  assertInField([...shape, ...lines], field);
   const list = new ListPackets();
   list.add(List.ReadyMark);
   list.add(List.WritePort, 1 << opts.pins.laser);
   writeSettings(list, field, s, opts.source);
   let last: Vec | null = [GALVO_CENTER, GALVO_CENTER];
+  const trace = (paths: Ring[], closed: boolean) => {
+    for (const p of orderPaths(paths, closed, penMm(field, last))) last = addMoves(list, field, ringSegments([p], closed), true, last);
+  };
   for (let pass = 0; pass < s.passes; pass++) {
     for (const angle of passAngles(s, pass)) {
       for (const seg of hatchLines(shape, s.intervalMm, angle)) {
@@ -231,7 +301,12 @@ export function* markPackets(shape: Shape, field: FieldMap, s: MarkSettings, opt
         yield* list.takeFull();
       }
     }
-    if (opts.outline || s.intervalMm <= 0) { last = addMoves(list, field, outlines(shape), true, last); yield* list.takeFull(); }
+    if ((opts.outline || s.intervalMm <= 0) && !opts.edge) { trace(shape, true); yield* list.takeFull(); }
+    if (lines.length) { trace(lines, false); yield* list.takeFull(); }
+  }
+  if (opts.edge && opts.edge.passes > 0) {
+    writeSettings(list, field, opts.edge.settings, opts.source);
+    for (let pass = 0; pass < opts.edge.passes; pass++) { trace(shape, true); yield* list.takeFull(); }
   }
   list.add(List.WritePort, 0);
   yield* list.finish();

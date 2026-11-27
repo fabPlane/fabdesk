@@ -11,6 +11,9 @@ import { CellError, POSE_LABELS, POSE_NAMES, missingPoses, runCycle, type CellPo
 import { LightBurnLaser, SimulatedLaser, StudioFootswitchLaser, openLightBurnUdp, openRelay } from "./lasers";
 import { listSerialPorts, openSerial, type SerialPortInfo } from "./serial";
 import { LmcLaser } from "./lmc/laser";
+import { importArt, type ArtFormat } from "./art";
+import { validateSettings } from "./lmc/job";
+import { DEFAULT_TIMING, MATERIAL_PRESETS, artToJob, jobStem, jobView, readJob, writeJob, type EdgeSettings, type JobSettings, type JobView, type LmcJob } from "./lmc/job-file";
 import { listUsbDevices, openUsbLmc, LMC_PID, LMC_VID } from "./lmc/usb";
 import { BRIDGE_DEFAULT_PORT, openBridgeLmc } from "./lmc/bridge";
 import { DEFAULT_STUDIO_EXE, StudioWindowLaser, launchStudio, windowsStudioUi, type StudioJobSpec, type StudioLoadResult } from "./studio-window";
@@ -115,6 +118,10 @@ export type CellSnapshot = {
     done: number;
     startedAt: string | null;
     error: string | null;
+    /** fabPlane USB / Wi-Fi driver: the job is paused (Resume continues it). */
+    paused?: boolean;
+    /** Estimated seconds left of the laser job being marked, when the driver knows. */
+    remainingSeconds?: number | null;
   };
   log: CellLogEntry[];
   /** A non-run operation in progress (loading into Studio, preview, arm move); Stop ends it. */
@@ -442,6 +449,105 @@ export class LaserCellController {
     });
   }
 
+  // ------------------------------------------------------------ laser job (fabPlane USB / Wi-Fi driver)
+
+  private jobViewOptions() {
+    const m = this.config.laser.lmc;
+    return { fieldMm: m.fieldMm, defaultCenterMm: m.centerMm, maxPowerPct: m.maxPowerPct };
+  }
+
+  /** The current job with its preview, and the material presets; `error` says why there is no job. */
+  async jobView(): Promise<{ job: JobView | null; presets: typeof MATERIAL_PRESETS; error?: string }> {
+    await this.load();
+    const presets = MATERIAL_PRESETS;
+    if (!this.config.laser.jobPath) return { job: null, presets, error: "No laser job yet: make one from a board, or open a drawing." };
+    const path = this.lmcJobPath();
+    try {
+      return { job: jobView(await readJob(path), path, this.jobViewOptions()), presets };
+    } catch (error) {
+      return { job: null, presets, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /** Changes the current job's fill / outline settings or its place on the lens (null = the jig position). */
+  async updateJob(patch: { settings?: JobSettings; edge?: EdgeSettings | null; positionMm?: { x: number; y: number } | null }): Promise<JobView> {
+    await this.load();
+    this.assertIdle();
+    const path = this.lmcJobPath();
+    const next: LmcJob = { ...(await readJob(path).catch(error => { throw new LaserCellError(error instanceof Error ? error.message : String(error)); })) };
+    if (patch.settings) next.settings = patch.settings;
+    if (patch.edge !== undefined) { if (patch.edge && patch.edge.passes > 0) next.edge = patch.edge; else delete next.edge; }
+    if (patch.positionMm !== undefined) { if (patch.positionMm) next.positionMm = patch.positionMm; else delete next.positionMm; }
+    try {
+      validateSettings({ ...DEFAULT_TIMING, ...next.settings });
+      if (next.edge) validateSettings({ ...DEFAULT_TIMING, ...next.settings, ...next.edge, passes: Math.max(1, next.edge.passes) });
+    } catch (error) {
+      throw new LaserCellError(`Job not saved: ${error instanceof Error ? error.message.replace(/^laser setting out of range: /, "") : String(error)} is out of range`);
+    }
+    await writeJob(path, next);
+    this.log("info", `laser job saved: ${next.settings.powerPct} %, ${next.settings.speedMmPerS} mm/s, ${next.settings.passes} pass(es)${next.positionMm ? `, at X ${next.positionMm.x} Y ${next.positionMm.y}` : ""}`);
+    return jobView(next, path, this.jobViewOptions());
+  }
+
+  /**
+   * Opens a drawing (SVG / DXF text) as the current laser job, in `<home>/laser-jobs/<name>.lmc.json`. Opening
+   * the same file again keeps its settings and position; a new drawing starts gentle (FR4 marking preset).
+   */
+  async importArt(input: { fileName: string; format: ArtFormat; text: string; widthMm?: number; heightMm?: number; rotateDeg?: number; mirror?: boolean }): Promise<{ job: JobView; warnings: string[] }> {
+    await this.load();
+    this.assertIdle();
+    let art;
+    try {
+      art = await importArt(input.text, input.format);
+    } catch (error) {
+      throw new LaserCellError(`Could not open ${input.fileName}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const name = jobStem(input.fileName);
+    const dir = join(this.deps.home, "laser-jobs");
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${name}.lmc.json`);
+    const previous = await readJob(path).catch(() => null);
+    const gentle = MATERIAL_PRESETS.find(p => p.id === "fr4-mark")!;
+    let job: LmcJob;
+    try {
+      job = artToJob(art, {
+        ...(input.widthMm !== undefined ? { widthMm: input.widthMm } : input.heightMm !== undefined ? { heightMm: input.heightMm } : {}),
+        rotateDeg: input.rotateDeg ?? 0,
+        mirror: input.mirror ?? false,
+      }, {
+        name,
+        settings: previous?.settings ?? gentle.settings,
+        ...(previous?.edge ? { edge: previous.edge } : {}),
+        ...(previous?.positionMm ? { positionMm: previous.positionMm } : {}),
+      });
+    } catch (error) {
+      throw new LaserCellError(`Could not open ${input.fileName}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await writeJob(path, job);
+    this.config = { ...this.config, laser: { ...this.config.laser, jobPath: path } };
+    await this.save();
+    this.log("info", `opened ${input.fileName}: ${job.boardMm.width.toFixed(1)} × ${job.boardMm.height.toFixed(1)} mm`);
+    return { job: jobView(job, path, this.jobViewOptions()), warnings: art.warnings };
+  }
+
+  private runningLmc(): LmcLaser {
+    if (!this.runState.active) throw new LaserCellError("Nothing is running");
+    if (!(this.laser instanceof LmcLaser)) throw new LaserCellError("Pause works with fabPlane's own laser driver; on the Studio route use Studio's own Pause");
+    return this.laser;
+  }
+
+  /** Holds the running job after the line it is on (fabPlane USB / Wi-Fi driver). Stop still works. */
+  async pause(): Promise<void> {
+    await this.runningLmc().pause();
+    this.log("warn", "laser job paused");
+  }
+
+  /** Continues a paused job. */
+  async resume(): Promise<void> {
+    await this.runningLmc().resume();
+    this.log("info", "laser job resumed");
+  }
+
   /** Runs one non-run operation; refuses while anything else runs; Stop aborts it. */
   private async exclusive<T>(kind: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
     this.assertIdle();
@@ -652,6 +758,13 @@ export class LaserCellController {
     return this.laserProbing;
   }
 
+  /** The run state, with the USB / Wi-Fi driver's job progress while it marks. */
+  private runWithProgress(): CellSnapshot["run"] {
+    const run = { ...this.runState, visited: [...this.runState.visited] };
+    const p = run.active && run.step === "mark" && this.laser instanceof LmcLaser ? this.laser.progress() : null;
+    return p ? { ...run, progress: p.fraction, remainingSeconds: p.remainingSeconds, paused: p.paused } : run;
+  }
+
   async snapshot(options: { probe?: boolean } = {}): Promise<CellSnapshot> {
     await this.load();
     let joints: JointState[] | null = null;
@@ -680,7 +793,7 @@ export class LaserCellController {
       laser,
       poses: POSE_NAMES.map(name => ({ name, label: POSE_LABELS[name], taught: !!poses[name] && Object.keys(poses[name]!).length > 0 })),
       missing: missingPoses(poses),
-      run: { ...this.runState, visited: [...this.runState.visited] },
+      run: this.runWithProgress(),
       log: this.logEntries.slice(-60),
       operation: this.operation?.kind ?? null,
     };

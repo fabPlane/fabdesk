@@ -116,9 +116,9 @@ export const laser_cell = defineTool({
   localOnly: true,
   title: "Laser cell (robot arm + Omni X)",
   description:
-    "Drive the laser cell on this machine: an ElRobot arm (ST3215 servos over USB) that loads copper-clad blanks into a ComMarker Omni X and starts it through ComMarker Studio (studio-window: fabPlane presses Studio's own Start button and watches it finish; or studio-footswitch: USB relay on the foot-switch input) or LightBurn (UDP). Actions: status, ports, configure (arm/laser settings, safetyConfirmed), connect, disconnect, relax (motors off for hand-teaching), hold, teach (record the current arm position as a named station), move (go to a taught station, slow), use_job (point the cell at a project's exported LightBurn job and set the Studio mark time from its estimate), usb_devices / usb_probe / preview (usb-lmc route, fabPlane's own experimental driver for BJJCZ boards, by USB cable or over Wi-Fi through the fabPlane laser bridge (lmc.connection network, host, port, token): list USB devices, read the board's version without moving anything, red-light frame around the job; preview needs safetyConfirmed), studio_open (start ComMarker Studio without admin rights), studio_load_job (studio-window route: start ComMarker Studio if needed and build the project's newest export_laser_copper job in it: import, true size and position on the jig, hatch fill and the preset's speed/frequency/pulse/passes, then read back what Studio shows), run (boards N, mode cycle|dry-run|laser-only; returns at once, poll status), stop, footswitch_press (one 250 ms click of the foot-switch relay = one Studio job), footswitch_hold / footswitch_release (pedal down / up). The cell refuses an automatic run until safetyConfirmed: the Omni X lid has to be open or its cover sensor off for the arm to reach the bed, so a UV-blocking guard must enclose the cell. Moving hardware: only act when the user asked.",
+    "Drive the laser cell on this machine: an ElRobot arm (ST3215 servos over USB) that loads copper-clad blanks into a ComMarker Omni X and starts it through ComMarker Studio (studio-window: fabPlane presses Studio's own Start button and watches it finish; or studio-footswitch: USB relay on the foot-switch input) or LightBurn (UDP). Actions: status, ports, configure (arm/laser settings, safetyConfirmed), connect, disconnect, relax (motors off for hand-teaching), hold, teach (record the current arm position as a named station), move (go to a taught station, slow), use_job (point the cell at a project's exported LightBurn job and set the Studio mark time from its estimate), usb_devices / usb_probe / preview (usb-lmc route, fabPlane's own experimental driver for BJJCZ boards, by USB cable or over Wi-Fi through the fabPlane laser bridge (lmc.connection network, host, port, token): list USB devices, read the board's version without moving anything, red-light frame around the job; preview needs safetyConfirmed), studio_open (start ComMarker Studio without admin rights), studio_load_job (studio-window route: start ComMarker Studio if needed and build the project's newest export_laser_copper job in it: import, true size and position on the jig, hatch fill and the preset's speed/frequency/pulse/passes, then read back what Studio shows), run (boards N, mode cycle|dry-run|laser-only; returns at once, poll status), stop, pause / resume (usb-lmc route: hold the running job at the end of the current line, then continue), job_view (usb-lmc route: the current job's size, place on the lens field, settings, time estimate, preview geometry and the material presets), job_update (settings, edge outline passes or null, positionMm or null for the jig position), import_art (fileName + format svg|dxf + the file's text: make a drawing the current job, with widthMm or heightMm (size once turned), rotateDeg, mirror), footswitch_press (one 250 ms click of the foot-switch relay = one Studio job), footswitch_hold / footswitch_release (pedal down / up). The cell refuses an automatic run until safetyConfirmed: the Omni X lid has to be open or its cover sensor off for the arm to reach the bed, so a UV-blocking guard must enclose the cell. Moving hardware: only act when the user asked.",
   inputSchema: {
-    action: z.enum(["status", "ports", "configure", "connect", "disconnect", "relax", "hold", "teach", "move", "use_job", "studio_open", "studio_load_job", "usb_devices", "usb_probe", "preview", "run", "stop", "footswitch_press", "footswitch_hold", "footswitch_release"]),
+    action: z.enum(["status", "ports", "configure", "connect", "disconnect", "relax", "hold", "teach", "move", "use_job", "studio_open", "studio_load_job", "usb_devices", "usb_probe", "preview", "run", "stop", "footswitch_press", "footswitch_hold", "footswitch_release", "pause", "resume", "job_view", "job_update", "import_art"]),
     name: z.enum(TEACH_NAMES).optional().describe("Station for teach / move"),
     arm: z
       .object({
@@ -172,6 +172,24 @@ export const laser_cell = defineTool({
     seconds: z.number().min(1).max(60).optional().describe("preview: how long to show the red-light frame"),
     boards: z.number().int().min(1).max(500).optional().describe("run: number of boards (stops early when the stack is empty)"),
     mode: z.enum(["cycle", "dry-run", "laser-only"]).optional().describe("run: cycle (default), dry-run (arm only, laser never fires) or laser-only"),
+    settings: z.object({
+        powerPct: z.number().min(0).max(100),
+        speedMmPerS: z.number().min(1).max(20000),
+        frequencyKhz: z.number().min(1).max(1000),
+        passes: z.number().int().min(1).max(200),
+        intervalMm: z.number().min(0).max(10),
+        angleDeg: z.number().min(-360).max(360),
+        angleStepDeg: z.number().min(-360).max(360),
+      }).strict().optional().describe("job_update: fill settings of the current job"),
+    edge: z.object({ powerPct: z.number().min(0).max(100), speedMmPerS: z.number().min(1).max(20000), frequencyKhz: z.number().min(1).max(1000), passes: z.number().int().min(0).max(200) }).strict().nullable().optional().describe("job_update: outline passes after the fill, or null for none"),
+    positionMm: z.object({ x: z.number().min(-200).max(200), y: z.number().min(-200).max(200) }).strict().nullable().optional().describe("job_update: job centre on the lens field (mm from its centre), or null for the jig position from settings"),
+    fileName: z.string().min(1).max(260).optional().describe("import_art: the drawing's file name"),
+    format: z.enum(["svg", "dxf"]).optional().describe("import_art: file format"),
+    text: z.string().max(25_000_000).optional().describe("import_art: the file's contents"),
+    widthMm: z.number().min(0.1).max(500).optional().describe("import_art: width once turned (keeps proportions)"),
+    heightMm: z.number().min(0.1).max(500).optional().describe("import_art: height once turned, when no width is given"),
+    rotateDeg: z.number().min(-360).max(360).optional().describe("import_art: turn, degrees counter-clockwise"),
+    mirror: z.boolean().optional().describe("import_art: mirror left-right"),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: false },
   handler: async (args, ctx) => {
@@ -294,6 +312,35 @@ export const laser_cell = defineTool({
         case "run":
           await cell.run({ boards: args.boards ?? 1, mode: args.mode ?? "cycle" });
           break;
+        case "pause":
+          await cell.pause();
+          break;
+        case "resume":
+          await cell.resume();
+          break;
+        case "job_view": {
+          const view = await cell.jobView();
+          return ok(view.job ? `${view.job.name}: ${view.job.boardMm.width.toFixed(1)} × ${view.job.boardMm.height.toFixed(1)} mm, about ${Math.round(view.job.estimatedSeconds)} s.` : view.error ?? "No laser job chosen.", view);
+        }
+        case "job_update": {
+          const job = await cell.updateJob({
+            ...(args.settings ? { settings: args.settings } : {}),
+            ...(args.edge !== undefined ? { edge: args.edge } : {}),
+            ...(args.positionMm !== undefined ? { positionMm: args.positionMm } : {}),
+          });
+          return ok(`Saved the job: about ${Math.round(job.estimatedSeconds)} s.`, { job });
+        }
+        case "import_art": {
+          if (!args.fileName || !args.format || args.text === undefined) throw new ToolError("import_art needs fileName, format and text", "invalid_args");
+          const result = await cell.importArt({
+            fileName: args.fileName, format: args.format, text: args.text,
+            ...(args.widthMm !== undefined ? { widthMm: args.widthMm } : {}),
+            ...(args.heightMm !== undefined ? { heightMm: args.heightMm } : {}),
+            ...(args.rotateDeg !== undefined ? { rotateDeg: args.rotateDeg } : {}),
+            ...(args.mirror !== undefined ? { mirror: args.mirror } : {}),
+          });
+          return ok(`Opened ${args.fileName}: ${result.job.boardMm.width.toFixed(1)} × ${result.job.boardMm.height.toFixed(1)} mm.${result.warnings.length ? " " + result.warnings.join(" ") : ""}`, result);
+        }
         case "stop":
           await cell.stop();
           break;

@@ -75,6 +75,10 @@ export type LaserCellSnapshot = {
     done: number;
     startedAt: string | null;
     error: string | null;
+    /** fabPlane USB driver: the job is paused (Resume continues it). */
+    paused?: boolean;
+    /** Estimated seconds left of the current laser job, when known. */
+    remainingSeconds?: number | null;
   };
   log: Array<{ at: string; level: "info" | "warn" | "error"; message: string }>;
   /** A non-run operation in progress (loading into Studio, preview, arm move); Stop ends it. */
@@ -82,6 +86,25 @@ export type LaserCellSnapshot = {
 };
 
 export const LASER_CELL_KEY = "laser-cell";
+
+/** Laser job (fabPlane USB / Wi-Fi driver): fill and outline settings. Mirrors @fabdesk/laser-cell job-file.ts. */
+export type LaserJobSettings = { powerPct: number; speedMmPerS: number; frequencyKhz: number; passes: number; intervalMm: number; angleDeg: number; angleStepDeg: number };
+export type LaserEdgeSettings = { powerPct: number; speedMmPerS: number; frequencyKhz: number; passes: number };
+export type LaserJobView = {
+  name: string;
+  source: "board" | "file";
+  boardMm: { width: number; height: number };
+  positionMm: { x: number; y: number };
+  positionFromJob: boolean;
+  fieldMm: number;
+  settings: LaserJobSettings;
+  edge: LaserEdgeSettings | null;
+  estimatedSeconds: number;
+  preview: { fills: Array<Array<[number, number]>>; lines: Array<Array<[number, number]>> };
+  warnings: string[];
+};
+export type LaserMaterialPreset = { id: string; label: string; settings: LaserJobSettings; edge?: LaserEdgeSettings };
+export type LaserJobResponse = { job: LaserJobView | null; presets: LaserMaterialPreset[]; error?: string };
 
 /** The cycle's steps in order, for the progress strip. */
 export const LASER_CELL_STEPS: ReadonlyArray<{ step: string; label: string }> = [
@@ -131,14 +154,28 @@ export function useSerialPorts(enabled: boolean) {
   });
 }
 
-/** Run one laser-cell action and refresh the status. */
+/** The current laser job with its preview and the material presets (fabPlane USB / Wi-Fi driver). */
+export function useLaserJob(enabled: boolean) {
+  const client = useCoreClient();
+  return useQuery({
+    queryKey: [LASER_CELL_KEY, "job"],
+    queryFn: () => callCell<LaserJobResponse>(client, "laser_cell", { action: "job_view" }),
+    enabled,
+    retry: false,
+  });
+}
+
+/** Run one laser-cell action and refresh the status (and the job, which an action may have changed). */
 export function useLaserCellAction() {
   const client = useCoreClient(), queryClient = useQueryClient();
   return useCallback(async <T = LaserCellSnapshot>(args: Record<string, unknown>, tool = "laser_cell"): Promise<T> => {
     try {
       return await callCell<T>(client, tool, args);
     } finally {
-      await queryClient.invalidateQueries({ queryKey: [LASER_CELL_KEY, "status"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [LASER_CELL_KEY, "status"] }),
+        queryClient.invalidateQueries({ queryKey: [LASER_CELL_KEY, "job"] }),
+      ]);
     }
   }, [client, queryClient]);
 }

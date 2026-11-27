@@ -43,3 +43,27 @@
 .fd-lc-log li[data-level=error] { color:var(--fd-danger, #dc2626); }
 .fd-lc-log time { color:var(--fd-muted); margin-right:6px; font-variant-numeric:tabular-nums; }
 .fd-lc-more-settings > summary { cursor:pointer; font-size:12px; color:var(--fd-muted); margin-bottom:8px; }
+/* Job editor (fabPlane USB / Wi-Fi driver) */
+.fd-lc-tabs { display:inline-flex; gap:2px; padding:2px; border-radius:8px; background:var(--fd-panel-2); justify-self:start; }
+.fd-lc-tabs button { border:0; background:none; padding:5px 12px; border-radius:6px; font:inherit; font-size:12px; color:var(--fd-muted); cursor:pointer; }
+.fd-lc-tabs button[aria-selected=true] { background:var(--fd-panel); color:var(--fd-fg); font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+.fd-lc-tabs button:disabled { cursor:default; opacity:.6; }
+.fd-lc-job-grid { display:grid; grid-template-columns:minmax(220px, 300px) minmax(0, 1fr); gap:16px; align-items:start; }
+@media (max-width:640px) { .fd-lc-job-grid { grid-template-columns:1fr; } }
+.fd-lc-job-side { display:grid; gap:10px; }
+.fd-lc-row-tight { grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); }
+.fd-lc-field-preview { width:100%; aspect-ratio:1; display:block; border-radius:8px; background:#0f1716; cursor:crosshair; }
+.fd-lc-field-preview[data-disabled] { cursor:default; }
+.fd-lc-fp-field { fill:none; stroke:#3b4a48; stroke-width:.4; }
+.fd-lc-fp-grid { stroke:#24302f; stroke-width:.15; }
+.fd-lc-fp-centre { stroke:#6c7b8f; stroke-width:.25; }
+.fd-lc-fp-frame { fill:none; stroke:#e5484d; stroke-width:.3; stroke-dasharray:1 .8; }
+.fd-lc-fp-fill { fill:rgba(133,213,179,.55); stroke:#85d5b3; stroke-width:.12; }
+.fd-lc-fp-line { fill:none; stroke:#85d5b3; stroke-width:.3; }
+.fd-lc-file { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border:1px solid var(--fd-border); border-radius:8px; background:var(--fd-panel); cursor:pointer; font-size:13px; font-weight:500; }
+.fd-lc-file input { display:none; }
+.fd-lc-file[data-disabled] { opacity:.6; cursor:default; }
+.fd-lc-import { display:grid; gap:10px; }
+.fd-lc-check-inline { align-self:end; padding-bottom:8px; }
+.fd-lc-bar { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--fd-muted); }
+.fd-lc-bar progress { flex:1; height:8px; accent-color:var(--fd-primary); }

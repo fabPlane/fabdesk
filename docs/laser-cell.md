@@ -131,6 +131,25 @@ laptop) that runs the bridge; fabPlane connects to it over the network.
    `~/.fabplane-laser-bridge.json`). Only one computer can drive the laser at a time; a wrong key is refused.
 2. Laser Controller → Settings → *fabPlane USB driver* → Connect via *Wi-Fi* → address, port, access key →
    Save → **Find laser**. `--mock` runs the bridge without a laser to test the link.
+3. **Job mode** (automatic with this bridge): fabPlane sends the whole job once (a few kB of shapes) and the
+   bridge feeds the board over its own USB cable, so a Wi-Fi hiccup never starves the laser mid-job. Wi-Fi
+   only carries status, Pause / Resume and Stop. If fabPlane goes silent for 8 s (Wi-Fi gone, laptop shut),
+   the bridge stops the job and the board. An older bridge is still driven packet by packet.
+
+**Job editor (step 1 Job, on this route)**
+- *Board copper*: make the job from a project as before; it becomes the job to mark.
+- *Drawing (SVG / DXF)*: open a logo, a label, text converted to paths or a mechanical outline. Filled shapes
+  are hatched, lines and stroke-only shapes are traced. Set the width (proportions kept), turn (0/90/180/270)
+  and mirror. Text must be converted to paths first (Inkscape: Path → Object to Path).
+- The **lens-field preview** shows the job where it will be marked (seen from above); click to move it there,
+  or type the centre X/Y. *Jig position* goes back to the board centre from Settings.
+- **Material** presets (copper removal, solder mask, FR4, anodised aluminium, plastic, paper) are starting
+  points: test on scrap first. Power, speed, frequency, passes, fill spacing / angle, cross fill, and outline
+  passes after the fill (edge clean-up) are saved with the job. The power cap in Settings always applies.
+- While marking: a progress bar with the time left, and **Pause** / **Resume** (the board stops after the line
+  it is on). Stop works at any time, paused or not.
+- Outlines and lines are marked in a short travel order (nearest start point), so outline passes on boards
+  with hundreds of pads hop between neighbours instead of criss-crossing the board.
 
 **First test on the machine, in this order**: Find laser → Make laser job → Use this job → tick the UV guard →
 **Preview (red light)** (5 s frame; if the UV beam fires instead, the pins are swapped: E-stop, then change

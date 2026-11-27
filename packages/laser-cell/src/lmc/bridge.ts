@@ -13,21 +13,56 @@
  *   client → bridge  R  read the board's 8-byte reply      → D (8 bytes) or E
  *   client → bridge  C  write a 12-byte command and read   → D (8 bytes) or E   (one round trip)
  *   client → bridge  P  ping                               → O
+ * Job mode (hello says `jobs: true`): the bridge runs the whole job itself, so the board is fed over its own
+ * USB cable and a Wi-Fi hiccup never starves it; Wi-Fi carries only the job (a few kB) and status:
+ *   client → bridge  J  JSON { op: "mark" | "frame", job, options, seconds?, timeoutMs? } → O (started) or E
+ *   client → bridge  Q  status                             → D JSON { phase, error, progress, paused }
+ *   client → bridge  S  stop the job and halt the board    → O
+ *   client → bridge  U / V  pause / resume the job         → O or E
  * Safety:
  * - an access key is required (anyone who can reach the bridge could otherwise fire the laser);
- * - one computer drives the laser at a time; a driving computer that has been silent for TAKEOVER_MS can be
- *   replaced by another one with the key (a laptop that dropped off the Wi-Fi does not lock everyone out);
- * - when the driving computer disconnects or is replaced, its queued requests are dropped and the board is
- *   stopped with its outputs off.
+ * - one computer drives the laser at a time. fabPlane pings every PING_MS; a driving computer silent for
+ *   SILENT_MS (off the Wi-Fi, crashed) is dropped, and only then can another computer connect;
+ * - when the driving computer disconnects or is dropped, its queued requests are skipped, a job running on
+ *   the bridge is stopped and the board is halted with its outputs off.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Socket } from "bun";
+import { z } from "zod/v4";
+import { LmcJobFileSchema } from "./job-file";
+import { LmcLaser, type LmcOptions } from "./laser";
 import { Cmd, COMMAND_BYTES, LIST_PACKET_BYTES, command } from "./protocol";
 import { LmcUsbError, type LmcTransport } from "./usb";
 
 export const BRIDGE_DEFAULT_PORT = 5021;
 export const BRIDGE_VERSION = 2;
-const MAX_FRAME = LIST_PACKET_BYTES + 1024;
+/** Large enough for a job in job mode (polygons as JSON); list packets are 3 kB. */
+const MAX_FRAME = 64 * 1024 * 1024;
+
+/** What a client may set for a job the bridge runs (everything else is the bridge's own). */
+const JobOptionsSchema = z.object({
+  field: z.object({
+    sizeMm: z.number().min(10).max(600),
+    centerMm: z.tuple([z.number().min(-300).max(300), z.number().min(-300).max(300)]),
+    flipX: z.boolean().optional(),
+    flipY: z.boolean().optional(),
+    swapXY: z.boolean().optional(),
+  }),
+  source: z.enum(["co2", "fiber"]),
+  pins: z.object({ laser: z.number().int().min(0).max(15), light: z.number().int().min(0).max(15) }),
+  maxPowerPct: z.number().min(0).max(100),
+  initBoard: z.boolean(),
+  frameSeconds: z.number().min(0).max(600),
+});
+const JobRequestSchema = z.object({
+  op: z.enum(["mark", "frame"]),
+  job: LmcJobFileSchema,
+  options: JobOptionsSchema,
+  seconds: z.number().min(0).max(600).optional(),
+  timeoutMs: z.number().min(1000).max(48 * 3600_000).optional(),
+});
+export type BridgeJobOptions = z.infer<typeof JobOptionsSchema>;
+export type BridgeJobStatus = { phase: "idle" | "running" | "done" | "error"; error: string | null; progress: { fraction: number; remainingSeconds: number; paused: boolean } | null; paused: boolean };
 /**
  * fabPlane pings the bridge every PING_MS while connected. A driving computer silent for longer than
  * SILENT_MS (laptop off the Wi-Fi, crashed) has its link closed and the board stopped; only then can another
@@ -52,6 +87,8 @@ export function frame(type: string, payload: Uint8Array | string = new Uint8Arra
 /** Splits a byte stream into frames. */
 export class FrameReader {
   private buf = new Uint8Array(0);
+  /** Largest frame accepted; the bridge keeps it small until a client has given the access key. */
+  constructor(public maxFrame = MAX_FRAME) {}
   push(chunk: Uint8Array): Array<{ type: string; payload: Uint8Array }> {
     const merged = new Uint8Array(this.buf.length + chunk.length);
     merged.set(this.buf);
@@ -60,7 +97,7 @@ export class FrameReader {
     const out: Array<{ type: string; payload: Uint8Array }> = [];
     while (this.buf.length >= 5) {
       const len = new DataView(this.buf.buffer, this.buf.byteOffset).getUint32(1, true);
-      if (len > MAX_FRAME) throw new LmcUsbError(`bridge frame of ${len} bytes is too large`);
+      if (len > this.maxFrame) throw new LmcUsbError(`bridge frame of ${len} bytes is too large`);
       if (this.buf.length < 5 + len) break;
       out.push({ type: String.fromCharCode(this.buf[0]!), payload: this.buf.slice(5, 5 + len) });
       this.buf = this.buf.slice(5 + len);
@@ -118,12 +155,50 @@ export async function startLmcBridge(options: BridgeOptions) {
     for (const c of [command(Cmd.StopExecute), command(Cmd.ResetList), command(Cmd.WritePort, 0)]) { await t.write(c); await t.read(); }
   }).then(() => log(`laser stopped: ${why}`), e => log(`could not stop the laser after ${why}: ${e instanceof Error ? e.message : String(e)}`));
 
+  // Job mode: one driver on the bridge, talking to the board through the shared USB queue.
+  const usbProxy: LmcTransport = {
+    write: p => onUsb(t => t.write(p)),
+    read: () => onUsb(t => t.read()),
+    transact: p => onUsb(async t => { await t.write(p); return t.read(); }),
+    async close() { /* the bridge owns the USB link */ },
+  };
+  let local: { laser: LmcLaser; key: string } | null = null;
+  let job: { phase: BridgeJobStatus["phase"]; error: string | null } = { phase: "idle", error: null };
+  const jobStatus = (): BridgeJobStatus => ({ ...job, progress: local?.laser.progress() ?? null, paused: local?.laser.isPaused ?? false });
+  const startJob = (raw: unknown) => {
+    if (job.phase === "running") throw new LmcUsbError("a job is already running on the bridge; stop it first");
+    const parsed = JobRequestSchema.safeParse(raw);
+    if (!parsed.success) throw new LmcUsbError(`bad job request (${parsed.error.issues[0]?.path.join(".") ?? ""}: ${parsed.error.issues[0]?.message ?? "invalid"})`);
+    const { op, job: lmcJob, options: o, seconds, timeoutMs } = parsed.data;
+    const key = JSON.stringify(o);
+    if (!local || local.key !== key) {
+      const opts: LmcOptions = { field: { sizeMm: o.field.sizeMm, centerMm: o.field.centerMm, ...(o.field.flipX !== undefined ? { flipX: o.field.flipX } : {}), ...(o.field.flipY !== undefined ? { flipY: o.field.flipY } : {}), ...(o.field.swapXY !== undefined ? { swapXY: o.field.swapXY } : {}) }, source: o.source, pins: o.pins, maxPowerPct: o.maxPowerPct, initBoard: o.initBoard, frameSeconds: o.frameSeconds, link: "USB (on the bridge)" };
+      local = { laser: new LmcLaser(async () => usbProxy, opts), key };
+    }
+    const laser = local.laser;
+    laser.useJob(lmcJob);
+    job = { phase: "running", error: null };
+    const current = job;
+    const work = op === "mark"
+      ? laser.start().then(() => laser.waitDone({ timeoutMs: timeoutMs ?? 24 * 3600_000 }))
+      : laser.frame(seconds ?? o.frameSeconds);
+    work.then(
+      () => { if (job === current) job = { phase: "done", error: null }; log(`job finished (${op})`); },
+      e => { if (job === current) job = { phase: "error", error: e instanceof Error ? e.message : String(e) }; log(`job ended: ${e instanceof Error ? e.message : String(e)}`); },
+    );
+    log(`job started (${op}): ${lmcJob.boardMm.width.toFixed(1)} × ${lmcJob.boardMm.height.toFixed(1)} mm`);
+  };
+  const stopJob = async () => {
+    if (job.phase === "running") job = { phase: "error", error: "stopped" };
+    await local?.laser.stop();
+  };
+
   const release = (s: Socket<Session>, why: string) => {
     s.data.closed = true;
     if (owner !== s) return;
     owner = null;
     log(`${why}: ${s.remoteAddress}`);
-    void stopBoard(why);
+    void stopJob().finally(() => stopBoard(why));
   };
 
   const server = Bun.listen<Session>({
@@ -131,9 +206,9 @@ export async function startLmcBridge(options: BridgeOptions) {
     port: options.port ?? BRIDGE_DEFAULT_PORT,
     socket: {
       open(s) {
-        s.data = { reader: new FrameReader(), authed: false, closed: false, lastSeen: Date.now() };
+        s.data = { reader: new FrameReader(4096), authed: false, closed: false, lastSeen: Date.now() };
         (s as unknown as { setKeepAlive?: (on: boolean, ms: number) => void }).setKeepAlive?.(true, 5000);
-        s.write(frame("H", JSON.stringify({ bridge: "fabplane-lmc", version: BRIDGE_VERSION })));
+        s.write(frame("H", JSON.stringify({ bridge: "fabplane-lmc", version: BRIDGE_VERSION, jobs: true })));
       },
       data(s, chunk) {
         let frames;
@@ -146,12 +221,26 @@ export async function startLmcBridge(options: BridgeOptions) {
             if (f.type !== "A" || !sameToken(token, options.token)) { log(`refused ${s.remoteAddress}: wrong access key`); s.write(frame("E", "wrong access key")); s.end(); return; }
             if (owner && owner !== s) { s.write(frame("E", "another computer is already driving this laser")); s.end(); return; }
             s.data.authed = true;
+            s.data.reader.maxFrame = MAX_FRAME; // jobs may now be sent
             owner = s;
             log(`connected: ${s.remoteAddress}`);
             s.write(frame("K", JSON.stringify({ device: "9588:9899" })));
             continue;
           }
           if (f.type === "P") { s.write(frame("O")); continue; }
+          if ("JQSUV".includes(f.type)) {
+            if (owner !== s) { s.write(frame("E", "this computer is no longer driving the laser")); continue; }
+            const reply = async (): Promise<Uint8Array> => {
+              if (f.type === "J") { startJob(JSON.parse(new TextDecoder().decode(f.payload))); return frame("O"); }
+              if (f.type === "Q") return frame("D", JSON.stringify(jobStatus()));
+              if (f.type === "S") { await stopJob(); return frame("O"); }
+              if (!local || job.phase !== "running") throw new LmcUsbError("no job is running on the bridge");
+              if (f.type === "U") await local.laser.pause(); else await local.laser.resume();
+              return frame("O");
+            };
+            reply().then(r => { if (!s.data.closed) s.write(r); }, e => { if (!s.data.closed) s.write(frame("E", e instanceof Error ? e.message : String(e))); });
+            continue;
+          }
           // Queued on the shared USB queue; skipped once this computer is gone or replaced.
           void onUsb(async t => {
             if (s.data.closed || owner !== s) return null;
@@ -192,6 +281,7 @@ export async function startLmcBridge(options: BridgeOptions) {
     async stop() {
       clearInterval(watchdog);
       server.stop(true);
+      await stopJob().catch(() => undefined);
       await usbQueue;
       await usb?.close().catch(() => undefined);
       usb = null;
@@ -252,6 +342,8 @@ export async function openBridgeLmc(host: string, port: number, token: string, t
   try { version = Number((JSON.parse(text(hello.payload)) as { version?: unknown }).version); } catch { /* not a bridge */ }
   if (hello.type !== "H" || !text(hello.payload).includes("fabplane-lmc")) { socket.end(); throw new LmcUsbError(`${host}:${port} is not a fabPlane laser bridge`); }
   if (version < BRIDGE_VERSION) { socket.end(); throw new LmcUsbError(`the laser bridge at ${host} is too old (version ${version}); update it`); }
+  let jobs = false;
+  try { jobs = (JSON.parse(text(hello.payload)) as { jobs?: unknown }).jobs === true; } catch { /* raw mode */ }
   socket.write(frame("A", JSON.stringify({ token })));
   const auth = await answer(timeoutMs);
   if (auth.type !== "K") { socket.end(); throw new LmcUsbError(`the laser bridge refused the connection: ${text(auth.payload) || "unknown reason"}`); }
@@ -281,7 +373,13 @@ export async function openBridgeLmc(host: string, port: number, token: string, t
   const touch = <T>(p: Promise<T>) => { lastRequest = Date.now(); return p; };
   return {
     remote: true,
+    jobs,
     get closed() { return closed; },
+    async rpc(type, body) {
+      const payload = body === undefined ? undefined : new TextEncoder().encode(JSON.stringify(body));
+      const answer = await touch(request(type, payload, type === "Q" ? "D" : "O"));
+      return type === "Q" ? JSON.parse(text(answer)) : null;
+    },
     async write(packet) { await touch(request("W", packet, "O")); },
     read: () => touch(request("R", undefined, "D")),
     transact: packet => touch(request("C", packet, "D")),
