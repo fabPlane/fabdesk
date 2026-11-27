@@ -15,6 +15,7 @@ import { newChatDraftKey, useUiStore } from "../stores/ui";
 import { stencilThicknessMm } from "../stores/stencil-thickness";
 import { cn } from "../util";
 import { buildFileTree, fileAppearance, formatFileSize, type ExplorerNode } from "./file-explorer";
+import { LibraryPanel } from "./LibraryPanel";
 import { FileGlyph } from "./FileGlyph";
 import { FileExportControls } from "./FileExportControls";
 import { ManufacturingHandoff } from "./ManufacturingHandoff";
@@ -49,6 +50,8 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
   const [modelPreviewPath, setModelPreviewPath] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [fileListOpen, setFileListOpen] = useState(true);
+  const [filesView, setFilesView] = useState<"library" | "all">("library");
+  const [pdfPage, setPdfPage] = useState<number | undefined>(undefined);
   useEffect(() => { if (selected) useUiStore.getState().rememberProjectFile(projectId, selected); }, [projectId, selected]);
   const [pdfToolbarHost, setPdfToolbarHost] = useState<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -227,7 +230,22 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
     <div className="fd-files flex h-full min-h-0 flex-col">
       <div className="fd-files-body flex min-h-0 flex-1">
         <nav ref={fileTree} hidden={!fileListOpen} aria-label="Project file explorer" className="fd-files-list flex w-72 shrink-0 flex-col border-r border-border bg-panel/40">
-          <div className="fd-files-list-heading"><h2>Project files</h2><output className="fd-file-count" aria-live="polite" title={query.trim() ? "Files matching your search out of all project files" : "Total saved files in this project"}>{query.trim() ? `${matchingFileCount} of ${files.length} files` : `${files.length} ${files.length === 1 ? "file" : "files"}`}</output><CanvasToolButton icon="library" label="Open saved outputs" onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }} /></div>
+          <div className="fd-files-list-heading"><h2>{filesView === "library" ? "Library" : "Project files"}</h2><output className="fd-file-count" aria-live="polite" title={filesView === "library" ? "Supporting documents in files/" : query.trim() ? "Files matching your search out of all project files" : "Total saved files in this project"}>{filesView === "library" ? "files/" : query.trim() ? `${matchingFileCount} of ${files.length} files` : `${files.length} ${files.length === 1 ? "file" : "files"}`}</output><CanvasToolButton icon="library" label="Open saved outputs" onClick={() => { const ui = useUiStore.getState(); if (ui.activeProjectId !== projectId) return; ui.setWorkspaceArea("outputs"); ui.setWorkspaceTab("renders"); }} /></div>
+          <div className="fd-files-view-toggle" role="tablist" aria-label="Files view">
+            <button type="button" role="tab" aria-selected={filesView === "library"} onClick={() => setFilesView("library")}>Library</button>
+            <button type="button" role="tab" aria-selected={filesView === "all"} onClick={() => setFilesView("all")}>All files</button>
+          </div>
+          {filesView === "library" ? (
+            <LibraryPanel
+              projectId={projectId}
+              selectedPath={selected}
+              onSelect={(path, page) => {
+                setSelected(path);
+                setPdfPage(page);
+              }}
+            />
+          ) : (
+            <>
           <div className="flex shrink-0 items-center gap-1 border-b border-border p-2">
             <div className="relative min-w-0 flex-1">
               <Icon name="search" width={14} height={14} className="pointer-events-none absolute left-2 top-2 text-muted" />
@@ -239,10 +257,14 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
           <div className="min-h-0 flex-1 overflow-auto py-1">
             {tree.length ? renderNodes(tree) : <p className="px-3 py-6 text-xs text-muted">{query ? "No matching files." : "This project has no files yet."}</p>}
           </div>
+            </>
+          )}
         </nav>
         <section aria-label="File preview" className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {!file && <EmptyState title="Select a file" icon={<Icon name="folderOpen" width={32} height={32} />}>
-            Choose a saved file to preview it here. Images, models and manufacturing files are collected in Outputs.
+          {!file && <EmptyState title={filesView === "library" ? "Project library" : "Select a file"} icon={<Icon name="folderOpen" width={32} height={32} />}>
+            {filesView === "library"
+              ? "Drop a datasheet or note into the library, or choose a file to preview it here. Documents stay in files/ with the board."
+              : "Choose a saved file to preview it here. Images, models and manufacturing files are collected in Outputs."}
           </EmptyState>}
           {file && appearance && <>
             <div className="fd-file-preview-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-panel/40 px-3 py-2">
@@ -283,7 +305,7 @@ function ProjectFiles({ projectId, exportFocus }: { projectId: string; exportFoc
                   <ModelCanvas key={`${projectId}:${file.path}:${file.mtime}:${file.size}`} projectId={projectId} path={file.path} />
                 </Suspense>
               </>}
-              {appearance.preview === "pdf" && <Suspense fallback={<div className="fd-pdf-loading" role="status"><Spinner />Loading PDF reader…</div>}><ProjectPdf key={file.path} projectId={projectId} path={file.path} toolbarHost={pdfToolbarHost} /></Suspense>}
+              {appearance.preview === "pdf" && <Suspense fallback={<div className="fd-pdf-loading" role="status"><Spinner />Loading PDF reader…</div>}><ProjectPdf key={`${file.path}:${pdfPage ?? ""}`} projectId={projectId} path={file.path} toolbarHost={pdfToolbarHost} {...(pdfPage ? { page: pdfPage } : {})} /></Suspense>}
               {appearance.preview === "image" && <ProjectImage retryable projectId={projectId} path={file.path} className="fd-file-image max-h-none max-w-full" />}
               {appearance.preview === "video" && <ProjectVideo projectId={projectId} path={file.path} className="fd-file-video max-w-full" />}
               {appearance.preview === "none" && !inlineModel && <EmptyState title={`${appearance.label} file`} icon={<FileGlyph kind={appearance.kind} className="!h-10 !w-10" />} {...(canPreviewModel ? { action: <Button onClick={() => setModelPreviewPath(file.path)}><Icon name="cube" width={16} height={16} />Preview model</Button> } : {})}>

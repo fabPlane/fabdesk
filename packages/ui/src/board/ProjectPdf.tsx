@@ -9,22 +9,22 @@ import { Icon } from "../components/Icon";
 // Shipped with the app, never a CDN or an unauthenticated project URL.
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-export default function ProjectPdf({ projectId, path, toolbarHost }: { projectId: string; path: string; toolbarHost: HTMLElement | null }) {
+export default function ProjectPdf({ projectId, path, toolbarHost, page: requestedPage }: { projectId: string; path: string; toolbarHost: HTMLElement | null; page?: number }) {
   const file = useProjectBlobUrl(projectId, path);
   const [attempt, setAttempt] = useState(0);
   const retry = () => { setAttempt(value => value + 1); void file.refetch(); };
   if (file.isError || file.data === null) return <PdfUnavailable message={file.isError ? "Could not load this PDF." : "This PDF is no longer available."} busy={file.isFetching} onRetry={retry} />;
   if (!file.url || !file.data) return <div className="fd-pdf-loading" role="status"><Spinner />Loading PDF…</div>;
-  return <PdfDocument key={`${file.scope}:${file.url}:${attempt}`} blob={file.data} url={file.url} path={path} onRetry={retry} toolbarHost={toolbarHost} />;
+  return <PdfDocument key={`${file.scope}:${file.url}:${attempt}:${requestedPage ?? ""}`} blob={file.data} url={file.url} path={path} onRetry={retry} toolbarHost={toolbarHost} {...(requestedPage !== undefined ? { requestedPage } : {})} />;
 }
 
 function PdfUnavailable({ message, busy = false, onRetry, url, path }: { message: string; busy?: boolean; onRetry: () => void; url?: string; path?: string }) {
   return <div className="fd-pdf-unavailable" role="alert"><Icon name="warning" width={30} height={30} /><h3>PDF preview unavailable</h3><p>{message}</p><p>The saved file is unchanged. You can download it and open it in another PDF reader.</p><div><Button size="sm" disabled={busy} onClick={onRetry}>Retry preview</Button>{url && <a className="fd-pdf-download" href={url} download={path?.split("/").pop()}>Download PDF</a>}</div></div>;
 }
 
-function PdfDocument({ blob, url, path, onRetry, toolbarHost }: { blob: Blob; url: string; path: string; onRetry: () => void; toolbarHost: HTMLElement | null }) {
+function PdfDocument({ blob, url, path, onRetry, toolbarHost, requestedPage }: { blob: Blob; url: string; path: string; onRetry: () => void; toolbarHost: HTMLElement | null; requestedPage?: number }) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null), [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(1), [pageInput, setPageInput] = useState("1");
+  const [page, setPage] = useState(requestedPage && requestedPage > 0 ? requestedPage : 1), [pageInput, setPageInput] = useState(String(requestedPage && requestedPage > 0 ? requestedPage : 1));
   const [zoom, setZoom] = useState<number | null>(null), [renderedScale, setRenderedScale] = useState(1);
   const [fitMode, setFitMode] = useState<"page" | "width">("page");
   const [bounds, setBounds] = useState({ width: 0, height: 0 });
@@ -41,7 +41,13 @@ function PdfDocument({ blob, url, path, onRetry, toolbarHost }: { blob: Blob; ur
         // Render only. Do not execute document scripts, open links or fetch document resources.
         task = getDocument({ data: bytes, useWorkerFetch: false, useWasm: false, enableXfa: false });
         const document = await task.promise;
-        if (!disposed) setPdf(document);
+        if (!disposed) {
+          setPdf(document);
+          if (requestedPage && requestedPage >= 1 && requestedPage <= document.numPages) {
+            setPage(requestedPage);
+            setPageInput(String(requestedPage));
+          }
+        }
       } catch (failure) {
         if (!disposed) setError(failure instanceof Error && failure.name === "PasswordException" ? "This PDF is password protected. Download it to open it with your password." : "This file could not be read as a PDF. It may be damaged or use an unsupported format.");
       }

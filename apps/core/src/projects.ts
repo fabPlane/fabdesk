@@ -246,6 +246,7 @@ export class ProjectStore implements ProjectResolver {
     });
     for (const sub of [
       PROJECT_FILES.sketches,
+      PROJECT_FILES.library,
       PROJECT_FILES.renders,
       PROJECT_FILES.reports,
       PROJECT_FILES.exports,
@@ -382,6 +383,7 @@ export class ProjectStore implements ProjectResolver {
     });
     for (const sub of [
       PROJECT_FILES.sketches,
+      PROJECT_FILES.library,
       PROJECT_FILES.renders,
       PROJECT_FILES.reports,
       PROJECT_FILES.exports,

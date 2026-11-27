@@ -35,6 +35,9 @@ the fabrication method. Layer changes are physically limited to the factory vias
 - KiCad-frame coordinates are x = blank x + 45, y = 27.5 − blank y.`,
 };
 
+const LIBRARY_SECTION = `## Project files library
+Datasheets, app notes, research, images and source files live in \`files/\` (git-tracked) so they stay with the board. Metadata is \`files/library.json\`. The \`project\` toolset exposes \`project_files_list\`, \`project_files_search\`, \`project_files_cite\` and \`project_files_link\`. Search hits include PDF page numbers, title, and path.`;
+
 const OFFBOARD_SECTION = `## Off-board parts
 Motors, displays, standoffs, screws and similar hardware live in \`project.parts.json\` and appear
 on the project BOM next to electrical parts. The \`project\` toolset exposes \`parts_search\`,
@@ -136,6 +139,7 @@ ${!ctx.interfaceMode && ctx.boardWorkflow ? "| `circuit.netlist.json` | Source f
 | \`reports/\` | Machine-readable reports. |
 | \`exports/\` | Manufacturing and interchange outputs (gerbers, BOM, 3D-printed stencil STL, laser-cut stencil SVG/DXF/.lbrn2). |
 | \`project.parts.json\` | Off-board and mechanical parts (motors, displays, standoffs, screws). |
+| \`files/\` | Supporting documents: datasheets, app notes, research, images and source. Search with \`project_files_search\`; cite with \`project_files_cite\`; link a datasheet to a part with \`project_files_link\`. |
 
 ${
   ctx.interfaceMode
@@ -146,7 +150,7 @@ ${
               .map(([name, path]) => `\`${name}\` = \`${path}\``)
               .join("; ")}.\n`
           : ""
-      }\n${ctx.boardWorkflow ? `${BOARD_START_MAP_MD.replaceAll("{{MCP_SERVER_NAME}}", () => mcp)}\n${OTHER_TOOLSETS_SECTION}` : `${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}`}\n\n`
+      }\n${LIBRARY_SECTION}\n\n${ctx.boardWorkflow ? `${BOARD_START_MAP_MD.replaceAll("{{MCP_SERVER_NAME}}", () => mcp)}\n${OTHER_TOOLSETS_SECTION}` : `${OFFBOARD_SECTION}\n\n${SHOPPING_SECTION}`}\n\n`
 }${USER_START}
 ${userSection.trim() === "" ? DEFAULT_USER_SECTION : userSection.trim()}
 ${USER_END}

@@ -246,6 +246,7 @@ export const project_status = defineTool({
         .map(([k, v]) => `${k}=${v.exists ? "yes" : "no"}`)
         .join(", ")}`,
       `Sketches: ${sketches.length ? sketches.join(", ") : "none"}`,
+      `Library: supporting documents in files/ (project_files_list, project_files_search, project_files_cite)`,
       `Last source/compiler build: ${lastSourceBuild ? `${lastSourceBuild.ok ? "ok" : "FAILED"} (${lastSourceBuild.errors} errors, ${lastSourceBuild.warnings} warnings, captured ${lastSourceBuild.at})` : "never"}`,
       ...(canonicalReports ? [`Canonical reports: DRC ${canonicalReports.drc.status}; ERC ${canonicalReports.erc.status}. Run render_publish after the last edit for a current handoff.`] : []),
       `${assembly ? "Root last release" : "Last release"}: ${formatLastRelease(lastRelease)}`,

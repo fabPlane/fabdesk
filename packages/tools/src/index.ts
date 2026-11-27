@@ -3,6 +3,7 @@ export * from "./cad-kernel";
 export * from "./services";
 export * from "./fs";
 export * from "./comments";
+export * from "./library";
 export * from "./board-history";
 export * from "./part-links";
 export * from "./tools/index";

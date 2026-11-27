@@ -4,11 +4,12 @@
  */
 import { readCredentials } from "@fabdesk/auth-client";
 import type { Settings } from "@fabdesk/protocol";
-import { CloudService, type CloudApiFactory } from "@fabdesk/tools";
+import { CloudService, withProjectShareHttp, type CloudApi, type CloudApiFactory } from "@fabdesk/tools";
 import { FabplaneClient } from "fabplane-cli";
 
 /** The fabplane API client (`vendor/fabplane-cli`). Tests pass `api` to swap in a fake. */
-export const cloudApiFactory: CloudApiFactory = (o) => new FabplaneClient(o);
+export const cloudApiFactory: CloudApiFactory = (o) =>
+  withProjectShareHttp(new FabplaneClient(o) as CloudApi, o);
 
 export function createCloudService(o: {
   apiOrigin: string;

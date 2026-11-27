@@ -37,6 +37,8 @@ describe("renderAgentsMd", () => {
     expect(md).toContain("`$KICAD_CLI`");
     expect(md).not.toContain("### circuit_build");
     expect(md).toContain("`project.parts.json`");
+    expect(md).toContain("`files/`");
+    expect(md).toContain("project_files_search");
     expect(md).toContain("## Off-board parts");
     expect(md).toContain("parts_search");
     expect(md).toContain("## Shopping list");

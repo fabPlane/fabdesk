@@ -10,6 +10,7 @@ import {
   type SharedBoard,
 } from "@fabdesk/protocol";
 import { inspectOwnedProjectFile, inspectProjectBoardSources } from "./assembly";
+import { sharedLibraryItems } from "./library";
 
 const REPORT_LIMIT = 10 * 1024 * 1024;
 const SVG_LIMIT = 12 * 1024 * 1024;
@@ -192,11 +193,13 @@ export async function prepareProjectShare(
       );
     }
   }
+  const library = await sharedLibraryItems(project);
   return ProjectShareSnapshot.parse({
     schema: "fabplane.project-share.v1",
     name: project.name,
     capturedAt: new Date().toISOString(),
     boards,
+    ...(library.length > 0 ? { library } : {}),
   });
 }
 
