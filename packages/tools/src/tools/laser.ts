@@ -161,7 +161,7 @@ export const laser_cell = defineTool({
         marginSeconds: z.number().min(0).optional(),
         jobPath: z.string().nullable().optional(),
         frameSeconds: z.number().min(0).max(60).optional(),
-        markTimeoutMinutes: z.number().min(1).max(600).optional(),
+        markTimeoutMinutes: z.number().min(1).max(24 * 60).optional(),
         lightburnHost: z.string().optional(),
       })
       .strict()

@@ -3,13 +3,14 @@
  * its fix. Await errors with `failure()`: bun hangs on expect(p).rejects once p has already rejected.
  */
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Arm, DEFAULT_ARM_CONFIG } from "./arm";
 import { runCycle, type CellPoses } from "./cell";
 import { LaserCellController, SAVED_SECRET } from "./controller";
-import { SimulatedLaser, StudioFootswitchLaser, type RelayLink } from "./lasers";
+import { LaserDriverError, SimulatedLaser, StudioFootswitchLaser, type RelayLink } from "./lasers";
 import { openBridgeLmc, startLmcBridge } from "./lmc/bridge";
 import { buildMarkJob, validateSettings, type MarkSettings } from "./lmc/job";
 import { LmcLaser, type LmcJobFile } from "./lmc/laser";
@@ -17,7 +18,7 @@ import { Cmd, List, decodeList } from "./lmc/protocol";
 import { MockLmcTransport } from "./lmc/usb";
 import { St3215Bus } from "./st3215";
 import { fakeServos } from "./st3215.test";
-import { StudioWindowLaser, runPowerShell, type StudioUi, type StudioUiState } from "./studio-window";
+import { StudioWindowLaser, runPowerShell, studioBusy, studioIdle, windowsStudioUi, type PowerShellRunner, type StudioUi, type StudioUiState } from "./studio-window";
 
 const failure = (p: Promise<unknown>) => p.then(() => "no error", (e: unknown) => String(e));
 const cleanups: Array<() => Promise<void>> = [];
@@ -110,15 +111,15 @@ describe("USB driver", () => {
     while (!(await c.snapshot({ probe: false })).operation) await Bun.sleep(2);
     expect(await failure(c.run({ boards: 1, mode: "laser-only" }))).toMatch(/busy/);
     await c.stop();
-    expect(await preview).toMatch(/stopped/);
+    expect(await preview).toMatch(/stopped/i);
     expect((await c.snapshot({ probe: false })).operation).toBeNull();
     expect(mock.singles.map(x => x.op)).toContain(Cmd.StopExecute);
   });
 });
 
 describe("Wi-Fi bridge", () => {
-  async function bridge(mock: MockLmcTransport, takeoverMs?: number) {
-    const b = await startLmcBridge({ port: 0, hostname: "127.0.0.1", token: "k", open: async () => mock, ...(takeoverMs !== undefined ? { takeoverMs } : {}) });
+  async function bridge(mock: MockLmcTransport, silentMs?: number) {
+    const b = await startLmcBridge({ port: 0, hostname: "127.0.0.1", token: "k", open: async () => mock, ...(silentMs !== undefined ? { silentMs } : {}) });
     cleanups.push(b.stop);
     return b.port;
   }
@@ -148,17 +149,26 @@ describe("Wi-Fi bridge", () => {
     expect(tail).toEqual([`0x${Cmd.StopExecute.toString(16)}`, `0x${Cmd.ResetList.toString(16)}`, `0x${Cmd.WritePort.toString(16)}`]);
   });
 
-  test("a silent driving computer can be replaced; the board is stopped first", async () => {
+  test("a computer that went silent (no pings) is dropped and the board stopped; then another can drive", async () => {
     const mock = new OrderedMock(0);
     const port = await bridge(mock, 100);
-    const first = await openBridgeLmc("127.0.0.1", port, "k");
+    const first = await openBridgeLmc("127.0.0.1", port, "k", 3000, 60_000); // never pings within the test
     cleanups.push(() => first.close());
     expect(await failure(openBridgeLmc("127.0.0.1", port, "k"))).toMatch(/already driving/);
-    await Bun.sleep(150);
+    for (let i = 0; i < 100 && !mock.events.includes(`0x${Cmd.StopExecute.toString(16)}`); i++) await Bun.sleep(10);
+    expect(mock.events).toContain(`0x${Cmd.StopExecute.toString(16)}`);
     const second = await openBridgeLmc("127.0.0.1", port, "k");
     cleanups.push(() => second.close());
-    for (let i = 0; i < 100 && !mock.events.includes(`0x${Cmd.StopExecute.toString(16)}`); i++) await Bun.sleep(5);
-    expect(mock.events).toContain(`0x${Cmd.StopExecute.toString(16)}`);
+  });
+
+  test("a computer that is connected but busy elsewhere (arm moving) keeps the laser: its pings hold the link", async () => {
+    const mock = new OrderedMock(0);
+    const port = await bridge(mock, 150);
+    const owner = await openBridgeLmc("127.0.0.1", port, "k", 3000, 30);
+    cleanups.push(() => owner.close());
+    await Bun.sleep(600); // four times the silence limit with no requests, only pings
+    expect(await failure(openBridgeLmc("127.0.0.1", port, "k"))).toMatch(/already driving/);
+    expect(mock.events).not.toContain(`0x${Cmd.StopExecute.toString(16)}`);
   });
 });
 
@@ -302,5 +312,214 @@ describe("arm moves", () => {
     expect(Date.now() - started).toBeLessThan(2000); // not the 8 s move timeout
     expect((await c.snapshot({ probe: false })).operation).toBeNull();
     await c.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Third review round (2026-11-27)
+
+const fakeRelay = (): RelayLink & { pressed: boolean; calls: string[] } => {
+  const r = { pressed: false, calls: [] as string[], async set(on: boolean) { r.pressed = on; r.calls.push(`set ${on}`); }, async pulse() { r.calls.push("pulse"); }, async close() {} };
+  return r;
+};
+
+describe("round 3: foot-switch route", () => {
+  test("a press or a hold from fabPlane counts as a running job", async () => {
+    const pressed = new StudioFootswitchLaser({ relay: fakeRelay(), markSeconds: 60, marginSeconds: 0 });
+    await pressed.press();
+    expect((await pressed.status()).state).toBe("busy");
+    const held = new StudioFootswitchLaser({ relay: fakeRelay(), markSeconds: 60, marginSeconds: 0 });
+    await held.setHeld(true);
+    await held.setHeld(false);
+    expect((await held.status()).state).toBe("busy");
+  });
+
+  test("the busy time survives a settings change and a restart of fabPlane", async () => {
+    const home = await mkdtemp(join(tmpdir(), "regress-busy-"));
+    const relay = fakeRelay();
+    const make = () => new LaserCellController({ home, openRelay: async () => relay });
+    const c = make();
+    await c.configure({ laser: { driver: "studio-footswitch", relayPort: "COM9", markSeconds: 60, markTimeoutMinutes: 10 } });
+    await c.configure({ safetyConfirmed: true }); // test fixture
+    await c.footswitch("press");
+    await c.configure({ laser: { markSeconds: 61 } }); // new driver
+    expect((await c.snapshot()).laser?.state).toBe("busy");
+    for (let i = 0; i < 100 && !existsSync(join(home, "laser-cell.busy.json")); i++) await Bun.sleep(5);
+    const again = make();
+    expect((await again.snapshot()).laser?.state).toBe("busy");
+    await again.configure({ safetyConfirmed: true }); // test fixture
+    await again.run({ boards: 1, mode: "laser-only" });
+    await again.settled();
+    expect((await again.snapshot({ probe: false })).run.error).toMatch(/not ready/);
+    expect(relay.calls.filter(x => x === "pulse")).toHaveLength(1); // only the hand press
+  });
+});
+
+describe("round 3: ComMarker Studio route", () => {
+  const ready: StudioUiState = { running: true, startLabel: "Start(F2)", startEnabled: true, connection: "Connected", doorSensor: false, buttons: [], dialogs: [], elements: 202 };
+
+  test("an enabled Stop button next to Start means Studio is marking", () => {
+    expect(studioBusy({ ...ready, buttons: ["Stop"] })).toBe(true);
+    expect(studioIdle({ ...ready, buttons: ["Stop"] })).toBe(false);
+    expect(studioBusy({ ...ready, buttons: ["Frame"] })).toBe(false);
+    expect(studioIdle(ready)).toBe(true);
+  });
+
+  test.if(process.platform === "win32")("Stop while the Start script is already running: the script sees the cancel and does not click", async () => {
+    const presses: string[] = [];
+    let releaseStart!: () => void;
+    const run: PowerShellRunner = async (_script, _ms, env = {}) => {
+      if (env.FABPLANE_ACTION === "start") {
+        await new Promise<void>(r => { releaseStart = r; });
+        if (existsSync(env.FABPLANE_CANCEL!)) return JSON.stringify({ ok: false, error: "cancelled by Stop" });
+        presses.push("start");
+        return JSON.stringify({ ok: true });
+      }
+      if (env.FABPLANE_ACTION === "stop") { presses.push("stop"); return JSON.stringify({ ok: true }); }
+      return JSON.stringify(ready);
+    };
+    const l = new StudioWindowLaser(windowsStudioUi(run), { completion: "watch", markSeconds: 1, marginSeconds: 0 });
+    const start = failure(l.start());
+    while (!releaseStart) await Bun.sleep(1);
+    const stopping = l.stop();
+    await Bun.sleep(20);
+    releaseStart();
+    await stopping;
+    expect(await start).toMatch(/stopped/);
+    expect(presses).toEqual(["stop"]);
+  });
+
+  test("a Start click that got through before the Stop: Stop is pressed again afterwards", async () => {
+    const presses: string[] = [];
+    let releaseStart!: () => void;
+    const ui: StudioUi = {
+      async read() { return ready; },
+      async press(target) {
+        if (target === "start") { await new Promise<void>(r => { releaseStart = r; }); presses.push("start"); return { ok: true }; } // clicked already
+        presses.push("stop");
+        return { ok: true };
+      },
+      async load() { return { ok: true, log: [] }; },
+    };
+    const l = new StudioWindowLaser(ui, { completion: "watch", markSeconds: 1, marginSeconds: 0 });
+    const start = failure(l.start());
+    while (!releaseStart) await Bun.sleep(1);
+    const stopping = l.stop();
+    releaseStart();
+    await stopping;
+    expect(await start).toMatch(/stopped/);
+    expect(presses.indexOf("start")).toBeLessThan(presses.lastIndexOf("stop"));
+  });
+
+  test("Studio busy with a job started by hand: the cycle refuses and does not press Stop on it", async () => {
+    const presses: string[] = [];
+    let reads = 0;
+    const ui: StudioUi = {
+      async read() { return ++reads === 1 ? ready : { ...ready, startLabel: "Stop(F2)" }; }, // started by hand after the check
+      async press(target) { presses.push(target); return { ok: true }; },
+      async load() { return { ok: true, log: [] }; },
+    };
+    const l = new StudioWindowLaser(ui, { completion: "watch", markSeconds: 1, marginSeconds: 0 });
+    expect(await failure(runCycle(null, l, {}, { frameSeconds: 0, markTimeoutMs: 5000, laserOnly: true }))).toMatch(/not ready to start/);
+    expect(presses).toEqual([]);
+  });
+
+  test("Stop ends a job load into Studio, and the cell is free again", async () => {
+    let loadSignal: AbortSignal | undefined;
+    const ui: StudioUi = {
+      async read() { return ready; },
+      async press() { return { ok: true }; },
+      load: (_spec, signal) => new Promise((_, reject) => { loadSignal = signal; signal?.addEventListener("abort", () => reject(new LaserDriverError("stopped"))); }),
+    };
+    const home = await mkdtemp(join(tmpdir(), "regress-load-"));
+    const c = new LaserCellController({ home, makeLaser: async () => new StudioWindowLaser(ui, { completion: "watch", markSeconds: 1, marginSeconds: 0 }) });
+    await c.configure({ laser: { driver: "studio-window" } });
+    const load = failure(c.studioLoadJob({ file: join(home, "x.studio.svg"), widthMm: 20, heightMm: 20 }));
+    while (!loadSignal) await Bun.sleep(1);
+    await c.stop();
+    expect(await load).toMatch(/stopped/i);
+    expect(loadSignal.aborted).toBe(true);
+    expect((await c.snapshot({ probe: false })).operation).toBeNull();
+  });
+
+  test.if(process.platform === "win32")("a load stopped mid-import closes the file dialog it left open in Studio", async () => {
+    const scripts: string[] = [];
+    const run: PowerShellRunner = (script, _ms, env = {}, signal) => {
+      scripts.push(script.includes("CancelDialogs") ? "cancel-dialog" : env.FABPLANE_ARGS ? "load" : "other");
+      if (env.FABPLANE_ARGS) return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(new LaserDriverError("stopped"))));
+      return Promise.resolve("0");
+    };
+    const abort = new AbortController();
+    const loading = failure(windowsStudioUi(run).load({ file: "C:/x.svg", widthMm: 1, heightMm: 1 }, abort.signal));
+    while (!scripts.includes("load")) await Bun.sleep(1);
+    abort.abort();
+    expect(await loading).toMatch(/stopped/);
+    expect(scripts).toContain("cancel-dialog");
+  });
+});
+
+describe("round 3: USB driver and Wi-Fi bridge", () => {
+  test("a preview stopped while the job file is loading never reaches the laser", async () => {
+    const home = await mkdtemp(join(tmpdir(), "regress-pv-"));
+    await writeFile(join(home, "F-Cu.lmc.json"), JSON.stringify(job));
+    const mock = new OrderedMock(1_000_000);
+    let gate: (() => void) | undefined;
+    class SlowLoad extends LmcLaser {
+      override async load(path: string) { await new Promise<void>(r => { gate = r; }); return super.load(path); }
+    }
+    const c = new LaserCellController({ home, makeLaser: async () => new SlowLoad(async () => mock, lmcOptions) });
+    await c.configure({ laser: { driver: "usb-lmc", jobPath: join(home, "F-Cu.lbrn2") } });
+    await c.configure({ safetyConfirmed: true }); // test fixture
+    const preview = failure(c.preview(30));
+    while (!gate) await Bun.sleep(1);
+    await c.stop();
+    gate();
+    expect(await preview).toMatch(/stopped/i);
+    expect(mock.events).not.toContain("LIST");
+    expect((await c.snapshot({ probe: false })).operation).toBeNull();
+  });
+
+  test("one stale idle reply cannot end a job: two idle answers in a row are needed", async () => {
+    const mock = new MockLmcTransport(1_000_000);
+    const l = new LmcLaser(async () => mock, lmcOptions);
+    await l.load(await jobFile());
+    await l.start();
+    let polls = 0;
+    const read = mock.read.bind(mock);
+    mock.read = async () => {
+      const r = await read();
+      // Poll 2 answers "idle" once (a leftover reply), then the board is busy again.
+      if (++polls === 2) new DataView(r.buffer).setUint16(6, 0x20, true);
+      return r;
+    };
+    expect(await failure(l.waitDone({ timeoutMs: 300 }))).toMatch(/still marking/);
+  });
+
+  test("Stop with an unreachable bridge returns at once instead of retrying every step", async () => {
+    const silent = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {}, open() {} } });
+    cleanups.push(async () => silent.stop(true));
+    const l = new LmcLaser(() => openBridgeLmc("127.0.0.1", silent.port, "k", 300), lmcOptions);
+    const started = Date.now();
+    await l.stop();
+    expect(Date.now() - started).toBeLessThan(650); // one 300 ms attempt, not three plus a reconnect
+  });
+
+  test("a speed the galvo cannot reach is refused, not quietly slowed down", () => {
+    const s: MarkSettings = { powerPct: 10, speedMmPerS: 15_000, travelMmPerS: 2000, frequencyKhz: 40, passes: 1, intervalMm: 1, angleDeg: 0, angleStepDeg: 0, laserOnDelayUs: 100, laserOffDelayUs: 100, polygonDelayUs: 100, jumpDelayUs: 200 };
+    const small: Array<[number, number]> = [[1, 1], [3, 1], [3, 3], [1, 3]];
+    expect(() => buildMarkJob([small], { sizeMm: 10, centerMm: [0, 0], boardMm: { width: 4, height: 4 } }, s, { source: "co2", pins: { laser: 0, light: 8 } })).toThrow(/too fast/);
+  });
+});
+
+describe("round 3: settings file", () => {
+  test("a laser-cell.json that cannot be opened is never replaced by defaults", async () => {
+    const home = await mkdtemp(join(tmpdir(), "regress-lock-"));
+    // A directory stands in for a file another program holds open: reading it fails with something other than "missing".
+    await mkdir(join(home, "laser-cell.json"));
+    await writeFile(join(home, "laser-cell.json", "keep"), "taught positions");
+    const c = new LaserCellController({ home });
+    expect(await failure(c.configure({ laser: { driver: "simulator" } }))).toMatch(/could not be read/);
+    expect(existsSync(join(home, "laser-cell.json", "keep"))).toBe(true);
+    expect((await readdir(home)).some(f => f.startsWith("laser-cell.unreadable-"))).toBe(false);
   });
 });

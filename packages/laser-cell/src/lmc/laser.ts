@@ -193,8 +193,8 @@ export class LmcLaser implements LaserDriver {
     return this.generation;
   }
 
-  private checkNotStopped(generation: number) {
-    if (generation !== this.generation) throw new LaserDriverError("stopped");
+  private checkNotStopped(generation: number, signal?: AbortSignal) {
+    if (generation !== this.generation || signal?.aborted) throw new LaserDriverError("stopped");
   }
 
   /**
@@ -208,30 +208,33 @@ export class LmcLaser implements LaserDriver {
     for (const packet of packets) {
       const deadline = Date.now() + (this.options.readyTimeoutMs ?? 10 * 60_000);
       for (;;) {
-        this.checkNotStopped(generation);
+        this.checkNotStopped(generation, signal);
         if (isReady((await this.single(Cmd.GetVersion)).status)) break;
         if (Date.now() > deadline) throw new LaserDriverError("the laser board did not take the next part of the job in time");
         await sleep(this.options.pollMs ?? 10, signal);
       }
-      this.checkNotStopped(generation);
+      this.checkNotStopped(generation, signal);
       await this.serial(t => t.write(packet));
       await this.single(Cmd.SetEndOfList, 0);
       if (i >= 2 && !executing) {
-        this.checkNotStopped(generation);
+        this.checkNotStopped(generation, signal);
         await this.single(Cmd.ExecuteList);
         executing = true;
       }
       i++;
     }
-    this.checkNotStopped(generation);
+    this.checkNotStopped(generation, signal);
     if (!executing) await this.single(Cmd.ExecuteList);
   }
 
   private async waitIdle(generation: number, timeoutMs: number, signal?: AbortSignal) {
     const started = Date.now();
+    let idleReads = 0;
     for (;;) {
-      this.checkNotStopped(generation);
-      if (!isBusy((await this.single(Cmd.GetVersion)).status)) return;
+      this.checkNotStopped(generation, signal);
+      // Two idle answers in a row: one stale reply can never end a job early.
+      if (!isBusy((await this.single(Cmd.GetVersion)).status)) { if (++idleReads >= 2) return; continue; }
+      idleReads = 0;
       if (Date.now() - started > timeoutMs) throw new LaserDriverError(`the laser is still marking after ${Math.round(timeoutMs / 1000)} s`);
       await sleep(this.options.pollMs ?? 200, signal);
     }
@@ -239,6 +242,7 @@ export class LmcLaser implements LaserDriver {
 
   /** Outputs off (and the fiber source's MO closed) after a job, a preview or a stop. */
   private async outputsOff() {
+    if (!this.transport) return; // not connected: nothing to switch off, and do not reconnect just for this
     await this.single(Cmd.WritePort, 0).catch(() => undefined);
     if (this.options.source === "fiber") await this.single(Cmd.FiberSetMo, 0).catch(() => undefined);
   }
@@ -252,6 +256,7 @@ export class LmcLaser implements LaserDriver {
     const loops = Math.max(1, Math.min(500, Math.round((seconds || this.options.frameSeconds) / Math.max(0.05, once.estimatedSeconds))));
     const generation = this.begin("preview");
     try {
+      this.checkNotStopped(generation, signal);
       await this.runList(buildLightFrame(job.ablate, field, { pins: this.options.pins, travelMmPerS: 1000, loops }).packets, generation, signal);
       await this.waitIdle(generation, 60_000, signal);
     } catch (error) {
@@ -296,8 +301,13 @@ export class LmcLaser implements LaserDriver {
     }
   }
 
+  /** Stop list, reset, outputs off. If the board cannot be reached, gives up at once instead of retrying each step. */
   private async haltBoard() {
-    await this.single(Cmd.StopExecute).catch(() => undefined);
+    try {
+      await this.single(Cmd.StopExecute);
+    } catch {
+      return; // unreachable board: the E-stop is the only stop now; do not hang the Stop button
+    }
     await this.single(Cmd.ResetList).catch(() => undefined);
     await this.outputsOff();
   }

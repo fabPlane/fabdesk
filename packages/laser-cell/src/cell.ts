@@ -6,6 +6,7 @@
  * (foot-switch trigger + window automation), LightBurn (UDP) or a simulator.
  */
 import { Arm, assertPose, type Pose, poseReached } from "./arm";
+import { LaserDriverError } from "./lasers";
 
 export type LaserState = "idle" | "busy" | "error" | "offline";
 
@@ -121,6 +122,8 @@ export async function runCycle(arm: Arm | null, laser: LaserDriver, poses: CellP
       onProgress: fraction => emit({ type: "progress", step, fraction }),
     });
 
+  /** Set once fabPlane has sent the laser something in this cycle; only then does a failure stop the laser. */
+  let laserTouched = false;
   try {
     enter("preflight", "Checking laser and arm");
     const missing = missingPoses(poses, options.laserOnly);
@@ -176,9 +179,11 @@ export async function runCycle(arm: Arm | null, laser: LaserDriver, poses: CellP
     if (!options.dryRun) {
       if (options.frameSeconds > 0 && laser.frame) {
         enter("frame", "Red-light frame to check the board position");
+        laserTouched = true;
         await laser.frame(options.frameSeconds, signal);
       }
       enter("mark", "Laser running");
+      laserTouched = true;
       await laser.start();
       // A stop that arrived while the laser was being started: stop it now (the catch below does).
       if (signal?.aborted) throw new CellError("Stopped by operator", step);
@@ -201,8 +206,12 @@ export async function runCycle(arm: Arm | null, laser: LaserDriver, poses: CellP
     }
     enter("done", "Cycle finished");
   } catch (error) {
-    await laser.stop().catch(() => undefined);
-    await arm?.stop();
+    // A refused start (e.g. Studio already marking a job started by hand) must not stop that job.
+    const refused = error instanceof LaserDriverError && error.refused;
+    await Promise.all([
+      signal?.aborted || (laserTouched && !refused) ? laser.stop().catch(() => undefined) : Promise.resolve(),
+      arm?.stop().catch(() => undefined),
+    ]);
     if (error instanceof CellError) throw error;
     const message = signal?.aborted ? "Stopped by operator" : error instanceof Error ? error.message : String(error);
     throw new CellError(message, step);

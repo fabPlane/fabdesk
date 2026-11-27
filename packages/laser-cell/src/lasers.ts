@@ -23,6 +23,10 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 
 export class LaserDriverError extends Error {
   override name = "LaserDriverError";
+  /** `refused`: the driver declined before sending the laser anything (it may be running someone else's job). */
+  constructor(message: string, readonly refused = false) {
+    super(message);
+  }
 }
 
 // ---------------------------------------------------------------- USB relay (foot-switch emulation)
@@ -117,6 +121,10 @@ export type StudioFootswitchOptions = {
   marginSeconds: number;
   /** Foot-switch press length. */
   pressMs?: number;
+  /** Studio may still be marking until then (ms epoch); kept by the controller across restarts. */
+  busyUntil?: number;
+  /** Called whenever the busy deadline moves, so the controller can keep it. */
+  onBusyUntil?: (until: number) => void;
 };
 
 export class StudioFootswitchLaser implements LaserDriver {
@@ -125,8 +133,27 @@ export class StudioFootswitchLaser implements LaserDriver {
    * Until when Studio may still be marking after a start. fabPlane cannot see or stop Studio on this route,
    * so this survives errors and stop(): the laser counts as busy until the job time has passed.
    */
-  private busyUntil = 0;
-  constructor(private readonly options: StudioFootswitchOptions) {}
+  private busyUntil: number;
+  constructor(private readonly options: StudioFootswitchOptions) {
+    this.busyUntil = options.busyUntil ?? 0;
+  }
+
+  private markBusy() {
+    this.busyUntil = Math.max(this.busyUntil, Date.now() + this.expectedSeconds * 1000);
+    this.options.onBusyUntil?.(this.busyUntil);
+  }
+
+  /** One press by hand: Studio runs its loaded job, so the laser counts as busy for the job time. */
+  async press(): Promise<void> {
+    await this.options.relay.pulse(this.options.pressMs ?? 250);
+    this.markBusy();
+  }
+
+  /** Hold / release by hand. After a release the job Studio started may still be running. */
+  async setHeld(held: boolean): Promise<void> {
+    await this.options.relay.set(held);
+    if (!held) this.markBusy();
+  }
 
   get expectedSeconds(): number {
     return this.options.markSeconds + this.options.marginSeconds;
@@ -144,7 +171,7 @@ export class StudioFootswitchLaser implements LaserDriver {
 
   async start(): Promise<void> {
     await this.options.relay.pulse(this.options.pressMs ?? 250);
-    this.busyUntil = Date.now() + this.expectedSeconds * 1000;
+    this.markBusy();
   }
 
   /** Waits the job time (checked against the limit before the start, in the cycle's preflight). */

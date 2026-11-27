@@ -145,17 +145,28 @@ job), and the app connecting to the bridge over the PC's Wi-Fi address. The Linu
 
 - One thing at a time: a run, a job load into Studio, a red-light preview or an arm move. Everything else
   is refused while one is in progress, and **Stop** ends any of them (not only runs).
-- Stop always wins: on every route a Start that has not been pressed yet is cancelled, and the USB driver
-  checks for a stop before every packet and every execute.
+- Stop always wins: on every route a Start that has not been pressed yet is cancelled (on the Studio route
+  even when the click script is already running), a Start that got through is stopped again, and the USB
+  driver checks for a stop before every packet and every execute. Stop freezes the arm and stops the laser
+  at the same time, and gives up on an unreachable laser after one try (use the E-stop then).
+- A refused Start (Studio already marking a job started by hand) never presses Stop on that job.
 - The UV-guard confirmation lasts for this session only, and is asked again after a change of laser route.
   The foot-switch Press/Hold buttons need it too.
 - Laser only with the arm connected: the arm must be at “Clear of laser”.
-- Foot-switch route: a job longer than the time limit is refused before the relay fires; after a stop the
-  laser still counts as busy until the job time has passed (Studio cannot be stopped from fabPlane).
-- Studio route: only an enabled “Start” button in a fully read window counts as finished.
+- Foot-switch route: a job longer than the time limit is refused before the relay fires; after a stop, and
+  after a Press or Hold by hand, the laser counts as busy until the job time has passed (Studio cannot be
+  stopped from fabPlane). That time is kept in `laser-cell.busy.json`, so it survives a restart.
+- Studio route: only an enabled “Start” button in a fully read window counts as finished; an enabled Stop
+  button next to it means busy. Stop also ends a job load and closes the file dialog it left open.
+- `laser-cell.json` that is locked by another program is retried, then reported; it is never replaced by
+  defaults (a damaged one is set aside as `laser-cell.unreadable-*.json`).
+- USB driver: a job ends only after two idle answers in a row, and old replies are flushed on connect.
+  A speed the galvo cannot reach is refused, never slowed down.
 - Wi-Fi bridge (protocol v2): every request has one answer; any error or timeout drops the link (no reply
-  can be read as the answer to a later request); a disconnect mid-job stops the board; a computer silent
-  for 15 s can be replaced by another with the key. The key is never shown back by fabPlane.
+  can be read as the answer to a later request); a disconnect mid-job stops the board. fabPlane pings every
+  2 s while connected, so a computer that is only busy (arm moving) keeps the laser; one silent for 8 s
+  (off the Wi-Fi, crashed) is dropped and the board stopped, and only then can another computer connect.
+  Connecting gives up after 3 s. The key is never shown back by fabPlane.
 - Cross-hatch (90° step) fills both directions on every pass on all routes, and the time estimate counts it.
 
 ## How the arm knows where things are

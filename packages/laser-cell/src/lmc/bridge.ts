@@ -28,8 +28,13 @@ import { LmcUsbError, type LmcTransport } from "./usb";
 export const BRIDGE_DEFAULT_PORT = 5021;
 export const BRIDGE_VERSION = 2;
 const MAX_FRAME = LIST_PACKET_BYTES + 1024;
-/** A driving computer silent this long can be replaced. fabPlane talks to the board every few seconds while in use. */
-export const TAKEOVER_MS = 15_000;
+/**
+ * fabPlane pings the bridge every PING_MS while connected. A driving computer silent for longer than
+ * SILENT_MS (laptop off the Wi-Fi, crashed) has its link closed and the board stopped; only then can another
+ * computer take over. A computer that is merely busy (arm moving between marks) keeps pinging.
+ */
+export const PING_MS = 2_000;
+export const SILENT_MS = 8_000;
 
 export function newBridgeToken(): string {
   return randomBytes(12).toString("base64url");
@@ -78,8 +83,8 @@ export type BridgeOptions = {
   /** Opens the USB board (WinUSB on Windows, usbfs on Linux, or a mock in tests). */
   open: () => Promise<LmcTransport>;
   log?: (line: string) => void;
-  /** Override TAKEOVER_MS (tests). */
-  takeoverMs?: number;
+  /** Override SILENT_MS (tests). */
+  silentMs?: number;
 };
 
 type Session = { reader: FrameReader; authed: boolean; closed: boolean; lastSeen: number };
@@ -87,7 +92,7 @@ type Session = { reader: FrameReader; authed: boolean; closed: boolean; lastSeen
 /** Starts the bridge. One client at a time drives the board; the USB link is opened on first use. */
 export async function startLmcBridge(options: BridgeOptions) {
   const log = options.log ?? (() => undefined);
-  const takeoverMs = options.takeoverMs ?? TAKEOVER_MS;
+  const silentMs = options.silentMs ?? SILENT_MS;
   let usb: LmcTransport | null = null;
   let owner: Socket<Session> | null = null;
   /** All USB access goes through this one queue, whichever session asks. */
@@ -139,12 +144,7 @@ export async function startLmcBridge(options: BridgeOptions) {
             let token = "";
             try { token = String((JSON.parse(new TextDecoder().decode(f.payload)) as { token?: unknown }).token ?? ""); } catch { /* bad auth */ }
             if (f.type !== "A" || !sameToken(token, options.token)) { log(`refused ${s.remoteAddress}: wrong access key`); s.write(frame("E", "wrong access key")); s.end(); return; }
-            if (owner && owner !== s) {
-              if (Date.now() - owner.data.lastSeen < takeoverMs) { s.write(frame("E", "another computer is already driving this laser")); s.end(); return; }
-              const stale = owner;
-              release(stale, "replaced a silent computer");
-              stale.end();
-            }
+            if (owner && owner !== s) { s.write(frame("E", "another computer is already driving this laser")); s.end(); return; }
             s.data.authed = true;
             owner = s;
             log(`connected: ${s.remoteAddress}`);
@@ -178,9 +178,19 @@ export async function startLmcBridge(options: BridgeOptions) {
       },
     },
   });
+  // Watchdog: a driving computer that went silent (no ping, no request) is dropped and the board stopped.
+  const watchdog = setInterval(() => {
+    const s = owner;
+    if (s && Date.now() - s.data.lastSeen > silentMs) {
+      release(s, "the driving computer went silent");
+      s.end();
+    }
+  }, Math.max(20, Math.min(1000, silentMs / 4)));
+  (watchdog as unknown as { unref?: () => void }).unref?.();
   return {
     port: server.port,
     async stop() {
+      clearInterval(watchdog);
       server.stop(true);
       await usbQueue;
       await usb?.close().catch(() => undefined);
@@ -196,7 +206,7 @@ export async function startLmcBridge(options: BridgeOptions) {
  * after any error or timeout the link is closed (the driver reconnects), so a late answer is never taken
  * for the answer to a later request.
  */
-export async function openBridgeLmc(host: string, port: number, token: string, timeoutMs = 3000): Promise<LmcTransport> {
+export async function openBridgeLmc(host: string, port: number, token: string, timeoutMs = 3000, pingMs = PING_MS): Promise<LmcTransport> {
   const reader = new FrameReader();
   let waiter: ((f: { type: string; payload: Uint8Array } | Error) => void) | null = null;
   const early: Array<{ type: string; payload: Uint8Array }> = [];
@@ -210,7 +220,9 @@ export async function openBridgeLmc(host: string, port: number, token: string, t
     const timer = setTimeout(() => { waiter = null; fail(new LmcUsbError(`the laser bridge at ${host}:${port} did not answer in time`)); reject(new LmcUsbError(`the laser bridge at ${host}:${port} did not answer in time`)); }, ms);
     waiter = f => { clearTimeout(timer); f instanceof Error ? reject(f) : resolve(f); };
   });
-  const socket = await Bun.connect({
+  let connectTimer: ReturnType<typeof setTimeout> | undefined;
+  const connectTimeout = new Promise<never>((_, reject) => { connectTimer = setTimeout(() => reject(new LmcUsbError(`could not reach the laser bridge at ${host}:${port} within ${Math.round(timeoutMs / 1000)} s; is the bridge running and on the same Wi-Fi?`)), timeoutMs); });
+  const connecting = Bun.connect({
     hostname: host,
     port,
     socket: {
@@ -223,6 +235,16 @@ export async function openBridgeLmc(host: string, port: number, token: string, t
       error(_s, e) { fail(new LmcUsbError(`laser bridge connection error: ${e.message}`)); },
     },
   }).catch((e: unknown) => { throw new LmcUsbError(`could not reach the laser bridge at ${host}:${port} (${e instanceof Error ? e.message : String(e)}); is the bridge running and on the same Wi-Fi?`); });
+  connecting.then(s => { if (closed) s.end(); }, () => undefined); // a link that arrives after the timeout is closed
+  let socket: Awaited<typeof connecting>;
+  try {
+    socket = await Promise.race([connecting, connectTimeout]);
+  } catch (error) {
+    closed = true;
+    throw error;
+  } finally {
+    clearTimeout(connectTimer);
+  }
   socketRef = socket;
   const text = (p: Uint8Array) => new TextDecoder().decode(p);
   const hello = await answer(timeoutMs);
@@ -249,12 +271,21 @@ export async function openBridgeLmc(host: string, port: number, token: string, t
     queue = next.catch(() => undefined);
     return next;
   };
+  // Heartbeat while idle, so the bridge knows this computer is still here during long arm moves.
+  let lastRequest = Date.now();
+  const heartbeat = setInterval(() => {
+    if (closed) { clearInterval(heartbeat); return; }
+    if (Date.now() - lastRequest >= pingMs) { lastRequest = Date.now(); request("P", undefined, "O", timeoutMs).catch(() => undefined); }
+  }, Math.max(10, pingMs / 2));
+  (heartbeat as unknown as { unref?: () => void }).unref?.();
+  const touch = <T>(p: Promise<T>) => { lastRequest = Date.now(); return p; };
   return {
-    async write(packet) { await request("W", packet, "O"); },
-    read: () => request("R", undefined, "D"),
-    transact: packet => request("C", packet, "D"),
+    async write(packet) { await touch(request("W", packet, "O")); },
+    read: () => touch(request("R", undefined, "D")),
+    transact: packet => touch(request("C", packet, "D")),
     async close() {
       closed = true;
+      clearInterval(heartbeat);
       socket.end();
     },
   };

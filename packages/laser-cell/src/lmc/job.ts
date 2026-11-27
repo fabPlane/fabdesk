@@ -167,7 +167,12 @@ export function validateSettings(s: MarkSettings): void {
   }
 }
 
-const speedUnits = (field: FieldMap, mmPerS: number) => Math.min(0xffff, Math.max(1, Math.round((mmPerS * galvosPerMm(field)) / 1000)));
+const speedUnits = (field: FieldMap, mmPerS: number) => {
+  const units = Math.round((mmPerS * galvosPerMm(field)) / 1000);
+  // Refused, not clamped: a clamped speed is a slower speed, i.e. more UV on the board.
+  if (units > 0xffff) throw new RangeError(`laser setting out of range: speed ${mmPerS} mm/s is too fast for a ${field.sizeMm} mm lens field`);
+  return Math.max(1, units);
+};
 
 function writeSettings(list: ListPackets, field: FieldMap, s: MarkSettings, source: SourceMode) {
   list.add(List.JumpSpeed, speedUnits(field, s.travelMmPerS));

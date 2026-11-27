@@ -135,6 +135,8 @@ export type ControllerDeps = {
   listPorts?: () => Promise<SerialPortInfo[]>;
   openArmBus?: (port: string, baud: number) => Promise<St3215Bus>;
   makeLaser?: (config: LaserCellConfig) => Promise<LaserDriver>;
+  /** Opens the foot-switch relay (tests: a fake relay). */
+  openRelay?: typeof openRelay;
 };
 
 export class LaserCellController {
@@ -152,24 +154,56 @@ export class LaserCellController {
   /** The one non-run operation allowed at a time; Stop aborts it. */
   private operation: { kind: string; abort: AbortController } | null = null;
 
+  /** Until when the laser may still be marking a job fabPlane cannot see (foot-switch route); kept on disk. */
+  private laserBusyUntil = 0;
+  private readonly busyPath: string;
+
   constructor(private readonly deps: ControllerDeps) {
     this.configPath = join(deps.home, "laser-cell.json");
+    this.busyPath = join(deps.home, "laser-cell.busy.json");
+  }
+
+  private noteBusyUntil(until: number) {
+    this.laserBusyUntil = Math.max(this.laserBusyUntil, until);
+    void writeFile(this.busyPath, JSON.stringify({ until: this.laserBusyUntil })).catch(() => undefined);
   }
 
   // ------------------------------------------------------------ config
 
   async load(): Promise<LaserCellConfig> {
     if (this.loaded) return this.config;
-    try {
-      this.config = LaserCellConfigSchema.parse(JSON.parse(await readFile(this.configPath, "utf8")));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        // Keep the unreadable file (taught positions!) instead of overwriting it on the next save.
+    let text: string | null = null;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        text = await readFile(this.configPath, "utf8");
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") break;
+        // Locked or unreadable for now (antivirus, sync tool, editor): retry, then fail without loading
+        // defaults, so the next save can never overwrite the taught positions.
+        if (attempt >= 4) throw new LaserCellError(`laser-cell.json could not be read (${code ?? (error instanceof Error ? error.message : String(error))}); close any program using it and try again`);
+        await new Promise(r => setTimeout(r, 250));
+      }
+    }
+    if (text !== null) {
+      try {
+        this.config = LaserCellConfigSchema.parse(JSON.parse(text));
+      } catch (error) {
+        // Damaged content: set the file aside (taught positions can be recovered from it), then start fresh.
         const kept = this.configPath.replace(/\.json$/, `.unreadable-${Date.now()}.json`);
-        await rename(this.configPath, kept).catch(() => undefined);
+        try {
+          await rename(this.configPath, kept);
+        } catch {
+          throw new LaserCellError(`laser-cell.json is damaged and could not be set aside; move or fix ${this.configPath} and try again`);
+        }
         this.log("warn", `laser-cell.json could not be read (${error instanceof Error ? error.message : String(error)}); kept it as ${kept} and started from defaults`);
       }
     }
+    try {
+      const busy = JSON.parse(await readFile(this.busyPath, "utf8")) as { until?: unknown };
+      if (typeof busy.until === "number") this.laserBusyUntil = busy.until;
+    } catch { /* none */ }
     // The UV-guard confirmation is about the cell as it is now: it never carries over from an earlier session.
     this.config = { ...this.config, safetyConfirmed: false };
     this.loaded = true;
@@ -287,7 +321,10 @@ export class LaserCellController {
     else if (l.driver === "studio-window") this.laser = new StudioWindowLaser(windowsStudioUi(), { completion: l.studioCompletion, markSeconds: l.markSeconds, marginSeconds: l.marginSeconds });
     else {
       if (!l.relayPort) throw new LaserCellError("Choose the USB relay's port (the relay wired to the Omni X foot-switch input)");
-      this.laser = new StudioFootswitchLaser({ relay: await openRelay(l.relayKind, l.relayPort, l.relayChannel), markSeconds: l.markSeconds, marginSeconds: l.marginSeconds });
+      this.laser = new StudioFootswitchLaser({
+        relay: await (this.deps.openRelay ?? openRelay)(l.relayKind, l.relayPort, l.relayChannel), markSeconds: l.markSeconds, marginSeconds: l.marginSeconds,
+        busyUntil: this.laserBusyUntil, onBusyUntil: until => this.noteBusyUntil(until),
+      });
     }
     this.laserKey = key;
     return this.laser;
@@ -341,8 +378,8 @@ export class LaserCellController {
     if (this.config.laser.driver !== "studio-footswitch") throw new LaserCellError("The foot switch is only used on the ComMarker Studio route");
     const laser = await this.laserDriver();
     if (!(laser instanceof StudioFootswitchLaser)) throw new LaserCellError("The foot-switch relay is not available");
-    if (action === "press") await laser.relay.pulse(250);
-    else await laser.relay.set(action === "hold");
+    if (action === "press") await laser.press();
+    else await laser.setHeld(action === "hold");
     this.log(action === "release" ? "info" : "warn", action === "press" ? "foot switch pressed once from fabPlane" : action === "hold" ? "foot switch held down from fabPlane" : "foot switch released");
     return laser.relay.pressed;
   }
@@ -364,12 +401,12 @@ export class LaserCellController {
    */
   async studioLoadJob(spec: StudioJobSpec): Promise<StudioLoadResult> {
     await this.load();
-    return this.exclusive("loading the job into ComMarker Studio", async () => {
+    return this.exclusive("loading the job into ComMarker Studio", async signal => {
       if (this.config.laser.driver !== "studio-window") throw new LaserCellError("Choose \"ComMarker Studio (fabPlane presses Start in Studio)\" as the laser route first");
       const laser = await this.laserDriver();
       if (!(laser instanceof StudioWindowLaser)) throw new LaserCellError("The Studio window driver is not available");
       if ((await launchStudio(laser.ui, this.config.laser.studioExe ?? DEFAULT_STUDIO_EXE)) === "started") this.log("info", "started ComMarker Studio");
-      const result = await laser.loadJob(spec);
+      const result = await laser.loadJob(spec, signal);
       for (const line of result.log) this.log(/check in Studio|no Power|not found|greyed/.test(line) ? "warn" : "info", `Studio: ${line}`);
       return result;
     });
@@ -428,6 +465,7 @@ export class LaserCellController {
     await this.exclusive("red-light preview", async signal => {
       const laser = await this.lmcLaser();
       await laser.load(this.lmcJobPath());
+      if (signal.aborted) throw new LaserCellError("Stopped by operator");
       this.log("info", `red-light preview for ${seconds} s`);
       await laser.frame(seconds, signal);
     });
@@ -529,9 +567,9 @@ export class LaserCellController {
     this.log("warn", active ? "stop requested" : "stop requested (nothing was running; laser and arm stopped anyway)");
     this.abort?.abort();
     this.operation?.abort.abort();
-    // Always: a preview, a Go move or a held foot switch is not a run, and must stop too.
-    await this.laser?.stop().catch(() => undefined);
-    await this.arm?.stop().catch(() => undefined);
+    // Always (a preview, a Go move or a held foot switch is not a run), and laser and arm at the same time:
+    // an unreachable laser must not delay freezing the arm.
+    await Promise.all([this.laser?.stop().catch(() => undefined), this.arm?.stop().catch(() => undefined)]);
     await this.running?.catch(() => undefined);
   }
 

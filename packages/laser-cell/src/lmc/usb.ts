@@ -68,6 +68,7 @@ async function loadWin32() {
     WinUsb_SetPipePolicy: { args: [FFIType.i64, FFIType.u8, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.i32 },
     WinUsb_WritePipe: { args: [FFIType.i64, FFIType.u8, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
     WinUsb_ReadPipe: { args: [FFIType.i64, FFIType.u8, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    WinUsb_FlushPipe: { args: [FFIType.i64, FFIType.u8], returns: FFIType.i32 },
   });
   return { setup: setup.symbols, k32: k32.symbols, wu: wu.symbols, ptr };
 }
@@ -129,6 +130,8 @@ export async function openWinUsbLmc(index = 0, timeoutMs = 500): Promise<LmcTran
   const timeout = new Uint32Array([timeoutMs]);
   wu.WinUsb_SetPipePolicy(h, LMC_OUT_ENDPOINT, 3 /* PIPE_TRANSFER_TIMEOUT */, 4, ptr(timeout));
   wu.WinUsb_SetPipePolicy(h, LMC_IN_ENDPOINT, 3, 4, ptr(timeout));
+  // Drop replies left over from an earlier connection, so the first answer read is to our first command.
+  wu.WinUsb_FlushPipe(h, LMC_IN_ENDPOINT);
   let closed = false;
   const open = () => { if (closed) throw new LmcUsbError("the USB link to the laser is closed"); };
   return {
@@ -243,13 +246,15 @@ export async function openLinuxUsbLmc(index = 0, timeoutMs = 500): Promise<LmcTr
   const iface = new Uint32Array([0]);
   if (libc.ioctl(fd, USBDEVFS_CLAIMINTERFACE, ptr(iface)) < 0) { closeSync(fd); throw new LmcUsbError(`could not claim the laser board's USB interface at ${path} (in use?)`); }
   // struct usbdevfs_bulktransfer (64-bit): u32 ep, u32 len, u32 timeout, u32 pad, void* data = 24 bytes
-  const bulk = (ep: number, data: Uint8Array) => {
+  const bulk = (ep: number, data: Uint8Array, ms = timeoutMs) => {
     const req = new Uint8Array(24);
     const v = new DataView(req.buffer);
-    v.setUint32(0, ep, true); v.setUint32(4, data.length, true); v.setUint32(8, timeoutMs, true);
+    v.setUint32(0, ep, true); v.setUint32(4, data.length, true); v.setUint32(8, ms, true);
     v.setBigUint64(16, BigInt(ptr(data)), true);
     return libc.ioctl(fd, USBDEVFS_BULK, ptr(req));
   };
+  // Drain replies left over from an earlier connection (short reads until none are waiting).
+  for (let i = 0; i < 16 && bulk(LMC_IN_ENDPOINT, new Uint8Array(REPLY_BYTES), 10) > 0; i++) { /* discard */ }
   let closed = false;
   const open = () => { if (closed) throw new LmcUsbError("the USB link to the laser is closed"); };
   return {

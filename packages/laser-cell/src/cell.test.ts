@@ -125,7 +125,8 @@ describe("runCycle", () => {
     const { arm } = cellArm();
     const laser = new SimulatedLaser(20);
     await expect(runCycle(arm, laser, POSES, { frameSeconds: 0, markTimeoutMs: 5000 })).rejects.toThrow("No board in the gripper");
-    expect(laser.log).toEqual(["stop"]);
+    // The laser was never started in this cycle, so it is left alone (it may be running a job started by hand).
+    expect(laser.log).toEqual([]);
   });
 
   test("missing poses are reported by name", async () => {
