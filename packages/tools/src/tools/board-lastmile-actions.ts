@@ -225,7 +225,6 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
         case "undo":
           return ok(await bench.undo(), { step: bench.pointer });
         case "view": {
-          if (!a.box) throw new ToolError("view needs box: [X0, Y0, X1, Y1] in mm", "invalid_args");
           // the current step, or a try candidate (toolkit bench.py view --board): its board and its own DRC run
           const dir = a.candidate ? await candidateDir(a.candidate) : bench.dir;
           const tag = a.candidate ? `b-${relative(bench.ws, dir).replace(/[^A-Za-z0-9]+/g, "_").slice(-60)}` : `s${bench.pointer}`;
@@ -240,7 +239,7 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
             drc = (await readRun()) ?? { unconnected: (sc?.opens ?? []).map((u) => ({ items: [{ description: `[${u.net}]`, pos: { x: u.a[0], y: u.a[1] } }, { description: `[${u.net}]`, pos: { x: u.b[0], y: u.b[1] } }] })) };
           }
           const svg = L.renderBoardSvg(board, {
-            window: a.box,
+            ...(a.box ? { window: a.box } : {}),
             side: a.side,
             ...(a.nets ? { nets: a.nets } : {}),
             ...(a.layers?.length ? { layers: a.layers } : {}),
@@ -248,7 +247,7 @@ export async function runLastmile(a: LastmileArgs, ctx: ToolContext, wsPath: str
             labels: true,
             title: `${basename(ws)} ${a.candidate ? tag : `step ${bench.pointer}`}`,
           });
-          const out = join(bench.ws, "views", `${tag}-${a.box.join("-")}-${a.side}.svg`);
+          const out = join(bench.ws, "views", `${tag}-${a.box ? a.box.join("-") : "board"}-${a.side}.svg`);
           await mkdir(dirname(out), { recursive: true });
           await writeFile(out, svg);
           let png: string | null = null;

@@ -273,7 +273,11 @@ describe("the keys through impact, apply, proof", () => {
       },
       accept_before: { A3_parity: "fixture" },
     };
-    const r = await runEdit({ projectDir: dir, plan, mode: "full", runners: runners() });
+    const repaired: string[][] = [];
+    const r = await runEdit({ projectDir: dir, plan, mode: "full", runners: { ...runners(), repair: async (o) => (repaired.push(o.routeAgain), { note: "repaired" }) } });
+    // the removed via may have carried a connection: its net goes to the repair (it was never scheduled before)
+    expect(r.repair?.routeAgain).toEqual(["GND"]);
+    expect(repaired).toEqual([["GND"]]);
     expect(r.impact.keys?.stack?.dielectrics).toEqual({ "dielectric 1": ["4.5", 4.17] });
     expect(r.stage).toBe("proof");
     const cand = r.candidate!.dir;

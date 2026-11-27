@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { z } from "zod/v4";
 import { onboard, runAcceptance } from "@fabdesk/board-workflow";
 import { createRegistry, type BoardAdoptResult, type CoreServices } from "../src";
 import { BOARD, PRO, SHEET } from "../../board-workflow/test/edit-fixture";
@@ -48,6 +49,34 @@ describe("board_edit", () => {
     const def = createRegistry().get("board_edit")!;
     expect(def.toolset).toBe("board");
     expect(Object.keys(def.inputSchema)).toEqual(["plan", "mode", "adopt", "candidate", "pcb"]);
+  });
+
+  test("a bad nested plan field is named on every entry path, not \"Invalid input at plan\"", async () => {
+    const def = createRegistry().get("board_edit")!;
+    const plan = { id: "via", stack: { remove_vias: [{ uuid: "80bbae6c", reason: "via in U1 pad 9" }] } };
+    const parsed = z.object(def.inputSchema as z.ZodRawShape).safeParse({ plan });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error!.issues.map((i) => i.message).join("\n")).toContain("plan.stack.remove_vias[0].net: expected string, received undefined");
+    const { project, run } = await setup();
+    await expect(run({ mode: "impact", plan: JSON.stringify(plan) })).rejects.toThrow("plan.stack.remove_vias[0].net: expected string");
+    await writeFile(join(project.dir, "via-plan.json"), JSON.stringify(plan));
+    await expect(run({ mode: "impact", plan: "via-plan.json" })).rejects.toThrow("plan.stack.remove_vias[0].net: expected string");
+  });
+
+  test("a plan reaches the edit whole: checked, but no field the edit reads is dropped", async () => {
+    const project = await tempProject("plan-whole");
+    const plan = { id: "keep", move: [{ ref: "U1", to: [10, 10, 0] }], displace: { edge: 1.5 }, net: [{ pin: "U1.1", to: "VCC", tap_width: 0.6 }] };
+    const captured: unknown[] = [];
+    const services = mockServices([project], { runChild: async (_task: string, input: { plan: unknown }) => { captured.push(input.plan); throw new Error("captured"); } } as never);
+    const def = createRegistry().get("board_edit")!;
+    const ctx = await contextFactory(services, project)({ def, projectRef: undefined, signal: new AbortController().signal, progress: () => {} } as never);
+    await writeFile(join(project.dir, "plan.json"), JSON.stringify(plan));
+    for (const input of [JSON.stringify(plan), "plan.json"])
+      await (def.handler as unknown as (a: object, c: unknown) => Promise<unknown>)({ mode: "impact", adopt: false, plan: input }, ctx).catch(() => undefined);
+    expect(captured).toEqual([plan, plan]);
+    // an inline object keeps displace.edge through the tool's own input check too
+    const parsed = z.object(def.inputSchema as z.ZodRawShape).parse({ plan, mode: "impact" }) as { plan: { displace: { edge: number } } };
+    expect(parsed.plan.displace.edge).toBe(1.5);
   });
 
   test("impact needs no KiCad run and writes nothing", async () => {

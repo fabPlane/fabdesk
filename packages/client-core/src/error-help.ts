@@ -131,7 +131,7 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
     title: "KiCad cannot open this board format",
     message: "Choose a KiCad build that supports this file format in Settings → KiCad. Nightly builds can report the same version number while supporting different file dates. Your native sources and previous outputs are preserved.", action: "kicad",
   };
-  if (/MCP server.*(?:failed to connect|not connected)|PCB bridge.*(?:unavailable|not running|failed)|FabPCB.*unavailable/i.test(text)) return {
+  if (/MCP server.*(?:failed to connect|not connected)|PCB bridge.*(?:unavailable|unreachable|not running|failed)|FabPCB.*unavailable/i.test(text)) return {
     title: "The design tools are not connected",
     message: "Restart fabPlane and try again. If board tools still fail, check the KiCad setup in Settings.", action: "kicad",
   };
@@ -162,6 +162,12 @@ export function errorHelp(input: unknown, context: ErrorContext = {}): ErrorHelp
   if (code === "invalid_parent_directory") return {
     title: "Choose a different folder",
     message: "The project location is missing or is not a folder. Choose an existing folder you can write to.",
+  };
+  // a working copy under .fabdesk/ (a last-mile workspace, an edit candidate, a validate copy) is not the project's design:
+  // "no board yet" sent an agent with a wrong scratch path off to rebuild a board the project already had
+  if (/\.fabdesk[\\/].*board\.kicad_(?:pcb|sch).*(?:not found|does not exist)/i.test(text)) return {
+    title: "A board working copy is missing",
+    message: "The board file this step asked for is not in the project's working folder (.fabdesk). The project's own board is unaffected. Ask the agent to use the board path the previous step returned, then retry.",
   };
   if (/board\.kicad_(?:pcb|sch).*(?:not found|does not exist)/i.test(text)) return {
     title: "There is no board to work on yet",

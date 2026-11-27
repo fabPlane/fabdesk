@@ -74,6 +74,9 @@ test.each([
   ["ECONNREFUSED", "Check your connection"],
   ["MCP server \"fabdesk\" failed to connect", "Restart fabPlane"],
   ["board.kicad_pcb not found", "build the board first"],
+  ["/home/u/p/.fabdesk/board/lastmile/sht31/board.kicad_pcb not found", "path the previous step returned"],
+  ["C:\\Users\\u\\p\\.fabdesk\\board\\edits\\e1\\board.kicad_pcb not found", "path the previous step returned"],
+  ["unavailable: FabPlane PCB bridge unreachable at http://127.0.0.1:4020: The operation timed out.", "Restart fabPlane"],
   ["an agent run is already active on this thread", "current run to finish"],
 ])("%s has a specific recovery step", (raw, action) => {
   expect(errorHelp(raw).message).toContain(action);
