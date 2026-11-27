@@ -76,6 +76,21 @@ export class PointBudget {
 }
 
 /**
+ * Caps work that makes no points (elements visited, copies placed, rules checked), so a small hostile file
+ * cannot keep the core busy: every importer runs on its event loop.
+ */
+export class WorkBudget {
+  private left: number;
+  constructor(limit: number, private readonly what: string) {
+    this.left = limit;
+  }
+  take(n = 1) {
+    this.left -= n;
+    if (!(this.left >= 0)) throw new ArtImportError(`the drawing is too complex: ${this.what}`);
+  }
+}
+
+/**
  * Chords needed so a curve whose second derivative stays below `d2` (over a parameter range of 1) is within
  * `tol` of them: linear interpolation over a step h is off by at most h²/8 · max|C''|.
  */

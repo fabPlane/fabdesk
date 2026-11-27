@@ -11,6 +11,7 @@ import {
   ArtImportError,
   IDENTITY,
   PointBudget,
+  WorkBudget,
   apply,
   arcSteps,
   count,
@@ -52,11 +53,23 @@ const isSpace = (c: number) => c === 32 || c === 9 || c === 10 || c === 13;
 function parseXml(src: string): El {
   const entities = new Map(XML_ENTITIES);
   const err = (msg: string, at: number) => new ArtImportError(`not a valid SVG file: ${msg} (line ${src.slice(0, at).split("\n").length})`);
+  // Declared entities may only grow the text a little ("billion laughs" without the recursion: one long
+  // entity referenced many times).
+  const maxExpansion = 2 * src.length + 1_000_000;
+  let expanded = 0;
   const decode = (s: string) =>
     s.indexOf("&") < 0
       ? s
       : s.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|[A-Za-z_][\w.-]*);/g, (whole, ref: string) => {
-          if (ref[0] !== "#") return entities.get(ref) ?? whole;
+          if (ref[0] !== "#") {
+            const value = entities.get(ref);
+            if (value === undefined) return whole;
+            expanded += value.length;
+            if (expanded > maxExpansion) {
+              throw new ArtImportError(`the drawing is too complex: its XML entities expand to more than ${maxExpansion.toLocaleString("en")} characters`);
+            }
+            return value;
+          }
           const code = ref[1] === "x" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
           return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
         });
@@ -287,6 +300,7 @@ class PathBuilder {
   /** The open subpath; a drawing command right after Z starts a new one at the old start point. */
   private out(): Vec[] {
     if (!this.sub) {
+      this.budget.take(2); // the start point and the subpath itself
       this.sub = { pts: [apply(this.m, this.at)], closed: false };
       this.subpaths.push(this.sub);
     }
@@ -294,9 +308,13 @@ class PathBuilder {
   }
 
   moveTo(p: Vec) {
-    this.sub = null;
     this.at = this.start = p;
-    this.out();
+    // Moves in a row only shift the start: "M0 0 M0 0 …" must not pile up empty subpaths.
+    if (this.sub && this.sub.pts.length === 1) this.sub.pts[0] = apply(this.m, p);
+    else {
+      this.sub = null;
+      this.out();
+    }
   }
 
   lineTo(p: Vec) {
@@ -377,6 +395,8 @@ class PathBuilder {
       const a = pts[0]!, b = pts.at(-1)!;
       if (pts.length > 1 && Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9) pts.pop();
       this.sub.closed = true;
+      // A single point draws nothing ("M0 0 Z" repeated): drop it. The open subpath is always the last one.
+      if (pts.length < 2) this.subpaths.pop();
     }
     this.sub = null;
     this.at = this.start;
@@ -520,7 +540,11 @@ const INHERITED: Array<[keyof Style, string]> = [
 /** The only properties that change what gets marked. */
 const PROPS = new Set(["fill", "stroke", "fill-rule", "fill-opacity", "stroke-opacity", "visibility", "display", "opacity", "clip-path", "mask"]);
 
-type Rule = { tag: string | undefined; ids: string[]; classes: string[]; specificity: number; order: number; decls: Map<string, string> };
+/** A stylesheet rule with one simple selector; `rank` orders rules by specificity, then source order. */
+type Rule = { tag: string | undefined; ids: string[]; classes: string[]; specificity: number; order: number; rank: number; decls: Map<string, string> };
+
+/** Stylesheet rules beyond this many are ignored (with a warning); real files have a few dozen. */
+const MAX_CSS_RULES = 5000;
 
 function parseDecls(s: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -536,9 +560,8 @@ function parseDecls(s: string): Map<string, string> {
 
 const SELECTOR_RE = /^(\*|[A-Za-z][\w-]*)?((?:[.#][\w-]+)*)$/;
 
-/** Rules of a stylesheet with simple selectors (element, .class, #id, compounds of those); returns the count of selectors it could not use. */
-function parseCss(css: string, rules: Rule[]): number {
-  let unsupported = 0;
+/** Rules of a stylesheet with simple selectors (element, .class, #id, compounds of those); counts the selectors it could not use and the rules over the cap. */
+function parseCss(css: string, rules: Rule[], skipped: { unsupported: number; overCap: number }) {
   const src = css.replace(/\/\*[\s\S]*?\*\//g, "");
   let i = 0;
   while (i < src.length) {
@@ -558,17 +581,20 @@ function parseCss(css: string, rules: Rule[]): number {
     for (const sel of prelude.split(",")) {
       const m = SELECTOR_RE.exec(sel.trim());
       if (!m || !sel.trim()) {
-        unsupported++;
+        skipped.unsupported++;
+        continue;
+      }
+      if (rules.length >= MAX_CSS_RULES) {
+        skipped.overCap++;
         continue;
       }
       const parts = m[2]!.match(/[.#][\w-]+/g) ?? [];
       const ids = parts.filter(p => p[0] === "#").map(p => p.slice(1));
       const classes = parts.filter(p => p[0] === ".").map(p => p.slice(1));
       const tag = m[1] && m[1] !== "*" ? m[1] : undefined;
-      rules.push({ tag, ids, classes, specificity: ids.length * 10000 + classes.length * 100 + (tag ? 1 : 0), order: rules.length, decls });
+      rules.push({ tag, ids, classes, specificity: ids.length * 10000 + classes.length * 100 + (tag ? 1 : 0), order: rules.length, rank: 0, decls });
     }
   }
-  return unsupported;
 }
 
 const isPaint = (v: string) => v !== "none" && v !== "transparent" && v !== "";
@@ -586,17 +612,24 @@ class SvgReader {
   readonly groups: FillGroup[] = [];
   readonly lines: Vec[][] = [];
   private readonly ids = new Map<string, El>();
-  private readonly rules: Rule[] = [];
+  /** Rules filed under their most selective part (an id, else a class, else the element name), so an element only checks rules that can match it. */
+  private readonly rulesBy = { id: new Map<string, Rule[]>(), cls: new Map<string, Rule[]>(), tag: new Map<string, Rule[]>(), any: [] as Rule[] };
+  private readonly declCache = new Map<El, Map<string, string>>();
   private readonly svgPrefixes = new Set<string>();
   private readonly budget = new PointBudget();
+  // Elements drawn (and <use> copies) and stylesheet rules checked: neither makes points, so the point budget cannot catch a file that multiplies them.
+  private readonly nodes = new WorkBudget(200_000, "it would draw more than 200,000 elements (check for <use> copies of copies)");
+  private readonly cssChecks = new WorkBudget(2_000_000, "its stylesheet would need more than 2,000,000 rule checks");
+  private readonly css = { unsupported: 0, overCap: 0 };
   private readonly n = {
     text: 0, image: 0, foreignObject: 0, video: 0, badPath: 0, badTransform: 0, noPaint: 0,
-    clipped: 0, missingUse: 0, externalUse: 0, loopUse: 0, badCss: 0,
+    clipped: 0, missingUse: 0, externalUse: 0, loopUse: 0,
   };
 
   constructor(private readonly root: El, private readonly tol: number) {
     // Index every element first: ids and stylesheets apply wherever they appear (often inside <defs>).
     const all: El[] = [];
+    const rules: Rule[] = [];
     for (const stack = [root]; stack.length; ) {
       const el = stack.pop()!;
       all.push(el);
@@ -607,9 +640,16 @@ class SvgReader {
       const id = el.attrs.get("id");
       if (id !== undefined && !this.ids.has(id)) this.ids.set(id, el);
       const type = el.attrs.get("type");
-      if (this.svgName(el) === "style" && (!type || type === "text/css")) this.n.badCss += parseCss(el.text, this.rules);
+      if (this.svgName(el) === "style" && (!type || type === "text/css")) parseCss(el.text, rules, this.css);
     }
-    this.rules.sort((a, b) => a.specificity - b.specificity || a.order - b.order);
+    rules.sort((a, b) => a.specificity - b.specificity || a.order - b.order);
+    rules.forEach((r, i) => {
+      r.rank = i;
+      const [map, key] = r.ids[0] !== undefined ? [this.rulesBy.id, r.ids[0]] : r.classes[0] !== undefined ? [this.rulesBy.cls, r.classes[0]] : r.tag !== undefined ? [this.rulesBy.tag, r.tag] : [null, ""];
+      if (!map) this.rulesBy.any.push(r);
+      else if (map.has(key)) map.get(key)!.push(r);
+      else map.set(key, [r]);
+    });
   }
 
   /** The SVG element name, or undefined for elements of other namespaces (sodipodi:, inkscape:…). */
@@ -619,21 +659,35 @@ class SvgReader {
     return this.svgPrefixes.has(el.name.slice(0, colon)) ? el.name.slice(colon + 1) : undefined;
   }
 
-  /** Presentation attributes, then stylesheet rules by specificity, then the style attribute. */
+  /**
+   * Presentation attributes, then stylesheet rules by specificity, then the style attribute. Cached per
+   * element: they do not depend on where it is drawn, and <use> may draw it many times.
+   */
   private decls(el: El, name: string): Map<string, string> {
+    const cached = this.declCache.get(el);
+    if (cached) return cached;
     const out = new Map<string, string>();
     for (const [k, v] of el.attrs) if (PROPS.has(k) && v.trim()) out.set(k, v.trim().toLowerCase());
-    if (this.rules.length) {
-      const id = el.attrs.get("id");
-      const classes = (el.attrs.get("class") ?? "").split(/\s+/).filter(Boolean);
-      for (const r of this.rules) {
-        if (r.tag !== undefined && r.tag !== name) continue;
-        if (!r.ids.every(x => x === id) || !r.classes.every(c => classes.includes(c))) continue;
-        for (const [k, v] of r.decls) out.set(k, v);
-      }
+    const id = el.attrs.get("id");
+    const classes = [...new Set((el.attrs.get("class") ?? "").split(/\s+/).filter(Boolean))];
+    // Each rule is filed under one key and the keys of an element are distinct, so there are no duplicates.
+    const candidates: Rule[] = [...this.rulesBy.any];
+    const add = (list: Rule[] | undefined) => {
+      if (list) for (const r of list) candidates.push(r);
+    };
+    if (id !== undefined) add(this.rulesBy.id.get(id));
+    for (const c of classes) add(this.rulesBy.cls.get(c));
+    add(this.rulesBy.tag.get(name));
+    this.cssChecks.take(candidates.length);
+    candidates.sort((a, b) => a.rank - b.rank);
+    for (const r of candidates) {
+      if (r.tag !== undefined && r.tag !== name) continue;
+      if (!r.ids.every(x => x === id) || !r.classes.every(c => classes.includes(c))) continue;
+      for (const [k, v] of r.decls) out.set(k, v);
     }
     const style = el.attrs.get("style");
     if (style) for (const [k, v] of parseDecls(style)) out.set(k, v);
+    this.declCache.set(el, out);
     return out;
   }
 
@@ -674,6 +728,7 @@ class SvgReader {
   }
 
   private render(el: El, ctx: Ctx) {
+    this.nodes.take(); // before any early return: hidden and empty elements cost work too
     const name = this.svgName(el);
     if (name === undefined || (!DRAWN.has(name) && !SKIPPED_CONTENT.has(name))) return;
     if (ctx.depth > MAX_DEPTH) throw new ArtImportError(`the drawing is nested too deeply (more than ${MAX_DEPTH} levels)`);
@@ -742,6 +797,7 @@ class SvgReader {
       this.n.loopUse++;
       return;
     }
+    this.nodes.take(); // each copy, on top of the elements it draws
     const m = mul(ctx.m, translate(parseLength(el.attrs.get("x"), ctx.vw) ?? 0, parseLength(el.attrs.get("y"), ctx.vh) ?? 0));
     // The copy inherits paint from the <use>, not from where the original sits.
     const inner: Ctx = { ...ctx, m, chain: [...ctx.chain, target] };
@@ -850,7 +906,8 @@ class SvgReader {
     if (n.missingUse) out.push(`${count(n.missingUse, "<use> element")} skipped: the shape it copies is missing`);
     if (n.externalUse) out.push(`${count(n.externalUse, "<use> element")} skipped: it copies from another file`);
     if (n.loopUse) out.push(`${count(n.loopUse, "<use> element")} skipped: it copies itself`);
-    if (n.badCss) out.push(`${count(n.badCss, "CSS selector")} ignored: only element, .class and #id selectors are supported`);
+    if (this.css.unsupported) out.push(`${count(this.css.unsupported, "CSS selector")} ignored: only element, .class and #id selectors are supported`);
+    if (this.css.overCap) out.push(`${count(this.css.overCap, "CSS rule")} ignored: a drawing can use at most ${MAX_CSS_RULES.toLocaleString("en")}`);
     return out;
   }
 }

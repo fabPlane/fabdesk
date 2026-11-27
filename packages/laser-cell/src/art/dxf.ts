@@ -11,6 +11,7 @@ import type { ArtGeometry, Vec } from "./index";
 import {
   ArtImportError,
   PointBudget,
+  WorkBudget,
   apply,
   arcSteps,
   chordsFor,
@@ -29,6 +30,10 @@ import {
 /** Pieces whose ends are closer than this (in mm) are joined. */
 const CHAIN_TOLERANCE_MM = 1e-3;
 const MAX_INSERT_DEPTH = 32;
+/** Entity visits per file, counting every copy a block placement makes (blocks inside blocks multiply). */
+const MAX_VISITS = 1_000_000;
+/** De Boor evaluation costs grow with degree²; real splines are degree 1–5 (AutoCAD allows up to 11). */
+const MAX_SPLINE_DEGREE = 25;
 
 /** $INSUNITS codes → mm. 0 (unitless) is read as mm. */
 const UNITS_MM: Record<number, number> = {
@@ -209,8 +214,11 @@ function flattenBSpline(p: number, knots: number[], ctrl: Vec[], weights: number
     r.push(den > 0 && p >= 2 ? ((p - 1) * Math.hypot(q[i + 1]![0] - q[i]![0], q[i + 1]![1] - q[i]![1])) / den : 0);
   }
   const at = (u: number) => deBoor(p, knots, ctrl, weights, u, findSpan(knots, p, n, u));
+  // One evaluation costs about p²/2 steps: charge it against the point budget (16 steps ≈ one point).
+  const cost = Math.ceil(((p + 1) * (p + 1)) / 16);
   const out: Vec[] = [];
   const refine = (ua: number, pa: Vec, ub: number, pb: Vec, depth: number) => {
+    budget.take(3 * cost);
     const um = (ua + ub) / 2, pm = at(um);
     const off = Math.max(segDistance(pm, pa, pb), segDistance(at((ua + um) / 2), pa, pb), segDistance(at((um + ub) / 2), pa, pb));
     if (depth >= 16 || off <= tol) return;
@@ -227,7 +235,7 @@ function flattenBSpline(p: number, knots: number[], ctrl: Vec[], weights: number
     for (let i = Math.max(0, k - p); i <= k - 2 && i < r.length; i++) d2 = Math.max(d2, r[i]!);
     const h = u1 - u0;
     const steps = Math.max(weights ? 4 : 1, chordsFor(h * h * d2, tol));
-    budget.take(steps + 1);
+    budget.take((steps + 1) * cost);
     let prevU = u0, prev = at(u0);
     if (!out.length) out.push(prev);
     for (let s = 1; s <= steps; s++) {
@@ -268,22 +276,37 @@ function chainPieces(pieces: Vec[][], tol: number): { closed: Vec[][]; open: Vec
   const list = pieces.filter(p => p.length >= 2);
   const end = (ref: number): Vec => (ref & 1 ? list[ref >> 1]!.at(-1)! : list[ref >> 1]![0]!);
   const cellOf = (v: number) => Math.floor(v / tol);
-  // Ends hashed on a tol-sized grid: a match is always in the same or a neighbouring cell.
+  // Ends hashed on a tol-sized grid: a match is always in the same or a neighbouring cell. A used piece
+  // leaves its cells at once (swap with the last entry), so many pieces ending at one point (duplicated
+  // lines) stay linear; near misses that still pile up in one cell are capped by the scan budget.
   const grid = new Map<string, number[]>();
-  list.forEach((_, i) => {
-    for (const ref of [i * 2, i * 2 + 1]) {
-      const p = end(ref), key = `${cellOf(p[0])},${cellOf(p[1])}`;
-      const cell = grid.get(key);
-      if (cell) cell.push(ref);
-      else grid.set(key, [ref]);
+  const cellOfRef: number[][] = [];
+  const slot = new Int32Array(list.length * 2);
+  for (let ref = 0; ref < list.length * 2; ref++) {
+    const p = end(ref), key = `${cellOf(p[0])},${cellOf(p[1])}`;
+    let cell = grid.get(key);
+    if (!cell) grid.set(key, (cell = []));
+    slot[ref] = cell.length;
+    cell.push(ref);
+    cellOfRef[ref] = cell;
+  }
+  const use = (piece: number) => {
+    for (const ref of [piece * 2, piece * 2 + 1]) {
+      const cell = cellOfRef[ref]!, last = cell.pop()!;
+      if (last !== ref) {
+        cell[slot[ref]!] = last;
+        slot[last] = slot[ref]!;
+      }
     }
-  });
-  const used = new Uint8Array(list.length);
+  };
+  const scans = new WorkBudget(10_000_000, "too many line ends lie within 0.003 mm of each other without meeting");
   const near = (p: Vec): number => {
     const cx = cellOf(p[0]), cy = cellOf(p[1]);
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-      for (const ref of grid.get(`${cx + dx},${cy + dy}`) ?? []) {
-        if (used[ref >> 1]) continue;
+      const cell = grid.get(`${cx + dx},${cy + dy}`);
+      if (!cell) continue;
+      for (const ref of cell) {
+        scans.take();
         const q = end(ref);
         if (Math.hypot(q[0] - p[0], q[1] - p[1]) <= tol) return ref;
       }
@@ -292,9 +315,11 @@ function chainPieces(pieces: Vec[][], tol: number): { closed: Vec[][]; open: Vec
   };
   const meets = (pts: Vec[]) => Math.hypot(pts[0]![0] - pts.at(-1)![0], pts[0]![1] - pts.at(-1)![1]) <= tol;
   const closed: Vec[][] = [], open: Vec[][] = [];
+  const used = new Uint8Array(list.length);
   for (let i = 0; i < list.length; i++) {
     if (used[i]) continue;
     used[i] = 1;
+    use(i);
     const pts = list[i]!.slice();
     // Grow the end, then reverse and grow the other end the same way (the second reverse restores the order).
     for (let side = 0; side < 2; side++) {
@@ -302,6 +327,7 @@ function chainPieces(pieces: Vec[][], tol: number): { closed: Vec[][]; open: Vec
         const ref = near(pts.at(-1)!);
         if (ref < 0) break;
         used[ref >> 1] = 1;
+        use(ref >> 1);
         const next = list[ref >> 1]!;
         const seq = ref & 1 ? next.slice().reverse() : next;
         for (let k = 1; k < seq.length; k++) pts.push(seq[k]!);
@@ -327,6 +353,7 @@ class DxfReader {
   private readonly blocks = new Map<string, Block>();
   private readonly hiddenLayers = new Set<string>();
   private readonly budget = new PointBudget();
+  private readonly visits = new WorkBudget(MAX_VISITS, `it places more than ${MAX_VISITS.toLocaleString("en")} entities (check for blocks placed inside blocks)`);
   private readonly skipped = new Map<string, number>();
   private readonly n = { hiddenLayer: 0, invisible: 0, paperSpace: 0, missingBlock: 0, loopBlock: 0, xref: 0, mesh: 0, badKnots: 0, emptySpline: 0, openSpline: 0 };
   private readonly notes: string[] = [];
@@ -373,19 +400,21 @@ class DxfReader {
 
     const entities = sections.get("ENTITIES")?.body;
     if (!entities) this.notes.push("The drawing has no ENTITIES section");
-    else this.entities(entities, scale(mm), []);
+    else this.entities(entities, scale(mm), [], 1);
     return chainPieces(this.open, CHAIN_TOLERANCE_MM);
   }
 
-  /** Walks a list of entities; `m` maps their coordinates to final mm. */
-  private entities(list: Rec[], m: Mat, chain: string[]) {
+  /** Walks a list of entities; `m` maps their coordinates to final mm; `copies` is how many times this list is walked in all. */
+  private entities(list: Rec[], m: Mat, chain: string[], copies: number) {
     for (let i = 0; i < list.length; i++) {
       const r = list[i]!;
+      this.visits.take();
       // A POLYLINE owns the VERTEX records after it; an INSERT with attributes owns ATTRIBs. Both end with SEQEND.
       const owned: Rec[] = [];
       if (r.type === "POLYLINE" || (r.type === "INSERT" && r.num(66) === 1)) {
         while (list[i + 1]?.type === "VERTEX" || list[i + 1]?.type === "ATTRIB") owned.push(list[++i]!);
         if (list[i + 1]?.type === "SEQEND") i++;
+        this.visits.take(owned.length);
       }
       if (QUIET.has(r.type)) continue;
       if (this.hiddenLayers.has(r.str(8) ?? "0")) {
@@ -400,11 +429,11 @@ class DxfReader {
         this.n.paperSpace++;
         continue;
       }
-      this.entity(r, owned, m, chain);
+      this.entity(r, owned, m, chain, copies);
     }
   }
 
-  private entity(r: Rec, owned: Rec[], m: Mat, chain: string[]) {
+  private entity(r: Rec, owned: Rec[], m: Mat, chain: string[], copies: number) {
     const { tol, budget } = this;
     // CIRCLE, ARC, LWPOLYLINE, POLYLINE and INSERT are in object coordinates: mirrored when extruded along −Z.
     const ocs = r.num(230, 1) < 0 ? mul(m, MIRROR_X) : m;
@@ -456,7 +485,7 @@ class DxfReader {
       case "SPLINE":
         return this.spline(r, m);
       case "INSERT":
-        return this.insert(r, ocs, chain);
+        return this.insert(r, ocs, chain, copies);
       default:
         this.skipped.set(r.type, (this.skipped.get(r.type) ?? 0) + 1);
     }
@@ -511,6 +540,7 @@ class DxfReader {
     const fit = r.points(11).map(v => apply(m, v));
     let pts: Vec[];
     if (p >= 1 && Number.isInteger(p) && ctrl.length > p) {
+      if (p > MAX_SPLINE_DEGREE) throw new ArtImportError(`the drawing is too complex: a SPLINE has degree ${p}; at most ${MAX_SPLINE_DEGREE} is supported`);
       let knots = r.nums(40);
       const ordered = knots.every((k, i) => i === 0 || k >= knots[i - 1]!);
       if (knots.length !== ctrl.length + p + 1 || !ordered || !(knots[ctrl.length]! > knots[p]!)) {
@@ -542,7 +572,7 @@ class DxfReader {
   }
 
   /** INSERT: a block placed at 10/20, scaled by 41/42, rotated by 50 degrees, optionally as a grid (70/71 counts, 44/45 spacing). */
-  private insert(r: Rec, m: Mat, chain: string[]) {
+  private insert(r: Rec, m: Mat, chain: string[], copies: number) {
     const name = r.str(2) ?? "";
     const block = this.blocks.get(name);
     if (!block) {
@@ -558,13 +588,18 @@ class DxfReader {
       return;
     }
     const cols = Math.max(1, Math.trunc(r.num(70, 1))), rows = Math.max(1, Math.trunc(r.num(71, 1)));
-    if (cols * rows > 100_000) throw new ArtImportError(`an INSERT places block "${name}" ${cols * rows} times; that is too many`);
+    // Fail before the work: copies multiply down nested blocks, and even an empty block costs a visit per copy.
+    const total = copies * cols * rows;
+    if (total * Math.max(1, block.entities.length) > MAX_VISITS) {
+      throw new ArtImportError(`the drawing is too complex: block "${name}" would be placed ${total.toLocaleString("en")} times (with ${block.entities.length} entities each)`);
+    }
     const place = mul(translate(r.num(10), r.num(20)), rotate(r.num(50)));
     const local = mul(scale(r.num(41, 1), r.num(42, 1)), translate(-block.base[0], -block.base[1]));
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const at = mul(place, mul(translate(col * r.num(44), row * r.num(45)), local));
-        this.entities(block.entities, mul(m, at), [...chain, name]);
+        this.visits.take();
+        this.entities(block.entities, mul(m, at), [...chain, name], total);
       }
     }
   }

@@ -847,3 +847,83 @@ describe("importArt", () => {
     expect(fine).toBeGreaterThan(coarse * 5);
   });
 });
+
+// ---------------------------------------------------------------- hostile files
+
+/** The importers run on the core's event loop: a small file must not stall it or exhaust its memory. */
+describe("hostile files fail fast with a clear error", () => {
+  const tooComplex = async (work: Promise<unknown>, detail: RegExp) => {
+    const error = await work.then(() => null, (e: unknown) => e);
+    expect(error).toBeInstanceOf(ArtImportError);
+    expect((error as Error).message).toMatch(/^the drawing is too complex: /);
+    expect((error as Error).message).toMatch(detail);
+  };
+  /** Ten levels of ten <use> each: 10^10 copies of `leaf` from about 1.5 kB. */
+  const fanOut = (leaf: string) => {
+    let defs = leaf;
+    for (let k = 1; k <= 10; k++) defs += `<g id="a${k}">${`<use href="#a${k - 1}"/>`.repeat(10)}</g>`;
+    return svg(`<defs>${defs}</defs><use href="#a10"/>`);
+  };
+  const block = (name: string, ...entities: Pair[][]): Pair[] => [[0, "BLOCK"], [8, "0"], [2, name], [70, 0], [10, 0], [20, 0], [30, 0], ...entities.flat(), [0, "ENDBLK"]];
+  const grid = (name: string, cols: number, rows: number) => ent("INSERT", [2, name], [10, 0], [20, 0], [30, 0], [70, cols], [71, rows], [44, 1], [45, 1]);
+
+  test("SVG <use> fan-out, even of empty groups or hidden shapes", async () => {
+    await tooComplex(importSvg(fanOut('<g id="a0"/>')), /more than 200,000 elements/);
+    await tooComplex(importSvg(fanOut('<rect id="a0" width="1" height="1" display="none"/>')), /more than 200,000 elements/);
+    // A real drawing with a thousand copies is fine.
+    const copies = await importSvg(svg(`<defs><rect id="r" width="1" height="1"/></defs>${Array.from({ length: 1000 }, (_, i) => `<use href="#r" x="${(i % 40) * 2}" y="${Math.floor(i / 40) * 2}"/>`).join("")}`));
+    expect(copies.fills).toHaveLength(1000);
+  }, 2000);
+
+  test("DXF block grids multiply down nested blocks, and empty blocks still count", async () => {
+    // 6000 × 6000 copies of an empty block, inside another block (292 bytes did 36 million placements).
+    await tooComplex(importDxf(dxf([grid("A", 1, 1)], { blocks: [...block("E"), ...block("A", grid("E", 6000, 6000))] })), /block "E" would be placed 36,000,000 times/);
+    // 100 copies at each of four levels: no single INSERT is large, the product is 10^8.
+    const nested = [...block("B0"), ...block("B1", grid("B0", 100, 1)), ...block("B2", grid("B1", 100, 1)), ...block("B3", grid("B2", 100, 1))];
+    await tooComplex(importDxf(dxf([grid("B3", 100, 1)], { blocks: nested })), /block "B0" would be placed 100,000,000 times/);
+    // Each grid is allowed on its own; together they pass the per-file count.
+    await tooComplex(importDxf(dxf([grid("E", 1000, 500), grid("E", 1000, 500), grid("E", 1000, 500)], { blocks: block("E") })), /more than 1,000,000 entities/);
+  }, 2000);
+
+  test("CSS: rules are looked up by id, class and element, capped at 5,000", async () => {
+    // 20,000 class rules × 20,000 elements took 5 s when every element checked every rule.
+    const rules = Array.from({ length: 20000 }, (_, i) => `.c${i}{stroke:black}`).join("");
+    const paths = Array.from({ length: 20000 }, (_, i) => `<path class="c${i}" fill="none" d="M0 ${i % 100} L1 ${i % 100}"/>`).join("");
+    const g = await importSvg(svg(`<style>${rules}</style>${paths}`));
+    expect(g.lines).toHaveLength(5000);
+    expect(g.warnings).toEqual(["15000 shapes were skipped: no fill and no stroke", "15000 CSS rules were ignored: a drawing can use at most 5,000"]);
+    // Rules that all match every element still have a total cost.
+    await tooComplex(importSvg(svg(`<style>${"rect{stroke:red}".repeat(5000)}</style>${'<rect width="1" height="1"/>'.repeat(1000)}`)), /more than 2,000,000 rule checks/);
+  }, 2000);
+
+  test("XML entities may not blow the text up", async () => {
+    // A 10 kB entity used 1000 times: 10 MB from a 14 kB file (130 kB made a 1 GB attribute).
+    const text = `<!DOCTYPE svg [<!ENTITY a "${"x".repeat(10000)}">]>` + svg(`<desc id="${"&a;".repeat(1000)}"/>`);
+    await tooComplex(importSvg(text), /XML entities expand to more than/);
+  }, 2000);
+
+  test("DXF spline degree is capped; evaluation work counts against the point budget", async () => {
+    const curve = (degree: number) =>
+      spline(degree, [...Array<number>(degree + 1).fill(0), ...Array<number>(degree + 1).fill(1)], Array.from({ length: degree + 1 }, (_, i): Vec => [i, i % 2]));
+    await tooComplex(importDxf(dxf([curve(400)])), /a SPLINE has degree 400; at most 25 is supported/);
+    expect((await importDxf(dxf([curve(25)]))).lines).toHaveLength(1);
+  }, 2000);
+
+  test("move-only path data does not pile up empty subpaths", async () => {
+    for (const d of ["M0 0".repeat(1_000_000), "M0 0Z".repeat(1_000_000)]) {
+      const g = await importSvg(svg(`<path d="${d}"/>`));
+      expect(g.fills).toEqual([]);
+      expect(g.warnings).toEqual(["The file has no shapes that can be marked."]);
+    }
+    // Consecutive moves keep the last one.
+    const g = await importSvg(stroke("M0 0 M5 5 m1 0 L10 6"));
+    expect(g.lines).toEqual([[[0, 1], [4, 0]]]); // (6, 5) → (10, 6), Y flipped
+  }, 3000);
+
+  test("DXF chaining stays linear when many lines share their ends", async () => {
+    // 60,000 copies of one line: each pairs with one other into a there-and-back polyline.
+    const g = await importDxf(dxf(Array.from({ length: 60000 }, () => line(0, 0, 10, 0))));
+    expect(g.lines).toHaveLength(30000);
+    expect(g.lines[0]).toEqual([[0, 0], [10, 0], [0, 0]]);
+  }, 2000);
+});
