@@ -119,10 +119,19 @@ function fakeGitHub(options: { status?: number; scopes?: string; create?: (path:
   return { fetchImpl, calls };
 }
 
-async function hub(name: string, options: Parameters<typeof fakeGitHub>[0] & { gh?: string | null } = {}) {
+/** A data folder whose owner already allowed the GitHub CLI login. */
+async function allowedHome(dir: string): Promise<string> {
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "github.json"), JSON.stringify({ cli: true }));
+  return dir;
+}
+
+async function hub(name: string, options: Parameters<typeof fakeGitHub>[0] & { gh?: string | null; allowed?: boolean } = {}) {
   const home = await temp(name);
   const github = fakeGitHub(options);
-  const work = new WorkHub({ home, fetch: github.fetchImpl, ghToken: async () => options.gh === undefined ? TOKEN : options.gh, now: () => NOW });
+  // Most tests start from a person who already allowed the GitHub CLI login.
+  if (options.allowed !== false) await writeFile(join(home, "github.json"), JSON.stringify({ cli: true }));
+  const work = new WorkHub({ home, fetch: github.fetchImpl, cli: async () => ({ installed: options.gh !== "not-installed", token: options.gh === undefined ? TOKEN : options.gh === "not-installed" ? null : options.gh }), now: () => NOW });
   return { home, work, ...github };
 }
 
@@ -139,14 +148,31 @@ test("connection: borrows the GitHub CLI login, watches the accounts the person 
   await work.connection();
   expect(calls).toHaveLength(1);
 
-  expect(await (await hub("missing", { gh: null })).work.connection()).toMatchObject({ connected: false, reason: "missing" });
+  expect(await (await hub("missing", { gh: null })).work.connection()).toMatchObject({ connected: false, reason: "missing", cli: "signed_out" });
+  expect(await (await hub("no-cli", { gh: "not-installed" })).work.connection()).toMatchObject({ connected: false, reason: "missing", cli: "not_installed" });
   expect(await (await hub("invalid", { status: 401 })).work.connection()).toMatchObject({ connected: false, reason: "invalid" });
   const readOnly = await (await hub("scopes", { scopes: "read:org" })).work.connection();
   expect(readOnly.connected && readOnly.canPublish).toBe(false);
 });
 
+test("the GitHub CLI login is used only after the person allows it, and disconnecting withdraws that", async () => {
+  const { work, home, calls } = await hub("consent", { allowed: false });
+  expect(await work.connection()).toMatchObject({ connected: false, reason: "missing", cli: "ready" });
+  await expect(work.overview("all")).rejects.toMatchObject({ code: "github_not_connected" });
+  // Nothing was sent to GitHub with a login nobody agreed to share.
+  expect(calls).toEqual([]);
+  expect(await work.update({ useCli: true })).toMatchObject({ connected: true, source: "gh" });
+  expect(JSON.parse(await readFile(join(home, "github.json"), "utf8"))).toEqual({ cli: true });
+  expect(await work.disconnect()).toMatchObject({ connected: false, cli: "ready" });
+  await expect(stat(join(home, "github.json"))).rejects.toThrow();
+
+  const signedOut = await hub("consent-out", { allowed: false, gh: null });
+  await expect(signedOut.work.update({ useCli: true })).rejects.toMatchObject({ status: 412 });
+  await expect(stat(join(signedOut.home, "github.json"))).rejects.toThrow();
+});
+
 test("a saved token is validated first, kept private on disk, preferred over the CLI, and forgotten on disconnect", async () => {
-  const { work, home, calls } = await hub("token", { gh: null });
+  const { work, home, calls } = await hub("token", { gh: null, allowed: false });
   const saved = fixture("github_pat");
   const connection = await work.update({ token: saved, watched: ["fabPlane"] });
   expect(connection.connected && connection.source).toBe("token");
@@ -159,7 +185,7 @@ test("a saved token is validated first, kept private on disk, preferred over the
   // The choice of accounts outlives the token.
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ watched: ["fabPlane"] });
 
-  const rejected = await hub("rejected", { status: 401, gh: null });
+  const rejected = await hub("rejected", { status: 401, gh: null, allowed: false });
   await expect(rejected.work.update({ token: saved })).rejects.toMatchObject({ code: "github_token_invalid" });
   await expect(stat(join(rejected.home, "github.json"))).rejects.toThrow();
 });
@@ -236,7 +262,7 @@ test("publish: commits the project, creates the repository, pushes with the toke
     created.push({ path, body });
     return new Response(JSON.stringify({ full_name: "fabPlane/blinky", html_url: "https://github.com/fabPlane/blinky", clone_url: bare }), { status: 201 });
   } });
-  const work = new WorkHub({ home: join(root, "home"), fetch: github.fetchImpl, ghToken: async () => TOKEN, now: () => NOW,
+  const work = new WorkHub({ home: await allowedHome(join(root, "home")), fetch: github.fetchImpl, cli: async () => ({ installed: true, token: TOKEN }), now: () => NOW,
     git: (args, opts) => { git.push(args); return defaultGit(args, opts); } });
 
   expect(await work.projectLink(dir)).toEqual({ repo: null, pushed: false, otherRemote: false });
@@ -262,7 +288,7 @@ test("publish: commits the project, creates the repository, pushes with the toke
 
   const taken = join(root, "taken");
   await mkdir(taken); await writeFile(join(taken, "fabdesk.json"), "{}");
-  const conflict = new WorkHub({ home: join(root, "home2"), ghToken: async () => TOKEN, now: () => NOW,
+  const conflict = new WorkHub({ home: await allowedHome(join(root, "home2")), cli: async () => ({ installed: true, token: TOKEN }), now: () => NOW,
     fetch: fakeGitHub({ create: () => new Response(JSON.stringify({ errors: [{ message: "name already exists on this account" }] }), { status: 422 }) }).fetchImpl });
   await expect(conflict.publish(taken, { owner: "matt", name: "taken", private: true })).rejects.toMatchObject({ code: "repo_exists", message: "name already exists on this account" });
   expect((await defaultGit(["remote"], { cwd: taken })).stdout.trim()).toBe("");
@@ -277,7 +303,7 @@ test("publish: a first push that fails can be retried without creating a second 
   let created = 0, offline = true;
   // The remote looks like GitHub to the hub, and git is pointed at the local folder instead.
   const github = fakeGitHub({ create: () => { created++; return new Response(JSON.stringify({ full_name: "matt/blinky", html_url: "https://github.com/matt/blinky", clone_url: "https://github.com/matt/blinky.git" }), { status: 201 }); } });
-  const work = new WorkHub({ home: join(root, "home"), fetch: github.fetchImpl, ghToken: async () => TOKEN, now: () => NOW,
+  const work = new WorkHub({ home: await allowedHome(join(root, "home")), fetch: github.fetchImpl, cli: async () => ({ installed: true, token: TOKEN }), now: () => NOW,
     git: (args, opts) => args[0] !== "push" ? defaultGit(args, opts)
       : offline ? Promise.resolve({ exitCode: 128, stdout: "", stderr: "fatal: unable to access: Could not resolve host" })
       : defaultGit(["-c", `url.${bare}.insteadOf=https://github.com/matt/blinky.git`, ...args], { cwd: opts.cwd }) });

@@ -13,10 +13,15 @@ Everything runs in the local core (`apps/core/src/work-hub.ts`, routes in
 
 ## Connection
 
-The core uses, in order: a personal access token saved from the Work page
-(`${FABDESK_HOME}/github.json`, 0600), then the GitHub CLI login (`gh auth token`). The token never
-reaches the renderer or a paired device. Scopes: `repo` and `read:org`; without `repo` the hub is
-read-only and **Move to GitHub** is disabled.
+The connect card has one button. If the GitHub CLI is installed and signed in on the core's
+machine, fabPlane asks to use that login and does nothing with it until the person allows it. If
+the CLI is missing or signed out, the card shows how to install it and run `gh auth login`, with
+**Check again**. **Use a token instead** saves a personal access token.
+
+The core uses a saved token first, then the CLI login when allowed; both the token and the
+permission live in `${FABDESK_HOME}/github.json` (0600), and **Disconnect** removes them. The token
+never reaches the renderer or a paired device. Scopes: `repo` and `read:org`; without `repo` the
+hub is read-only and **Move to GitHub** is disabled.
 
 **Watched accounts** decide what is scanned. Until the person chooses, that is their own account
 plus the organizations they committed to in the last year: membership alone is not used, because one

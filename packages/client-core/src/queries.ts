@@ -1261,6 +1261,8 @@ export function useWorkMutations() {
   return {
     update: useMutation({ mutationFn: (input: UpdateWorkConnection) => client.updateWorkConnection(input), onSuccess: refreshAll }),
     disconnect: useMutation({ mutationFn: () => client.disconnectWork(), onSuccess: refreshAll }),
+    /** Look at this machine again, for example after installing or signing in to the GitHub CLI. */
+    recheck: useMutation({ mutationFn: () => client.workConnection(true), onSuccess: refreshAll }),
     /** Ask GitHub again now instead of waiting for the caches. */
     refresh: useMutation({
       mutationFn: async (scope: WorkScope) => { await client.workConnection(true); await client.workOverview(scope, true); },

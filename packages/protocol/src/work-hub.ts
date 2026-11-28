@@ -23,10 +23,17 @@ export type WorkOwner = WorkActor & {
 };
 
 export type WorkConnection =
-  | { connected: false; reason: "missing" | "invalid" | "offline"; message: string }
+  | {
+      connected: false; reason: "missing" | "invalid" | "offline"; message: string;
+      /**
+       * The GitHub CLI on the core's machine: `ready` (installed and signed in, so the person can
+       * allow fabPlane to use it), `signed_out`, or `not_installed`.
+       */
+      cli: "ready" | "signed_out" | "not_installed";
+    }
   | {
       connected: true;
-      /** `token`: saved in fabPlane on this machine. `gh`: borrowed from the GitHub CLI login. */
+      /** `token`: saved in fabPlane on this machine. `gh`: the GitHub CLI login, which the person allowed. */
       source: "token" | "gh";
       viewer: WorkActor & { name: string | null };
       owners: WorkOwner[];
@@ -37,6 +44,8 @@ export type WorkConnection =
 export const UpdateWorkConnection = z.object({
   /** A personal access token to save. Omit to keep the current one. */
   token: z.string().trim().min(20).max(400).regex(/^[A-Za-z0-9_]+$/, "That does not look like a GitHub token").optional(),
+  /** True allows fabPlane to use the GitHub CLI login on this machine; false withdraws that. */
+  useCli: z.boolean().optional(),
   /** Replace the list of watched accounts. */
   watched: z.array(GitHubLogin).max(50).optional(),
 }).strict();

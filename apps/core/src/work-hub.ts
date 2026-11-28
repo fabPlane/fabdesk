@@ -51,29 +51,32 @@ export class WorkHubError extends Error {
   }
 }
 
-type Saved = { token?: string; watched?: string[] };
+type Saved = { token?: string; watched?: string[]; /** The person allowed using the GitHub CLI login. */ cli?: boolean };
+/** What the GitHub CLI on this machine offers. */
+export type GitHubCli = { installed: boolean; token: string | null };
 type Credential = { token: string; source: "token" | "gh" };
 
 export type WorkHubOptions = {
   /** The fabPlane data folder; the token is kept in `github.json` inside it (0600). */
   home: string;
   fetch?: typeof fetch;
-  /** The GitHub CLI's token, or null when `gh` is missing or signed out. */
-  ghToken?: () => Promise<string | null>;
+  /** Whether `gh` is installed, and its token when signed in. Used only after the person allows it. */
+  cli?: () => Promise<GitHubCli>;
   git?: GitRunner;
   now?: () => number;
 };
 
-async function ghCliToken(): Promise<string | null> {
+async function gitHubCli(): Promise<GitHubCli> {
   try {
     const child = Bun.spawn(["gh", "auth", "token", "--hostname", "github.com"], {
       stdout: "pipe", stderr: "ignore", stdin: "ignore", windowsHide: true,
     });
     const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
     const token = out.trim();
-    return code === 0 && /^[A-Za-z0-9_]{20,400}$/.test(token) ? token : null;
+    return { installed: true, token: code === 0 && /^[A-Za-z0-9_]{20,400}$/.test(token) ? token : null };
   } catch {
-    return null;
+    // Spawning fails when there is no `gh` on the PATH.
+    return { installed: false, token: null };
   }
 }
 
@@ -138,7 +141,7 @@ const CLOSER = `closer:timelineItems(last:1,itemTypes:[CLOSED_EVENT]){nodes{... 
 export class WorkHub {
   private readonly file: string;
   private readonly fetchImpl: typeof fetch;
-  private readonly ghToken: () => Promise<string | null>;
+  private readonly cli: () => Promise<GitHubCli>;
   private readonly git: GitRunner;
   private readonly now: () => number;
   private connectionCache: Cached<WorkConnection> | null = null;
@@ -151,7 +154,7 @@ export class WorkHub {
   constructor(options: WorkHubOptions) {
     this.file = join(options.home, "github.json");
     this.fetchImpl = options.fetch ?? fetch;
-    this.ghToken = options.ghToken ?? ghCliToken;
+    this.cli = options.cli ?? gitHubCli;
     this.git = options.git ?? defaultGit;
     this.now = options.now ?? Date.now;
   }
@@ -164,6 +167,7 @@ export class WorkHub {
       return {
         ...(typeof parsed.token === "string" && parsed.token ? { token: parsed.token } : {}),
         ...(Array.isArray(parsed.watched) ? { watched: parsed.watched.filter((x): x is string => typeof x === "string") } : {}),
+        ...(parsed.cli === true ? { cli: true } : {}),
       };
     } catch {
       return {};
@@ -171,16 +175,18 @@ export class WorkHub {
   }
 
   private async save(next: Saved): Promise<void> {
-    if (!next.token && !next.watched) { await rm(this.file, { force: true }); return; }
+    if (!next.token && !next.watched && !next.cli) { await rm(this.file, { force: true }); return; }
     await mkdir(dirname(this.file), { recursive: true });
     await writeFile(this.file, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
     await chmod(this.file, 0o600).catch(() => undefined);
   }
 
   private async credential(): Promise<Credential | null> {
-    const { token } = await this.saved();
+    const { token, cli } = await this.saved();
     if (token) return { token, source: "token" };
-    const gh = await this.ghToken();
+    // The CLI login belongs to the person, not to fabPlane: it is used only once they allow it.
+    if (!cli) return null;
+    const gh = (await this.cli()).token;
     return gh ? { token: gh, source: "gh" } : null;
   }
 
@@ -249,7 +255,11 @@ export class WorkHub {
 
   private async loadConnection(): Promise<WorkConnection> {
     const credential = await this.credential();
-    if (!credential) return { connected: false, reason: "missing", message: "Sign in with the GitHub CLI (`gh auth login`) or paste a personal access token." };
+    const cliState = async (): Promise<"ready" | "signed_out" | "not_installed"> => {
+      const cli = await this.cli();
+      return !cli.installed ? "not_installed" : cli.token ? "ready" : "signed_out";
+    };
+    if (!credential) return { connected: false, reason: "missing", message: "GitHub is not connected.", cli: await cliState() };
     type Data = { viewer: {
       login: string; name: string | null; avatarUrl: string;
       organizations: { nodes: Array<{ login: string; avatarUrl: string }> };
@@ -261,8 +271,8 @@ export class WorkHub {
         organizations(first:50){nodes{login avatarUrl}}
         contributionsCollection{commitContributionsByRepository(maxRepositories:50){repository{owner{login}}}}}}`);
     } catch (error) {
-      if (error instanceof WorkHubError && error.code === "github_token_invalid") return { connected: false, reason: "invalid", message: error.message };
-      if (error instanceof WorkHubError && error.code === "github_offline") return { connected: false, reason: "offline", message: error.message };
+      if (error instanceof WorkHubError && error.code === "github_token_invalid") return { connected: false, reason: "invalid", message: error.message, cli: await cliState() };
+      if (error instanceof WorkHubError && error.code === "github_offline") return { connected: false, reason: "offline", message: error.message, cli: await cliState() };
       throw error;
     }
     const { viewer } = result.data;
@@ -292,15 +302,19 @@ export class WorkHub {
       const res = await this.call(input.token, "/user");
       if (!res.ok) throw new WorkHubError("github_error", 502, `GitHub answered ${res.status} for that token.`);
     }
+    if (input.useCli && !(await this.cli()).token)
+      throw new WorkHubError("github_not_connected", 412, "The GitHub CLI is not signed in on this computer. Run gh auth login, then try again.");
+    const cli = input.useCli ?? saved.cli ?? false;
     await this.save({
       ...(input.token ? { token: input.token } : saved.token ? { token: saved.token } : {}),
       ...(input.watched ? { watched: input.watched } : saved.watched ? { watched: saved.watched } : {}),
+      ...(cli ? { cli: true } : {}),
     });
     this.clear();
     return this.connection();
   }
 
-  /** Forget the saved token. A GitHub CLI login, if any, still connects. */
+  /** Forget the saved token and the permission to use the GitHub CLI login. The watched accounts are kept. */
   async disconnect(): Promise<WorkConnection> {
     const { watched } = await this.saved();
     await this.save(watched ? { watched } : {});

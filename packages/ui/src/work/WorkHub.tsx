@@ -64,20 +64,44 @@ function dayLabel(iso: string): string {
   return date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
 }
 
+/** How to get the GitHub CLI on the machine the core runs on. */
+function installCommand(platform: string): string | null {
+  return platform === "darwin" ? "brew install gh" : platform === "win32" ? "winget install --id GitHub.cli" : null;
+}
+
 function ConnectCard({ connection }: { connection: Extract<WorkConnection, { connected: false }> }) {
-  const { update } = useWorkMutations();
+  const { update, recheck } = useWorkMutations();
   const { host } = useCore();
+  const [step, setStep] = useState<"idle" | "allow" | "setup">("idle");
+  const [tokenOpen, setTokenOpen] = useState(false);
   const [token, setToken] = useState("");
+  const install = installCommand(host.platform);
+  const error = update.isError ? errorText(update.error) : connection.reason !== "missing" ? connection.message : null;
+  // After "Check again" finds a signed-in CLI, go straight to asking for permission.
+  const check = () => recheck.mutate(undefined, { onSuccess: (next) => { if (!next.connected && next.cli === "ready") setStep("allow"); } });
   return <section className="fd-work-connect" aria-label="Connect GitHub">
-    <h2>Connect GitHub</h2>
-    <p>{connection.reason === "offline" ? connection.message : "fabPlane reads your pull requests, issues and commits from GitHub to show what needs you and what your team is doing. The token stays on this computer."}</p>
-    {connection.reason === "invalid" && <p role="alert" className="fd-work-error">{connection.message}</p>}
-    <form onSubmit={(event) => { event.preventDefault(); if (token.trim()) update.mutate({ token: token.trim() }, { onSuccess: () => setToken("") }); }}>
-      <Input type="password" autoComplete="off" spellCheck={false} aria-label="GitHub personal access token" placeholder="Personal access token (ghp_… or github_pat_…)" value={token} onChange={event => setToken(event.target.value)} />
-      <Button type="submit" variant="primary" disabled={!token.trim() || update.isPending}>{update.isPending ? "Checking…" : "Connect"}</Button>
-    </form>
-    {update.isError && <p role="alert" className="fd-work-error">{errorText(update.error)}</p>}
-    <p className="fd-work-hint">Already use the GitHub CLI? Run <code>gh auth login</code> and fabPlane picks that login up by itself. To create a token instead, give it the <code>repo</code> and <code>read:org</code> scopes. <button type="button" className="fd-work-link" onClick={() => void host.openExternal("https://github.com/settings/tokens/new?scopes=repo,read:org&description=fabPlane")}>Create a token on GitHub</button></p>
+    <div className="fd-work-connect-lead">
+      <div><h2>Connect GitHub</h2><p>See what needs you and what your team is doing.</p></div>
+      {step === "idle" && <Button variant="primary" onClick={() => setStep(connection.cli === "ready" ? "allow" : "setup")}>Connect GitHub</Button>}
+    </div>
+    {step === "allow" && <div className="fd-work-connect-step" role="group" aria-label="Use the GitHub CLI login">
+      <p>You’re signed in to the GitHub CLI on this computer. Let fabPlane use that login?</p>
+      <div className="fd-work-publish-actions"><Button variant="primary" disabled={update.isPending} onClick={() => update.mutate({ useCli: true })}>{update.isPending ? "Connecting…" : "Allow"}</Button><Button disabled={update.isPending} onClick={() => setStep("idle")}>Not now</Button></div>
+    </div>}
+    {step === "setup" && <div className="fd-work-connect-step">
+      <ol>
+        {connection.cli === "not_installed" && <li>Install the GitHub CLI: {install ? <code>{install}</code> : <button type="button" className="fd-work-link" onClick={() => void host.openExternal("https://cli.github.com")}>cli.github.com</button>}</li>}
+        <li>Sign in from a terminal: <code>gh auth login</code></li>
+      </ol>
+      <div className="fd-work-publish-actions"><Button variant="primary" disabled={recheck.isPending} onClick={check}>{recheck.isPending ? "Checking…" : "Check again"}</Button><Button onClick={() => setStep("idle")}>Cancel</Button></div>
+      {recheck.isSuccess && !recheck.isPending && !recheck.data.connected && recheck.data.cli !== "ready" && <p role="status" className="fd-work-hint">{recheck.data.cli === "not_installed" ? "The GitHub CLI is still not found." : "The GitHub CLI is installed but not signed in yet."}</p>}
+    </div>}
+    {error && <p role="alert" className="fd-work-error">{error}</p>}
+    {tokenOpen ? <form onSubmit={(event) => { event.preventDefault(); if (token.trim()) update.mutate({ token: token.trim() }, { onSuccess: () => setToken("") }); }}>
+      <Input type="password" autoComplete="off" spellCheck={false} autoFocus aria-label="GitHub personal access token" placeholder="Personal access token" value={token} onChange={event => setToken(event.target.value)} />
+      <Button type="submit" disabled={!token.trim() || update.isPending}>{update.isPending ? "Checking…" : "Connect"}</Button>
+      <button type="button" className="fd-work-link" onClick={() => void host.openExternal("https://github.com/settings/tokens/new?scopes=repo,read:org&description=fabPlane")}>Create one</button>
+    </form> : <button type="button" className="fd-work-link fd-work-connect-alt" onClick={() => setTokenOpen(true)}>Use a token instead</button>}
   </section>;
 }
 
@@ -93,7 +117,7 @@ function AccountsMenu({ connection }: { connection: Connected }) {
     </label>)}
     <div className="fd-menu-divider" />
     <div className="fd-menu-caption">Signed in as {connection.viewer.login} · {connection.source === "gh" ? "GitHub CLI login" : "saved token"}</div>
-    {connection.source === "token" && <button onClick={() => disconnect.mutate()}><Icon name="close" width={16} height={16} />Forget saved token</button>}
+    <button onClick={() => disconnect.mutate()}><Icon name="close" width={16} height={16} />{connection.source === "token" ? "Forget saved token" : "Disconnect GitHub"}</button>
   </WorkspaceMenu>;
 }
 
