@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cloneGitHubRepository } from "../src/github-clone";
@@ -30,13 +30,16 @@ test("a public repository clones anonymously and the GitHub connection is never 
 
 test("a refused clone is retried once with the connection, in a clean folder, fetching every file", async () => {
   const dir = await target(), calls: Call[] = [];
+  const inode = (await stat(dir)).ino;
   const result = await cloneGitHubRepository({ url: "https://github.com/o/private.git", dir, authEnv: async () => AUTH,
     clone: async (_url, into, _signal, options) => {
       calls.push({ env: options?.env, full: options?.full, leftovers: await readdir(into) });
-      if (!options?.env) { await writeFile(join(into, "partial"), "x"); throw new Error(REFUSED); }
+      if (!options?.env) { await mkdir(join(into, ".git")); await writeFile(join(into, ".git", "partial"), "x"); throw new Error(REFUSED); }
     } });
   expect(result).toEqual({ authenticated: true });
   expect(calls).toEqual([{ env: undefined, full: undefined, leftovers: [] }, { env: AUTH, full: true, leftovers: [] }]);
+  // The folder is the caller's reservation of the name: it is emptied, never removed and remade.
+  expect((await stat(dir)).ino).toBe(inode);
 });
 
 test("without a connection a refused clone says how to import a private repository", async () => {

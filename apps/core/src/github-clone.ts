@@ -3,7 +3,8 @@
  * When that is refused and GitHub is connected (Home › Work), the clone is tried once more with
  * the connection's token, so a private repository the person can see imports the same way.
  */
-import { mkdir, rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { defaultGitClone, gitMissingFromClone } from "./projects";
 
 type Clone = typeof defaultGitClone;
@@ -28,9 +29,10 @@ export async function cloneGitHubRepository(opts: {
     if (opts.signal?.aborted || gitMissingFromClone(error) || !NEEDS_LOGIN.test(message)) throw error;
     const env = await opts.authEnv();
     if (!env) throw new Error("GitHub did not allow reading this repository. If it is private, connect GitHub under Home › Work, then import again.");
-    // The refused clone may have left a partial folder behind; start the second try clean.
-    await rm(opts.dir, { recursive: true, force: true });
-    await mkdir(opts.dir);
+    // The refused clone may have left files behind; start the second try clean. Only the contents
+    // go: the folder itself is the caller's reservation of this name, and releasing it even for a
+    // moment would let another import take it.
+    for (const entry of await readdir(opts.dir)) await rm(join(opts.dir, entry), { recursive: true, force: true });
     try {
       await clone(opts.url, opts.dir, opts.signal, { env, full: true });
     } catch (retry) {
