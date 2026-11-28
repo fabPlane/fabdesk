@@ -65,7 +65,7 @@
 .fd-work-connect .fd-work-connect-lead p { margin-top:3px; }
 .fd-work-connect-step { margin-top:16px; padding-top:16px; border-top:1px solid var(--fd-border); }
 .fd-work-connect-step p { margin:0 0 12px; color:var(--fd-fg); }
-.fd-work-connect-step ol { margin:0 0 14px; padding-left:20px; display:grid; gap:8px; font-size:13px; }
+.fd-work-connect-step ol { list-style:decimal; margin:0 0 14px; padding-left:20px; display:grid; gap:8px; font-size:13px; }
 .fd-work-connect form { display:flex; align-items:center; gap:8px; margin-top:14px; }
 .fd-work-connect form input { flex:1; }
 .fd-work-connect-alt { margin-top:14px; color:var(--fd-muted); }
