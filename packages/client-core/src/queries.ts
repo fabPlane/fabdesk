@@ -1266,7 +1266,8 @@ export function useWorkMutations() {
     /** Ask GitHub again now instead of waiting for the caches. */
     refresh: useMutation({
       mutationFn: async (scope: WorkScope) => { await client.workConnection(true); await client.workOverview(scope, true); },
-      onSuccess: refreshAll,
+      // Also after a failure: a login that went away must show as disconnected, not as stale data.
+      onSettled: refreshAll,
     }),
     publish: useMutation({
       mutationFn: ({ projectId, input }: { projectId: string; input: PublishProject }) => client.publishProjectToGitHub(projectId, input),
