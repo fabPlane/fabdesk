@@ -89,3 +89,7 @@
 .fd-work-title { font-size:20px; font-weight:650; letter-spacing:-.3px; }
 .fd-work-hub[data-compact] > header p { margin-top:4px; }
 @media(max-width:780px) { .fd-home-view-bar { padding:12px 20px 0; } }
+
+.fd-work-repo-item { position:relative; }
+.fd-work-repo-actions { position:absolute; top:8px; right:8px; z-index:1; display:flex; gap:4px; }
+.fd-work-repo-item .fd-work-repo-title { padding-right:150px; }

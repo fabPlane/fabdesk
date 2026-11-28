@@ -129,6 +129,8 @@ export interface UiState {
   sidebarListTab: SidebarListTab;
   activeOpenSourceId: string | null;
   projectPickerOpen: boolean;
+  /** A project whose sharing settings should open as soon as its workspace shows them (not persisted). */
+  shareRequestProjectId: string | null;
   orderFlowOpen: boolean;
   /** Parts Inventory (opened from the user menu) replaces the chat pane while true. */
   inventoryOpen: boolean;
@@ -149,7 +151,10 @@ export interface UiState {
   paletteOpen: boolean;
   profileOpen: boolean;
   profileReason: "invitation" | "sharing" | "expired" | null;
-  setProfileOpen: (open: boolean, reason?: "invitation" | "sharing" | "expired") => void;
+  /** `signIn` starts signing in as soon as the dialog is up, for buttons that say "Sign in". */
+  setProfileOpen: (open: boolean, reason?: "invitation" | "sharing" | "expired", signIn?: boolean) => void;
+  /** One-shot: the account dialog should start sign-in when it opens (not persisted). */
+  profileSignInRequested: boolean;
   settingsOpen: boolean;
   /** Section the settings dialog should show when it next opens; null keeps the last one. */
   settingsSection: SettingsSection | null;
@@ -191,6 +196,7 @@ export interface UiState {
   setSidebarListTab: (tab: SidebarListTab) => void;
   setActiveOpenSourceId: (id: string | null) => void;
   setProjectPickerOpen: (open: boolean) => void;
+  requestShare: (projectId: string | null) => void;
   setOrderFlowOpen: (open: boolean) => void;
   setInventoryOpen: (open: boolean) => void;
   setBoardTab: (tab: BoardTab) => void;
@@ -422,6 +428,7 @@ export function createUiStore(storage?: StateStorage) {
   sidebarListTab: "projects",
   activeOpenSourceId: null,
   projectPickerOpen: false,
+  shareRequestProjectId: null,
   orderFlowOpen: false,
   inventoryOpen: false,
   boardTab: "pcb",
@@ -460,7 +467,8 @@ export function createUiStore(storage?: StateStorage) {
   paletteOpen: false,
   profileOpen: false,
   profileReason: null,
-  setProfileOpen: (profileOpen, reason) => set({ profileOpen, profileReason: profileOpen ? reason ?? null : null }),
+  profileSignInRequested: false,
+  setProfileOpen: (profileOpen, reason, signIn) => set({ profileOpen, profileReason: profileOpen ? reason ?? null : null, profileSignInRequested: profileOpen && !!signIn }),
   settingsOpen: false,
   settingsSection: null,
   sketchOpen: false,
@@ -507,6 +515,7 @@ export function createUiStore(storage?: StateStorage) {
         : {}),
     })),
   setProjectPickerOpen: (projectPickerOpen) => set({ projectPickerOpen }),
+  requestShare: (shareRequestProjectId) => set({ shareRequestProjectId }),
   setOrderFlowOpen: (orderFlowOpen) => set({ orderFlowOpen, ...(orderFlowOpen ? { activeOpenSourceId: null, inventoryOpen: false } : {}) }),
   setInventoryOpen: (inventoryOpen) =>
     set({ inventoryOpen, ...(inventoryOpen ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),

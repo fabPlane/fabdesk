@@ -92,6 +92,7 @@ import { resolveNativeBoardBinding } from "../assembly-board-binding";
 import { commentRoutes } from "./comment-routes";
 import { outputTrashRoutes } from "./output-trash-routes";
 import { workRoutes } from "./work-routes";
+import { cloneGitHubRepository } from "../github-clone";
 import { WorkHub } from "../work-hub";
 import { createSpeechService, SpeechProviderError, type SpeechService } from "../speech";
 
@@ -447,7 +448,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
 
   commentRoutes(app, deps);
   outputTrashRoutes(app, deps);
-  workRoutes(app, { projects: deps.projects, listener: deps.listener, workHub: deps.workHub ?? new WorkHub({ home: deps.config.home }) });
+  const workHub = deps.workHub ?? new WorkHub({ home: deps.config.home });
+  workRoutes(app, { projects: deps.projects, listener: deps.listener, workHub });
 
   app.get("/projects/:id/sketches", async (c) => {
     const h = await deps.projects.handle(c.req.param("id"));
@@ -777,6 +779,8 @@ export function createApp(deps: AppDeps): Hono<Env> {
     const project = await deps.projects.importFromGit({
       name: body.name,
       gitUrl: source.url,
+      // Anonymous first; a private repository is retried with the GitHub connection, if there is one.
+      clone: async (url, dir) => { await cloneGitHubRepository({ url, dir, signal: c.req.raw.signal, authEnv: () => workHub.gitEnv() }); },
       ...(body.parentDirectory ? { parentDirectory: body.parentDirectory } : {}),
       signal: c.req.raw.signal,
       failOnCollision: true,
