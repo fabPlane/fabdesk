@@ -1,11 +1,14 @@
-/** Shared by the project dialog and daemon so validation and suggested names agree. */
+/**
+ * Shared by the project dialog and daemon so validation and suggested names agree. The URL itself
+ * never carries credentials; a private repository is reached through the GitHub connection.
+ */
 export function parsePublicGitHubUrl(input: string): { url: string; owner: string; repo: string } {
   let parsed: URL;
   try { parsed = new URL(input.trim()); }
-  catch { throw new Error("Enter a public GitHub repository URL"); }
+  catch { throw new Error("Enter a GitHub repository URL"); }
   const match = /^\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(parsed.pathname);
   if (parsed.protocol !== "https:" || parsed.hostname !== "github.com" || parsed.port || parsed.username || parsed.password || parsed.search || parsed.hash || !match) {
-    throw new Error("Use a public https://github.com/owner/repo URL without credentials or extra paths");
+    throw new Error("Use a https://github.com/owner/repo URL without credentials or extra paths");
   }
   const owner = match[1]!;
   const repo = match[2]!;

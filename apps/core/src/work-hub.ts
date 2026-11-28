@@ -505,6 +505,15 @@ export class WorkHub {
     return { feed, team: [...members.values()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt)) };
   }
 
+  /**
+   * Environment that lets one git command act as the connected GitHub account, or null when
+   * GitHub is not connected. For github.com only, and never written to a repository's config.
+   */
+  async gitEnv(): Promise<NodeJS.ProcessEnv | null> {
+    const credential = await this.credential();
+    return credential ? gitAuthEnv(credential.token) : null;
+  }
+
   /* ---------- a project's repository ---------- */
 
   async projectLink(dir: string): Promise<ProjectGitHubLink> {
@@ -560,16 +569,7 @@ export class WorkHub {
       const add = await this.git(["remote", "add", "origin", body.clone_url], { cwd: dir });
       if (add.exitCode !== 0) throw new WorkHubError("push_failed", 500, `Created ${repo.fullName}, but could not add it as a remote: ${add.stderr.trim()}`);
       }
-      const push = await this.git(["push", "--set-upstream", "origin", "HEAD"], {
-        cwd: dir,
-        env: {
-          ...process.env,
-          GIT_TERMINAL_PROMPT: "0",
-          GIT_CONFIG_COUNT: "1",
-          GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
-          GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
-        },
-      });
+      const push = await this.git(["push", "--set-upstream", "origin", "HEAD"], { cwd: dir, env: { ...process.env, ...gitAuthEnv(token) } });
       if (push.exitCode !== 0)
         throw new WorkHubError("push_failed", 502, `${resume ? "The push" : `Created ${repo.fullName}, but the first push`} failed: ${push.stderr.trim().split("\n").pop() ?? "git push failed"}. Try again to finish it.`);
       this.reposCache = null; this.overviewCache.clear();
@@ -578,6 +578,16 @@ export class WorkHub {
       this.publishing.delete(dir);
     }
   }
+}
+
+/** The token reaches git through its environment, never its arguments or the saved remote URL. */
+function gitAuthEnv(token: string): NodeJS.ProcessEnv {
+  return {
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
+    GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
+  };
 }
 
 async function sameDirectory(a: string, b: string): Promise<boolean> {

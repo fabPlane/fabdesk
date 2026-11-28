@@ -184,7 +184,7 @@ function Team({ members, sinceDays, limit, onShowAll }: { members: TeamMember[];
   })}</ul>{members.length > shown.length && onShowAll && <Button size="sm" variant="ghost" className="fd-work-show-more" onClick={onShowAll}>Show all {members.length} people</Button>}</>;
 }
 
-function Repositories({ scope, enabled }: { scope: WorkScope; enabled: boolean }) {
+function Repositories({ scope, enabled, onImport }: { scope: WorkScope; enabled: boolean; onImport?: ((url: string) => void) | undefined }) {
   const repos = useWorkRepos(enabled);
   const [query, setQuery] = useState("");
   const [all, setAll] = useState(false);
@@ -198,15 +198,15 @@ function Repositories({ scope, enabled }: { scope: WorkScope; enabled: boolean }
     {repos.isPending ? <p role="status" className="fd-work-empty"><Spinner /> Scanning repositories…</p> : repos.isError ? <p role="alert" className="fd-work-error">{errorText(repos.error)} <Button size="sm" variant="ghost" onClick={() => void repos.refetch()}>Try again</Button></p> : <>
       <label className="fd-home-search"><Icon name="search" width={18} height={18} /><Input aria-label="Find a repository" placeholder="Find a repository…" value={query} onChange={event => setQuery(event.target.value)} /></label>
       {!matches.length ? <p className="fd-work-empty">{needle ? "No repositories match." : scope === "hardware" ? "No hardware repositories found in the watched accounts. Switch to All repositories to see everything." : "No repositories in the watched accounts."}</p>
-        : <ul className="fd-work-repos">{visible.map(repo => <RepoCard key={repo.fullName} repo={repo} />)}</ul>}
+        : <ul className="fd-work-repos">{visible.map(repo => <RepoCard key={repo.fullName} repo={repo} onImport={onImport} />)}</ul>}
       {!all && !needle && matches.length > visible.length && <Button size="sm" variant="ghost" onClick={() => setAll(true)}>Show all {matches.length} repositories</Button>}
       {!!repos.data.truncated.length && <p className="fd-work-hint">Only the most recently pushed repositories were scanned for {repos.data.truncated.join(", ")}.</p>}
     </>}
   </section>;
 }
 
-function RepoCard({ repo }: { repo: WorkRepo }) {
-  return <li><ExternalRow url={repo.url} className="fd-work-repo">
+function RepoCard({ repo, onImport }: { repo: WorkRepo; onImport?: ((url: string) => void) | undefined }) {
+  return <li className="fd-work-repo-item">{onImport && <Button size="sm" className="fd-work-repo-import" title={`Import ${repo.fullName} as a fabPlane project`} onClick={() => onImport(repo.url)}><Icon name="download" width={14} height={14} />Import</Button>}<ExternalRow url={repo.url} className="fd-work-repo">
     <span className="fd-work-repo-title"><Icon name={repo.hardware ? "pcb" : "folder"} width={16} height={16} /><strong>{repo.fullName}</strong>{repo.private && <Badge>Private</Badge>}{repo.archived && <Badge>Archived</Badge>}{repo.fork && <Badge>Fork</Badge>}</span>
     {repo.description && <span className="fd-work-repo-description">{repo.description}</span>}
     <small>{[repo.language, repo.pushedAt && `pushed ${ago(repo.pushedAt)}`, repo.hardware && `hardware: ${repo.hardwareSignals.slice(0, 3).join(", ")}`].filter(Boolean).join(" · ")}</small>
@@ -280,7 +280,7 @@ function readScope(): WorkScope {
  * What needs you, what changed and who is doing what, across GitHub. `compact` is the summary shown
  * under the projects on Home's Everything view; the full page adds repositories and local projects.
  */
-export function WorkHub({ compact = false, onShowAll }: { compact?: boolean; onShowAll?: () => void }) {
+export function WorkHub({ compact = false, onShowAll, onImportRepo }: { compact?: boolean; onShowAll?: () => void; /** Start importing a repository as a project. */ onImportRepo?: (url: string) => void }) {
   const connection = useWorkConnection();
   const [scope, setScopeState] = useState<WorkScope>(readScope);
   const setScope = (next: WorkScope) => { setScopeState(next); try { localStorage.setItem(SCOPE_KEY, next); } catch { /* the choice just is not remembered */ } };
@@ -325,7 +325,7 @@ export function WorkHub({ compact = false, onShowAll }: { compact?: boolean; onS
             {!compact && <LocalProjects connection={connected} />}
           </aside>
         </div>
-        {!compact && <Repositories scope={scope} enabled />}
+        {!compact && <Repositories scope={scope} enabled onImport={onImportRepo} />}
       </>}
   </div>;
 }

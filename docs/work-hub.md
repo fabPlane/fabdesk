@@ -50,8 +50,21 @@ arguments or the saved remote URL. A project that already has an `origin` is lef
 Changing the connection and publishing need the local desktop connection; the remote listener
 answers 403. Reads are available to paired devices.
 
+## Importing a repository
+
+**Import** on a repository card opens the usual Import from GitHub dialog with the address filled
+in; pasting an address there works too. The core clones anonymously first, exactly as for a public
+repository. If GitHub refuses and GitHub is connected, it clones once more with the connection
+(`apps/core/src/github-clone.ts`). That second clone fetches every file up front rather than on
+demand, because later on-demand fetches would run without credentials. The token is passed through
+git's environment only: the saved `origin` is the plain `https://github.com/owner/repo.git` address.
+
+An imported private project is shared like any other: **Share** publishes a snapshot (previews,
+optional 3D, check summaries) to fabplane.com for anyone with the link or for invited people.
+Viewers see the snapshot, not the repository, so they need no GitHub access.
+
 ## Not yet
 
 Linear, a "Sign in with GitHub" button (OAuth device flow), webhooks / push updates (the page
-polls), importing a private repository as a project, notifications for new attention items, and
+polls), pulling later changes into an imported private repository, notifications for new attention items, and
 the mobile client.

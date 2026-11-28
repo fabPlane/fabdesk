@@ -616,13 +616,17 @@ export function gitMissingFromClone(error: unknown): string | null {
   return null;
 }
 
-async function defaultGitClone(url: string, dir: string, signal?: AbortSignal): Promise<void> {
+/**
+ * `full` fetches every file of every commit up front instead of on demand. A private repository
+ * needs that: the later on-demand fetches would run without the credentials this clone was given.
+ */
+export async function defaultGitClone(url: string, dir: string, signal?: AbortSignal, options: { env?: NodeJS.ProcessEnv; full?: boolean } = {}): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     // Full history without every old file: Board History lists commits at once and fetches a revision when it is opened.
-    const child = spawn("git", ["-c", "credential.helper=", "clone", "--filter=blob:none", "--progress", url, dir], {
+    const child = spawn("git", ["-c", "credential.helper=", "clone", ...(options.full ? [] : ["--filter=blob:none"]), "--progress", url, dir], {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
+      env: { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "Never" },
       ...(signal ? { signal } : {}),
     });
     let stderr = "";

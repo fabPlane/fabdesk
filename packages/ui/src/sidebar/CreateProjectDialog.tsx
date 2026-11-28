@@ -8,13 +8,17 @@ import { ErrorNotice } from "../components/ErrorNotice";
 import { useUiStore } from "../stores/ui";
 
 /** Mounted only while open, so canceled names and locations never leak into the next project. */
-export function CreateProjectDialog({ onClose, onCreated, initialMode = "create" }: { onClose: () => void; onCreated: (id: string) => void; initialMode?: "create" | "github" }) {
+function repoNameFromUrl(url: string): string {
+  try { return parsePublicGitHubUrl(url).repo; } catch { return ""; }
+}
+
+export function CreateProjectDialog({ onClose, onCreated, initialMode = "create", initialUrl = "" }: { onClose: () => void; onCreated: (id: string) => void; initialMode?: "create" | "github"; /** Prefills the GitHub address, for importing a repository picked elsewhere. */ initialUrl?: string }) {
   const { client, host } = useCore();
   const qc = useQueryClient();
   const [mode, setMode] = useState<"create" | "github">(initialMode);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => repoNameFromUrl(initialUrl));
   const [nameTouched, setNameTouched] = useState(false);
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(initialUrl);
   const [directory, setDirectory] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -99,7 +103,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
       {error != null && <ErrorNotice error={error} />}
       <div className="flex justify-end"><Button type="button" disabled={pending} onClick={() => void finish(result.id, false)}>{result.boards.length ? "Open without board" : "Open project"}</Button></div>
     </div> : <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-      {mode === "github" && <label className="flex flex-col gap-2 text-[13px] font-medium">Public GitHub URL
+      {mode === "github" && <label className="flex flex-col gap-2 text-[13px] font-medium">GitHub URL
         <Input autoFocus type="url" required value={url} disabled={pending} onChange={(e) => {
           const next = e.target.value; setUrl(next);
           if (!nameTouched) {
@@ -107,7 +111,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
             catch { setName(""); }
           }
         }} placeholder="https://github.com/owner/repo" className="h-11" />
-        <span className="text-xs font-normal leading-5 text-muted">Public repositories only. The Git origin stays connected.</span>
+        <span className="text-xs font-normal leading-5 text-muted">Private repositories need GitHub connected on Home. The Git origin stays connected.</span>
       </label>}
       <label className="flex flex-col gap-2 text-[13px] font-medium">Project name
         <div className="relative"><Icon name="folder" className="pointer-events-none absolute left-3 top-3 text-muted" />
