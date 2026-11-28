@@ -33,7 +33,8 @@
     "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@sentry/bun": "^10.73.0",
     "hono": "4.13.19",
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@fabdesk/laser-cell": "workspace:*"
   },
   "devDependencies": {
     "@fab-cad/bridge": "workspace:*",

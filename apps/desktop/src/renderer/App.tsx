@@ -50,7 +50,7 @@ function withReleaseNotes(base: HostAdapter): HostAdapter {
   });
 }
 
-const host: HostAdapter = withReleaseNotes(
+export const host: HostAdapter = withReleaseNotes(
   bridge
     ? {
         platform: bridge.platform,
@@ -67,6 +67,7 @@ const host: HostAdapter = withReleaseNotes(
         showAppMenu: (pos) => bridge.showAppMenu(pos),
         onMenu: (cb) => bridge.onMenu(cb),
         openLogs: () => bridge.openLogs(),
+        ...(typeof bridge.openLaserWindow === "function" ? { openLaserWindow: () => bridge.openLaserWindow() } : {}),
         updateStatus: () => bridge.updateStatus(),
         checkForUpdates: () => bridge.checkForUpdates(),
         onUpdateStatus: (cb) => bridge.onUpdateStatus(cb),
@@ -169,6 +170,14 @@ function OpenCatalogBridge() {
   return null;
 }
 
+/** File → Laser Controller… opens the separate controller window. */
+function LaserMenuBridge() {
+  useEffect(() => bridge?.onMenu((command) => {
+    if (command === "laser-controller") void bridge.openLaserWindow?.();
+  }), []);
+  return null;
+}
+
 function OpenSharedProjectBridge() {
   const [intent, setIntent] = useState<OpenSharedProjectIntent | null>(null);
   useEffect(() => {
@@ -235,6 +244,7 @@ export function App() {
       <ErrorReportingBridge />
       <OpenCatalogBridge />
       <OpenSharedProjectBridge />
+      <LaserMenuBridge />
     </FabdeskApp>
   );
 }

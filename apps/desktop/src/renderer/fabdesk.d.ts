@@ -39,6 +39,7 @@ export interface FabdeskBridge extends CadRuntimeBridge {
   openExternal(url: string): Promise<void>;
   openPath(path: string): Promise<void>;
   openLogs(): Promise<void>;
+  openLaserWindow(): Promise<void>;
   pickDirectory(): Promise<string | null>;
   pickFile(opts?: PickFileOptions): Promise<string[]>;
   localAuthAllowed(): Promise<boolean>;

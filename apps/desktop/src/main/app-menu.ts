@@ -11,10 +11,18 @@ import { CAD_RELEASE } from "./cad-runtime";
 import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from "electron";
 import { join } from "node:path";
 
-/** Send a menu command to the focused (or only) window's renderer. */
+let mainWindow: () => BrowserWindow | null = () => null;
+/** The window that handles menu commands (the main window; the Laser Controller has no handler). */
+export function setMenuTarget(target: () => BrowserWindow | null): void {
+  mainWindow = target;
+}
+
+/** Send a menu command to the main window's renderer, bringing it to the front. */
 function send(command: string): void {
-  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-  win?.webContents.send("fabdesk:menu", command);
+  const win = mainWindow() ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  if (!win || win.isDestroyed()) return;
+  if (command !== "laser-controller") { if (win.isMinimized()) win.restore(); win.focus(); }
+  win.webContents.send("fabdesk:menu", command);
 }
 
 function template(): MenuItemConstructorOptions[] {
@@ -26,6 +34,7 @@ function template(): MenuItemConstructorOptions[] {
       submenu: [
         { label: "New chat", accelerator: "CmdOrCtrl+Shift+O", click: () => send("new-chat") },
         { label: "Command palette…", accelerator: "CmdOrCtrl+K", click: () => send("palette") },
+        { label: "Laser Controller…", click: () => send("laser-controller") },
         { type: "separator" },
         { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => send("settings") },
         { type: "separator" },

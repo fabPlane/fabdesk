@@ -5,6 +5,7 @@ import { ProfileButton } from "../auth/ProfileAccountDialog";
 import { BoardPanel } from "../board/BoardPanel";
 import { ConnectionsWorkspace } from "../board/ConnectionsWorkspace";
 import { HistoryWorkspace } from "../board/HistoryWorkspace";
+import { LaserCellWorkspace } from "../board/LaserCellWorkspace";
 import { HostedReviewTools } from "../board/HostedReviewTools";
 import { ProjectPickerDialog } from "../chat/ProjectPickerDialog";
 import { ThreadView } from "../chat/ThreadView";
@@ -153,6 +154,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
     : fresh || conversationOnly ? null
     : projectId && area === "connections" ? <ConnectionsWorkspace key={projectId} projectId={projectId} />
     : projectId && area === "history" ? <HistoryWorkspace key={projectId} projectId={projectId} />
+    : projectId && area === "laser" ? <LaserCellWorkspace key={projectId} projectId={projectId} />
     : area === "overview" || area === "boards" && boardSources.data?.mode === "assembly" && boardTab !== "cinema" && boardTab !== "placement" ? <ProjectOverview key={projectId} boardPicker={area === "boards"} />
     : undefined;
   const inlineBoardNavigation = area === "boards" && surface === undefined && !isDraft;

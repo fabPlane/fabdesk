@@ -122,6 +122,28 @@ export {
 } from "./stencil-laser";
 export { laserStencilLbrn2 } from "./stencil-laser-lbrn2";
 export {
+  COPPER_PRESETS,
+  COPPER_PRESET_IDS,
+  CopperLaserOptionsError,
+  buildCopperLaserJob,
+  copperLaserLbrn2,
+  copperLaserSvg,
+  copperLaserStudioSvg,
+  ablateBounds,
+  estimateCopperJobSeconds,
+  exportCopperLaserJob,
+  resolveCopperSettings,
+  suggestCopperPreset,
+  type CopperJobSettings,
+  type CopperLaserBuild,
+  type CopperLaserOptions,
+  type CopperLaserSummary,
+  type CopperMode,
+  type CopperPassSettings,
+  type CopperPresetId,
+  type CopperSide,
+} from "./pcb-laser-copper";
+export {
   MECHANICAL_COLLECTOR,
   MECHANICAL_CACHE_LIMIT,
   MECHANICAL_CONTRACT,

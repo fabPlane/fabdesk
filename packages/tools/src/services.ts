@@ -1281,4 +1281,6 @@ export interface CoreServices {
   runChild?: RunChild;
   /** Optional: adopt a candidate board into the saved board over KiCad IPC (board workflow edits). */
   boardAdopt?: BoardAdoptService;
+  /** Optional: the robot-arm + ComMarker Omni X laser cell on this machine (`laser` toolset). */
+  laserCell?: import("@fabdesk/laser-cell").LaserCellController;
 }
