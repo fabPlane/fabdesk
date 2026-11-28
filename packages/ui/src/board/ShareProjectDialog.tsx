@@ -316,9 +316,9 @@ function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Pro
             {notice.message}
           </p>
         )}
-        <footer className="fd-share-footer">
-          <div>
-            {confirmed && (changed || selected !== "private") && (
+        {confirmed && (changed || selected !== "private") && (
+          <footer className="fd-share-footer">
+            <div>
               <Button
                 variant={link ? "secondary" : "primary"}
                 disabled={busy}
@@ -337,12 +337,9 @@ function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Pro
                   selected === "restricted" ? "Publish for invited viewers" : "Create link"
                 )}
               </Button>
-            )}
-            <Button variant="ghost" disabled={busy} onClick={close}>
-              Done
-            </Button>
-          </div>
-        </footer>
+            </div>
+          </footer>
+        )}
       </Dialog>
       {preview && (
         <Dialog
