@@ -12,7 +12,7 @@ import { inspectAssemblyBoardModel } from "./assembly-board-model";
 import { inspectAssemblyCheckSummaries } from "./assembly-check-summary";
 import { inspectAssemblyPcbCheck } from "./assembly-checks";
 import { inspectAssemblyBoard } from "./assembly-scene";
-import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot, BomSyncOptions } from "@fabdesk/protocol";
+import type { BoardSourceSelection, ProjectBoardSources, ProjectBomSnapshot, BomSyncOptions, PublishProject, UpdateWorkConnection, WorkScope } from "@fabdesk/protocol";
 import { inspectBoardModelRevision } from "./board-model-revision";
 import { inspectPcbCheckRevision } from "./check-revision";
 import { inspectPcbOutline } from "./pcb-outline";
@@ -1229,4 +1229,49 @@ export function useOutputTrashReview(projectId: string | null, files: Array<{ pa
     staleTime: 5000,
   });
   return { ...query, projectActive: activity.length > 0 };
+}
+
+/* ---------- GitHub work hub ---------- */
+
+export function useWorkConnection() {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["work", "connection", client.baseUrl], queryFn: () => client.workConnection(), staleTime: 30_000, retry: false });
+}
+
+export function useWorkRepos(enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["work", "repos", client.baseUrl], queryFn: () => client.workRepos(), enabled, staleTime: 5 * 60_000, retry: false });
+}
+
+/** Refetches every two minutes while mounted; the core caches GitHub for one. */
+export function useWorkOverview(scope: WorkScope, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["work", "overview", scope, client.baseUrl], queryFn: () => client.workOverview(scope), enabled, staleTime: 60_000, refetchInterval: 120_000, retry: false });
+}
+
+export function useProjectGitHub(projectId: string | null, enabled = true) {
+  const client = useCoreClient();
+  return useQuery({ queryKey: ["work", "project", projectId, client.baseUrl], queryFn: () => client.projectGitHub(projectId!), enabled: enabled && !!projectId, staleTime: 60_000, retry: false });
+}
+
+export function useWorkMutations() {
+  const client = useCoreClient();
+  const qc = useQueryClient();
+  const refreshAll = () => qc.invalidateQueries({ queryKey: ["work"] });
+  return {
+    update: useMutation({ mutationFn: (input: UpdateWorkConnection) => client.updateWorkConnection(input), onSuccess: refreshAll }),
+    disconnect: useMutation({ mutationFn: () => client.disconnectWork(), onSuccess: refreshAll }),
+    /** Look at this machine again, for example after installing or signing in to the GitHub CLI. */
+    recheck: useMutation({ mutationFn: () => client.workConnection(true), onSuccess: refreshAll }),
+    /** Ask GitHub again now instead of waiting for the caches. */
+    refresh: useMutation({
+      mutationFn: async (scope: WorkScope) => { await client.workConnection(true); await client.workOverview(scope, true); },
+      // Also after a failure: a login that went away must show as disconnected, not as stale data.
+      onSettled: refreshAll,
+    }),
+    publish: useMutation({
+      mutationFn: ({ projectId, input }: { projectId: string; input: PublishProject }) => client.publishProjectToGitHub(projectId, input),
+      onSuccess: refreshAll,
+    }),
+  };
 }

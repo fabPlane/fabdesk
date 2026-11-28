@@ -1,3 +1,4 @@
+import { WorkHub } from "./work-hub";
 import { prepareAgentCli } from "./agent-cli";
 /** `fabdesk-core serve`: bind, write the handshake, print the ReadyLine, run until told to stop. */
 import { AGENT_OWNER_DIR, recoverAgentProcesses, stopAgentProcess } from "@fabdesk/agents";
@@ -722,6 +723,8 @@ export async function serve(opts: ServeOptions = {}): Promise<Daemon> {
       lastArchiveConsent = consent;
     },
     ...(opts.speech ? { speech: opts.speech } : {}),
+    // One hub for both listeners, so a token change on the desktop is seen by paired devices.
+    workHub: new WorkHub({ home: config.home }),
   };
   const app = createApp({ ...appDeps, listener: "local" });
   // A browser at fabplane.com pairs against the remote listener directly (docs/mobile.md, hosted
