@@ -1,5 +1,5 @@
 import { ShareProjectDialog } from "./ShareProjectDialog";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { buildZip } from "@fabdesk/board-art";
 import { errorPayload, readOutputSelection, reviewPackageFiles, useBoardSources, useCoreClient, useProject, useProjectShareSettings, type ReviewPackageOptions } from "@fabdesk/client-core";
 import { Button, Dialog, Spinner } from "../components/ui";
@@ -17,6 +17,13 @@ const TITLES: Record<View, string> = { share: "Share for review", sync: "Reposit
 /** Local sharing is a real file download; repository requests stay unsent until the user reviews them. */
 export function HostedReviewTools({ projectId, shareButton = false }: { projectId: string; shareButton?: boolean }) {
   const [sharing, setSharing] = useState(false);
+  // "Share" on a GitHub repository imports it and then lands here with the sharing settings open.
+  const shareRequested = useUiStore(s => shareButton && s.shareRequestProjectId === projectId);
+  useEffect(() => {
+    if (!shareRequested) return;
+    useUiStore.getState().requestShare(null);
+    setSharing(true);
+  }, [shareRequested]);
   const detail = useProject(projectId);
   const isContribution = !!detail.data?.manifest.contributionSource;
   const shareSettings = useProjectShareSettings(projectId, shareButton);

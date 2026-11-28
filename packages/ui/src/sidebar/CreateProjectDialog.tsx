@@ -12,10 +12,11 @@ function repoNameFromUrl(url: string): string {
   try { return parsePublicGitHubUrl(url).repo; } catch { return ""; }
 }
 
-export function CreateProjectDialog({ onClose, onCreated, initialMode = "create", initialUrl = "" }: { onClose: () => void; onCreated: (id: string) => void; initialMode?: "create" | "github"; /** Prefills the GitHub address, for importing a repository picked elsewhere. */ initialUrl?: string }) {
+export function CreateProjectDialog({ onClose, onCreated, initialMode = "create", initialUrl = "", purpose = "import" }: { onClose: () => void; onCreated: (id: string) => void; initialMode?: "create" | "github"; /** Prefills the GitHub address, for importing a repository picked elsewhere. */ initialUrl?: string; /** `share`: the person wants the repository on the web; after the copy, its sharing settings open. */ purpose?: "import" | "share" }) {
   const { client, host } = useCore();
   const qc = useQueryClient();
   const [mode, setMode] = useState<"create" | "github">(initialMode);
+  const sharing = purpose === "share" && mode === "github";
   const [name, setName] = useState(() => repoNameFromUrl(initialUrl));
   const [nameTouched, setNameTouched] = useState(false);
   const [url, setUrl] = useState(initialUrl);
@@ -49,6 +50,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
   };
   const finish = async (id: string, boardAvailable = true) => {
     await qc.invalidateQueries({ queryKey: ["projects"] });
+    if (sharing && boardAvailable) useUiStore.getState().requestShare(id);
     onCreated(id);
     if (mode === "create") useUiStore.getState().focusComposer();
     else if (!boardAvailable) {
@@ -82,7 +84,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
     catch (e) { setError(e); }
     finally { setPending(false); }
   };
-  return <Dialog open onClose={close} closeDisabled={pending || picking} title={result ? "Project imported" : mode === "github" ? "Import from GitHub" : "Create project"} className="!w-[520px]">
+  return <Dialog open onClose={close} closeDisabled={pending || picking} title={result ? sharing ? "Choose the board to share" : "Project imported" : sharing ? "Share from GitHub" : mode === "github" ? "Import from GitHub" : "Create project"} className="!w-[520px]">
     {!result && <div className="mb-5 flex gap-2" role="tablist" aria-label="Project setup">
       <Button type="button" role="tab" aria-selected={mode === "create"} {...(mode === "create" ? { variant: "primary" as const } : {})} disabled={pending} onClick={() => { setMode("create"); setError(null); }}>New project</Button>
       <Button type="button" role="tab" aria-selected={mode === "github"} {...(mode === "github" ? { variant: "primary" as const } : {})} disabled={pending} onClick={() => { setMode("github"); setError(null); }}>Import from GitHub</Button>
@@ -111,7 +113,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
             catch { setName(""); }
           }
         }} placeholder="https://github.com/owner/repo" className="h-11" />
-        <span className="text-xs font-normal leading-5 text-muted">Private repositories need GitHub connected on Home. The Git origin stays connected.</span>
+        <span className="text-xs font-normal leading-5 text-muted">{sharing ? "fabPlane copies the repository to this computer to draw its boards, then you choose who can see them. " : ""}Private repositories need GitHub connected on Home. The Git origin stays connected.</span>
       </label>}
       <label className="flex flex-col gap-2 text-[13px] font-medium">Project name
         <div className="relative"><Icon name="folder" className="pointer-events-none absolute left-3 top-3 text-muted" />
@@ -139,7 +141,7 @@ export function CreateProjectDialog({ onClose, onCreated, initialMode = "create"
       {error != null && <ErrorNotice error={error} />}
       <div className="sticky bottom-0 z-10 flex flex-wrap justify-end gap-3 border-t border-border bg-panel py-3">
         <Button type="button" disabled={picking} onClick={() => { if (pending && abort.current) abort.current.abort(); else close(); }}>{pending && mode === "github" ? "Cancel import" : "Cancel"}</Button>
-        <Button type="submit" variant="primary" disabled={!name.trim() || pending || picking || (mode === "github" && (!url.trim() || !destination || destination.exists))}>{pending ? mode === "github" ? "Importing…" : "Creating…" : mode === "github" ? "Import project" : "Create project"}</Button>
+        <Button type="submit" variant="primary" disabled={!name.trim() || pending || picking || (mode === "github" && (!url.trim() || !destination || destination.exists))}>{pending ? mode === "github" ? sharing ? "Copying…" : "Importing…" : "Creating…" : sharing ? "Continue to sharing" : mode === "github" ? "Import project" : "Create project"}</Button>
       </div>
     </form>}
   </Dialog>;

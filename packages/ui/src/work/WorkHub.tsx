@@ -184,7 +184,9 @@ function Team({ members, sinceDays, limit, onShowAll }: { members: TeamMember[];
   })}</ul>{members.length > shown.length && onShowAll && <Button size="sm" variant="ghost" className="fd-work-show-more" onClick={onShowAll}>Show all {members.length} people</Button>}</>;
 }
 
-function Repositories({ scope, enabled, onImport }: { scope: WorkScope; enabled: boolean; onImport?: ((url: string) => void) | undefined }) {
+type RepoAction = (url: string, purpose: "import" | "share") => void;
+
+function Repositories({ scope, enabled, onImport }: { scope: WorkScope; enabled: boolean; onImport?: RepoAction | undefined }) {
   const repos = useWorkRepos(enabled);
   const [query, setQuery] = useState("");
   const [all, setAll] = useState(false);
@@ -205,8 +207,11 @@ function Repositories({ scope, enabled, onImport }: { scope: WorkScope; enabled:
   </section>;
 }
 
-function RepoCard({ repo, onImport }: { repo: WorkRepo; onImport?: ((url: string) => void) | undefined }) {
-  return <li className="fd-work-repo-item">{onImport && <Button size="sm" className="fd-work-repo-import" title={`Import ${repo.fullName} as a fabPlane project`} onClick={() => onImport(repo.url)}><Icon name="download" width={14} height={14} />Import</Button>}<ExternalRow url={repo.url} className="fd-work-repo">
+function RepoCard({ repo, onImport }: { repo: WorkRepo; onImport?: RepoAction | undefined }) {
+  return <li className="fd-work-repo-item">{onImport && <span className="fd-work-repo-actions">
+    <Button size="sm" className="fd-work-repo-share" title={`Put ${repo.fullName} on the web for people you choose`} onClick={() => onImport(repo.url, "share")}><Icon name="share" width={14} height={14} />Share</Button>
+    <Button size="sm" variant="ghost" className="fd-work-repo-import" title={`Copy ${repo.fullName} to this computer to work on it`} onClick={() => onImport(repo.url, "import")}><Icon name="download" width={14} height={14} />Import</Button>
+  </span>}<ExternalRow url={repo.url} className="fd-work-repo">
     <span className="fd-work-repo-title"><Icon name={repo.hardware ? "pcb" : "folder"} width={16} height={16} /><strong>{repo.fullName}</strong>{repo.private && <Badge>Private</Badge>}{repo.archived && <Badge>Archived</Badge>}{repo.fork && <Badge>Fork</Badge>}</span>
     {repo.description && <span className="fd-work-repo-description">{repo.description}</span>}
     <small>{[repo.language, repo.pushedAt && `pushed ${ago(repo.pushedAt)}`, repo.hardware && `hardware: ${repo.hardwareSignals.slice(0, 3).join(", ")}`].filter(Boolean).join(" · ")}</small>
@@ -280,7 +285,7 @@ function readScope(): WorkScope {
  * What needs you, what changed and who is doing what, across GitHub. `compact` is the summary shown
  * under the projects on Home's Everything view; the full page adds repositories and local projects.
  */
-export function WorkHub({ compact = false, onShowAll, onImportRepo }: { compact?: boolean; onShowAll?: () => void; /** Start importing a repository as a project. */ onImportRepo?: (url: string) => void }) {
+export function WorkHub({ compact = false, onShowAll, onImportRepo }: { compact?: boolean; onShowAll?: () => void; /** Start importing a repository as a project, or sharing it on the web. */ onImportRepo?: RepoAction }) {
   const connection = useWorkConnection();
   const [scope, setScopeState] = useState<WorkScope>(readScope);
   const setScope = (next: WorkScope) => { setScopeState(next); try { localStorage.setItem(SCOPE_KEY, next); } catch { /* the choice just is not remembered */ } };

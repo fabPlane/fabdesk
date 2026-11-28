@@ -59,6 +59,10 @@ repository. If GitHub refuses and GitHub is connected, it clones once more with 
 demand, because later on-demand fetches would run without credentials. The token is passed through
 git's environment only: the saved `origin` is the plain `https://github.com/owner/repo.git` address.
 
+**Share** on a repository card is the same copy with a different ending: once a board is chosen,
+the project opens with its sharing settings already up. The copy to this computer is needed because
+boards are drawn here; fabplane.com never reads the repository.
+
 An imported private project is shared like any other: **Share** publishes a snapshot (previews,
 optional 3D, check summaries) to fabplane.com for anyone with the link or for invited people.
 Viewers see the snapshot, not the repository, so they need no GitHub access.

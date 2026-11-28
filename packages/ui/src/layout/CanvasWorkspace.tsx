@@ -94,6 +94,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
   const threads = useThreads({ ...(projectId ? { projectId } : {}) });
   const [creating, setCreating] = useState<"create" | "github" | null>(null);
   const [importUrl, setImportUrl] = useState("");
+  const [importPurpose, setImportPurpose] = useState<"import" | "share">("import");
   const [projectAction, setProjectAction] = useState<ProjectAction | null>(null);
   const ui = () => useUiStore.getState();
   const name = project.data?.name ?? projects.data?.find((item) => item.id === projectId)?.name ?? (projectId ? "Untitled project" : "New project");
@@ -198,7 +199,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         {HOME_VIEWS.map(view => <button key={view.id} type="button" aria-pressed={homeView === view.id} title={view.hint} onClick={() => setHomeView(view.id)}><Icon name={view.icon} width={15} height={15} />{view.label}</button>)}
       </div></div>
       {homeView !== "work" && <ProjectHome listing={homeView === "projects"} onViewProjects={() => setHomeView("projects")} onCreate={() => setCreating("create")} onImport={() => setCreating("github")} onBrowse={() => { ui().setSidebarListTab("open_source"); setNavigationOpen(true); }} />}
-      {homeView !== "projects" && <WorkHub compact={homeView === "all"} onShowAll={() => setHomeView("work")} onImportRepo={(url) => { setImportUrl(url); setCreating("github"); }} />}
+      {homeView !== "projects" && <WorkHub compact={homeView === "all"} onShowAll={() => setHomeView("work")} onImportRepo={(url, purpose) => { setImportUrl(url); setImportPurpose(purpose); setCreating("github"); }} />}
     </main> : <main className="fd-canvas-main" data-draft-view={isDraft && !secondary ? conversationOnly ? "conversation" : "sketch" : undefined} data-task-toolbar={!!projectId && !secondary && (!conversationOnly || isDraft)} data-area={fresh ? "start" : area}>
       {!inlineBoardNavigation && destinations}
       {sketchReference && !isDraft && !fresh && !secondary && !conversationOnly && <span className="fd-reference-view-label">Project reference</span>}
@@ -227,7 +228,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
       <div className="fd-canvas-drawer-inner"><div className="fd-assistant-heading"><span>{projectId ? "Project conversations" : "Projects & conversations"}</span><IconButton size="sm" title="Close navigation" onClick={() => setNavigationOpen(false)}><Icon name="close" width={17} height={17} /></IconButton></div>
       <ThreadSidebar projectOnly={!!projectId} onNewChat={onNewChat} onOpenProject={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setNavigationOpen(false); }} /></div>
     </Dialog>
-    {creating && <CreateProjectDialog key={importUrl} initialMode={creating} initialUrl={creating === "github" ? importUrl : ""} onClose={() => { setCreating(null); setImportUrl(""); }} onCreated={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setCreating(null); setImportUrl(""); }} />}
+    {creating && <CreateProjectDialog key={`${importPurpose}:${importUrl}`} initialMode={creating} initialUrl={creating === "github" ? importUrl : ""} purpose={importUrl ? importPurpose : "import"} onClose={() => { setCreating(null); setImportUrl(""); }} onCreated={(id) => { ui().setActiveProject(id); ui().setBoardOpen(true); setCreating(null); setImportUrl(""); }} />}
     {setupDraft && <CreateIdeaProjectDialog key={setupDraft.id} project={setupDraft} threadId={threadId} onClose={() => setSetupDraft(null)} />}
     {projectAction && <ProjectActionDialog key={projectAction.id} project={projectAction} onClose={() => setProjectAction(null)} />}
     <ProjectPickerDialog />

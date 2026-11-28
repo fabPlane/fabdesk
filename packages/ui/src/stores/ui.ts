@@ -129,6 +129,8 @@ export interface UiState {
   sidebarListTab: SidebarListTab;
   activeOpenSourceId: string | null;
   projectPickerOpen: boolean;
+  /** A project whose sharing settings should open as soon as its workspace shows them (not persisted). */
+  shareRequestProjectId: string | null;
   orderFlowOpen: boolean;
   /** Parts Inventory (opened from the user menu) replaces the chat pane while true. */
   inventoryOpen: boolean;
@@ -191,6 +193,7 @@ export interface UiState {
   setSidebarListTab: (tab: SidebarListTab) => void;
   setActiveOpenSourceId: (id: string | null) => void;
   setProjectPickerOpen: (open: boolean) => void;
+  requestShare: (projectId: string | null) => void;
   setOrderFlowOpen: (open: boolean) => void;
   setInventoryOpen: (open: boolean) => void;
   setBoardTab: (tab: BoardTab) => void;
@@ -422,6 +425,7 @@ export function createUiStore(storage?: StateStorage) {
   sidebarListTab: "projects",
   activeOpenSourceId: null,
   projectPickerOpen: false,
+  shareRequestProjectId: null,
   orderFlowOpen: false,
   inventoryOpen: false,
   boardTab: "pcb",
@@ -507,6 +511,7 @@ export function createUiStore(storage?: StateStorage) {
         : {}),
     })),
   setProjectPickerOpen: (projectPickerOpen) => set({ projectPickerOpen }),
+  requestShare: (shareRequestProjectId) => set({ shareRequestProjectId }),
   setOrderFlowOpen: (orderFlowOpen) => set({ orderFlowOpen, ...(orderFlowOpen ? { activeOpenSourceId: null, inventoryOpen: false } : {}) }),
   setInventoryOpen: (inventoryOpen) =>
     set({ inventoryOpen, ...(inventoryOpen ? { activeOpenSourceId: null, orderFlowOpen: false } : {}) }),
