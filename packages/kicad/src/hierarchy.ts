@@ -1,4 +1,5 @@
 import { exportSchematicSvg } from "./exports";
+import { SchematicPreviewUnavailableError } from "./raster";
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, lstat, open, realpath } from "node:fs/promises";
@@ -279,13 +280,15 @@ export async function exportOwnedSchematicSvg(cli: KicadCli, opts: { projectDir:
       for (const [index, sheet] of opts.hierarchy.sheets.entries()) {
         verifyCapturedPage(opts.hierarchy, sheet, pages);
         const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, `circuit-${index}`), pages: [sheet.pageNumber!], ...(opts.circuit ? { circuit: true } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
+        if (!result.paths.length) throw new SchematicPreviewUnavailableError();
         if (result.paths.length !== 1) throw new Error("KiCad did not produce exactly the selected circuit page");
         sheets.push({ name: basename(result.paths[0]!), svg: new Uint8Array(await readFile(result.paths[0]!)), nativeSheet: { identity: sheet.identity, hierarchyPath: sheet.hierarchyPath, nativePath: sheet.nativePath, pageNumber: sheet.pageNumber! } });
       }
       return sheets;
     }
     const result = await exportSchematicSvg(cli, { schematic: source, outDir: join(scratch, "svg-output"), ...(opts.circuit ? { circuit: true } : {}), ...(opts.signal ? { signal: opts.signal } : {}) });
-    if (!result.paths.length || result.paths.length !== opts.hierarchy.sheets.length) throw new Error("Schematic export did not produce one preview per inspected sheet");
+    if (!result.paths.length) throw new SchematicPreviewUnavailableError();
+    if (result.paths.length !== opts.hierarchy.sheets.length) throw new Error("Schematic export did not produce one preview per inspected sheet");
     const rootSvg = basename(source).replace(/\.kicad_sch$/i, ".svg");
     const paths = [...result.paths].sort((a, b) => Number(basename(b) === rootSvg) - Number(basename(a) === rootSvg) || a.localeCompare(b));
     return Promise.all(paths.map(async path => ({ name: basename(path), svg: new Uint8Array(await readFile(path)) })));

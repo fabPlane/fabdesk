@@ -169,7 +169,18 @@ export async function createServices(
       exportBom: (cli, o) => kicad.exportBom(cli, o),
       exportNetlist: (cli, o) => kicad.exportNetlist(cli, o),
       exportOwnedSchematicPage: (cli, o) => kicad.exportOwnedSchematicPage(cli, o),
-      exportOwnedSchematicSvg: (cli, o) => kicad.exportOwnedSchematicSvg(cli, o),
+      exportOwnedSchematicSvg: async (cli, o) => {
+        try {
+          return await kicad.exportOwnedSchematicSvg(cli, o);
+        } catch (error) {
+          if (error instanceof kicad.SchematicPreviewUnavailableError)
+            throw new ToolError(
+              `${error.message} The previous preview was kept. Try creating the preview again.`,
+              "precondition",
+            );
+          throw error;
+        }
+      },
       exportOwnedSchematicBom: (cli, o) => kicad.exportOwnedSchematicBom(cli, o),
       exportSchematicSvg: (cli, o) => kicad.exportSchematicSvg(cli, o),
       exportSchematicPdf: (cli, o) => kicad.exportSchematicPdf(cli, o),
