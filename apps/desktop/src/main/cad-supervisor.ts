@@ -17,8 +17,8 @@ import { type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { resolveProjectsDirectory } from "@fabdesk/auth-client";
-import { dirname, isAbsolute, join, relative, resolve, win32 } from "node:path";
+import { desktopProjectsDirectory } from "./desktop-projects";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSidecar } from "./child-process-env";
 
 export interface CadBundleManifest {
@@ -62,7 +62,6 @@ export function resolveCadBackend(opts: {
 }): CadBackendCommand | null {
   const env = opts.env ?? process.env;
   const url = env["FABDESK_FAB_CAD_BRIDGE_URL"] ?? "http://127.0.0.1:4030";
-  const workspace = resolveProjectsDirectory(env);
   const fixedUrl = Boolean(env["FABDESK_FAB_CAD_BRIDGE_URL"]);
   // A bridge the user runs elsewhere (FABDESK_FAB_CAD_BRIDGE_URL) has its own token, which they
   // pass in FABDESK_FAB_CAD_BRIDGE_TOKEN; otherwise this launch mints one.
@@ -76,8 +75,7 @@ export function resolveCadBackend(opts: {
       ...(env["FREECAD_USER_HOME"] ? { FREECAD_USER_HOME: env["FREECAD_USER_HOME"] } : {}),
       PORT: new URL(url).port || "4030",
       HOST: "127.0.0.1",
-      WORKSPACE_ROOT:
-        isAbsolute(workspace) || win32.isAbsolute(workspace) ? workspace : resolve(workspace),
+      WORKSPACE_ROOT: desktopProjectsDirectory(env),
     },
   };
 

@@ -3,6 +3,7 @@ import {
   browserHost,
   CoreClient,
   CoreStatusScreen,
+  DesktopUpdateNotice,
   FabdeskApp,
   SharedProjectDialog,
   TeamProjectsDialog,
@@ -221,6 +222,7 @@ export function App() {
       <>
         <ThemeSync />
         <CoreStatusScreen
+          updateNotice={<DesktopUpdateNotice host={host} />}
           status={info?.status ?? null}
           onRestart={bridge ? () => void bridge.restartCore() : undefined}
           onOpenLogs={bridge ? () => void bridge.openLogs() : undefined}

@@ -3,8 +3,8 @@ import { type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:net";
-import { resolveProjectsDirectory } from "@fabdesk/auth-client";
-import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
+import { desktopProjectsDirectory } from "./desktop-projects";
 import { spawnSidecar } from "./child-process-env";
 
 export interface PcbBundleManifest {
@@ -131,9 +131,6 @@ export function resolvePcbBackend(opts: {
   const port = new URL(url).port || "4020";
   const runtimeId = env["FABDESK_RUNTIME_ID"]?.trim() || randomUUID();
   const desktopPid = env["FABDESK_DESKTOP_PID"]?.trim() || String(process.pid);
-  const workspace = resolveProjectsDirectory(env);
-  const workspaceRoot =
-    isAbsolute(workspace) || win32.isAbsolute(workspace) ? workspace : resolve(workspace);
   return {
     command: sourceRoot ? (env["BUN_PATH"] ?? "bun") : command,
     args: sourceRoot ? ["run", "--filter", "@fp-pcb/bridge", "start"] : [],
@@ -167,7 +164,7 @@ export function resolvePcbBackend(opts: {
       ...(fabRouter ? { FAB_ROUTER_MODULE: fabRouter } : {}),
       FREEROUTING_JAR: freeroutingJar,
       FP_PCB_JAVA: freeroutingJava,
-      WORKSPACE_ROOT: workspaceRoot,
+      WORKSPACE_ROOT: desktopProjectsDirectory(env),
     },
   };
 }

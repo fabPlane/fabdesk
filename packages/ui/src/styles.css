@@ -132,6 +132,40 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
+.fd-update-notice {
+  display: flex;
+  position: relative;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  padding: 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--fd-accent) 25%, var(--fd-border));
+  background: color-mix(in srgb, var(--fd-accent) 8%, var(--fd-panel));
+  color: var(--fd-fg);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-app-region: no-drag;
+}
+.fd-update-notice > div { overflow-wrap: anywhere; }
+.fd-update-notice > button { flex: none; }
+.fd-update-notice [role="status"] > span { color: color-mix(in srgb, var(--fd-muted) 72%, var(--fd-fg)); }
+.fd-update-notice [role="status"] > span, .fd-update-notice [role="alert"] { max-height: 5rem; overflow-y: auto; }
+.fd-update-notice[data-ready] > svg { color: var(--fd-success); }
+.fd-update-screen > .fd-update-notice {
+  width: min(100%, 24rem);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.fd-update-progress {
+  appearance: none;
+  position: absolute;
+  inset: auto 0 -1px;
+  width: 100%;
+  height: 2px;
+}
+.fd-update-progress::-webkit-progress-bar { background: transparent; }
+.fd-update-progress::-webkit-progress-value { background: var(--fd-accent); }
 /* Enabled controls advertise interaction; disabled state remains owned by each control. */
 button:enabled:not([aria-disabled="true"]),summary,[role="button"]:not([aria-disabled="true"]) { cursor:pointer; }
 /* Native popup menus may use an OS surface instead of the select's background.

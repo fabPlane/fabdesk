@@ -46,6 +46,8 @@ export const UpdateCheckResult = z.object({
   latest: ReleaseManifest.nullable(),
   updateAvailable: z.boolean(),
   asset: ReleaseAsset.nullable(),
+  /** Installation paths that need a different first action in the desktop app. */
+  installMode: z.enum(["move-to-applications", "system-package", "installer"]).optional(),
   downloadPageUrl: z.string(),
   error: z.string().optional(),
 });
@@ -71,7 +73,7 @@ export const UpdateDownloadState = z.discriminatedUnion("state", [
     filename: z.string(),
     path: z.string(),
     sha256: z.string(),
-    /** True when the host replaces the app itself and relaunches; otherwise it opens the installer file. */
+    /** True once this update is ready for the next normal launch. */
     restart: z.boolean().optional(),
   }),
   /** The host is replacing the app and is about to relaunch. */

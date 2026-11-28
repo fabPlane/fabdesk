@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { isCoreReady, type CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
 import { applyDesktopIdentity } from "./dev-profile";
+import { pinCustomProjectsDirectory } from "./desktop-projects";
 import { registerIpc } from "./ipc";
 import { installAppMenu } from "./app-menu";
 import { automationEnabled, startAppAutomation, type AppAutomation } from "./automation";
@@ -20,9 +21,13 @@ import {
   syncErrorReportingFromCore,
 } from "./sentry";
 import { registerUpdateIpc, UpdateChecker } from "./updates";
-import { registerUpdateDownloadIpc, UpdateDownloader } from "./update-download";
-import { inPlaceUnsupportedReason } from "./update-feed";
-import { UpdateInstaller } from "./update-install";
+import { registerUpdateDownloadIpc, type UpdateTransport } from "./update-download";
+import { createAlternateUpdateTransport, desktopInstallMode } from "./update-installation";
+import { createUpdateInstaller } from "./update-install";
+import { RestartOnQuit } from "./staged-update";
+import { updateRelaunchArgs } from "./update-relaunch";
+import { restartLinuxAfterUpdate } from "./update-linux-relaunch";
+import { deferWindowsUpdateLaunch } from "./update-windows-launch";
 import { migrateLegacyUserData } from "./user-data";
 import { CadSupervisor, resolveCadBackend } from "./cad-supervisor";
 import { CadRuntimeManager, CadRuntimeConsent } from "./cad-runtime";
@@ -114,6 +119,7 @@ app.on("open-url", (event, url) => {
 
 // Name / userData / AUMID / WM_CLASS / FABDESK_HOME before any path read or the single-instance lock
 // (Electron keys the lock on userData). Packaged production identity is left untouched.
+pinCustomProjectsDirectory(process.env);
 const identity = applyDesktopIdentity(app, {
   packaged: app.isPackaged,
   env: process.env,
@@ -153,18 +159,29 @@ let pcbSupervisor: PcbSupervisor | null = null;
 let cadSupervisor: CadSupervisor | null = null;
 let automation: AppAutomation | null = null;
 let quitting = false;
+let backendsStopped = false;
+let installer: ReturnType<typeof createUpdateInstaller> | undefined;
+let systemUpdater: UpdateTransport | undefined;
+const debRestart = new RestartOnQuit();
 
 /**
- * Stops the core and the bridges and marks the app as quitting, so the next quit goes straight
- * through. Shared by a normal quit and by an in-place update, which must not replace the app
- * while its child processes still run from it.
+ * Release backend files before the final app quit can replace the installed binaries.
  */
 async function stopBackendsForQuit(): Promise<void> {
   if (quitting) return;
   quitting = true;
+  // apt may still be replacing files with system authorization. Finish the existing
+  // package transaction before releasing the app and its child processes.
+  if (systemUpdater?.state().state === "downloading" || systemUpdater?.state().state === "verifying") systemUpdater.cancel();
+  await systemUpdater?.waitForInstall?.();
+  const updateState = (installer ?? systemUpdater)?.state().state;
+  if (updateState === "done" || updateState === "installing" || updateState === "verifying" || updateState === "downloading") {
+    await supervisor?.stopForUpdate();
+  } else {
+    await supervisor?.stop({ shutdown: true }).catch(() => {});
+  }
   void automation?.stop();
   try {
-    await supervisor?.stop({ shutdown: true }).catch(() => {});
     await Promise.all([pcbSupervisor?.stop(), cadSupervisor?.stop()]);
     await flushSentry();
   } catch {
@@ -247,10 +264,20 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
-if (!app.requestSingleInstanceLock()) {
-  console.error(`[main] another ${identity.productName} instance holds the lock; quitting`);
-  app.quit();
-} else {
+async function startDesktop() {
+  if (process.platform === "win32" && app.isPackaged && await deferWindowsUpdateLaunch({
+    appPath: app.getAppPath(), userData: app.getPath("userData"), version: app.getVersion(),
+    exe: process.execPath, args: process.argv.slice(1), cwd: process.cwd(),
+  })) {
+    console.info("[update] Waiting for the Windows installer before opening FabDesk.");
+    app.exit(0);
+    return;
+  }
+  if (!app.requestSingleInstanceLock()) {
+    console.error(`[main] another ${identity.productName} instance holds the lock; quitting`);
+    app.quit();
+    return;
+  }
   app.on("second-instance", (_event, argv) => {
     deliverFunnelHandoff(collectFunnelHandoff({ argv }));
     const shared = openSharedProject.offer(argv);
@@ -397,31 +424,29 @@ if (!app.requestSingleInstanceLock()) {
         postFunnelHandoff(launchHandoff, info);
       }
     });
+    const installMode = desktopInstallMode();
     const updates = new UpdateChecker({
+      installMode,
       url: process.env["FABDESK_UPDATE_URL"],
       enabled: process.env["FABDESK_UPDATE_CHECK"] !== "0",
     });
     registerUpdateIpc(updates);
-    const downloader = new UpdateDownloader(updates);
-    const inPlaceBlocked = inPlaceUnsupportedReason({
-      platform: process.platform,
-      packaged: app.isPackaged,
-      exePath: app.getPath("exe"),
-      appImage: process.env["APPIMAGE"],
-      disabled: process.env["FABDESK_UPDATE_INPLACE"] === "0",
-    });
-    if (inPlaceBlocked) console.log(`[update] installer downloads only: ${inPlaceBlocked}`);
-    registerUpdateDownloadIpc(
-      inPlaceBlocked
-        ? downloader
-        : new UpdateInstaller(updates, {
-            prepareQuit: stopBackendsForQuit,
-            fallback: downloader,
-            installRecordPath: join(app.getPath("userData"), "update-install.json"),
-          }),
-    );
+    const checkCore = async () => {
+      await coreStartup;
+      if (quitting) throw new Error("FabDesk is closing. Retry the update after reopening.");
+      await sup.assertCanUpdate();
+    };
+    const alternate = createAlternateUpdateTransport(installMode, updates, checkCore, async () => debRestart.request(() => app.quit()));
+    if (alternate) {
+      if (installMode === "system-package" || installMode === "move-to-applications") systemUpdater = alternate;
+      registerUpdateDownloadIpc(alternate);
+    } else {
+      installer = createUpdateInstaller(updates, join(app.getPath("userData"), "update-install.json"), checkCore);
+      registerUpdateDownloadIpc(installer);
+    }
     updates.start();
     coreStartup = supervisor.start();
+    void installer?.restore().catch(error => console.error("[update] could not restore the pending update:", error));
     createWindow();
     // Startup deep links stay queued for take() after the renderer mounts.
     // Sending here is always lost because webContents has not loaded yet.
@@ -448,9 +473,37 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== "darwin") app.quit();
   });
 
-  app.on("before-quit", (e) => {
-    if (quitting || !supervisor) return;
+  app.on("before-quit", () => {
+    if (!quitting) {
+      installer?.beforeQuit();
+      debRestart.begin();
+    }
+  });
+  // All windows have accepted closing by will-quit. A veto leaves the current core,
+  // bridges and staged update intact. Coalesce repeated quit requests during shutdown.
+  app.on("will-quit", (e) => {
+    if (backendsStopped || !supervisor) return;
     e.preventDefault();
-    void stopBackendsForQuit().finally(() => app.quit());
+    if (!quitting) void stopBackendsForQuit().then(() => {
+      backendsStopped = true;
+      app.quit();
+    }, error => {
+      // Squirrel already owns a verified Mac update. Keep the app running until
+      // the installation is free instead of exiting into a blocked replacement.
+      quitting = false;
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      dialog.showErrorBox("FabDesk update postponed", error instanceof Error ? error.message : String(error));
+    });
+  });
+  app.on("quit", (_e, exitCode) => {
+    try {
+      installer?.finishQuit(exitCode);
+      if (exitCode === 0 && debRestart.relaunch && systemUpdater?.state().state === "done") {
+        restartLinuxAfterUpdate(process.execPath, updateRelaunchArgs(app.getPath("userData")));
+      }
+    }
+    catch (error) { console.error("[update] could not install on exit:", error); }
   });
 }
+
+void startDesktop();

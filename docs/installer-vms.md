@@ -128,3 +128,13 @@ the bridge on, same checks, GDI screen capture. Results are uploaded to the host
   `vm:windows console` to look around. `destroy` removes base images and clones.
 - Runner-side checks (`scripts/verify-installers.ts`) still run in CI on every release; the VMs are
   for the user-facing path the runners cannot exercise.
+
+## Verify the visible Update button before publishing
+
+Use **Release → Run workflow** on the candidate branch. Select **internal** and enable **update_fixture**. The build reads the website’s update feed and stamps the candidate installers with the preceding published release number. For example, when the site serves **0.4.26** and its predecessor is **0.4.24**, the internal installers contain the PR’s Update button and identify as **0.4.24**. The public packages and website stay untouched.
+
+In **Installer test → Run workflow** on the same branch, enter the internal build's `run_id` and a published tag such as `v0.4.26` as `one_click_target`. The test pins the release manifest for that tag. Fresh guests click the real button, save a project, quit normally and launch the original installation. Each guest uploads screenshots and an upgrade report. Debian exercises its package manager's OS authorization. One Mac guest starts from a mounted disk image to verify first-time relocation.
+
+Enable **restart_now** to test the **Restart now** button with a nondefault profile. The guest clicks the button and waits for the updated app to reopen on its own. Leave this option off to exercise a normal quit and a separate, user-initiated launch.
+
+For a manual check, install the candidate in a test profile, sign in, open a project and save a recognizable change. Click **Update** and keep working until **Ready for next launch** appears. Click **Restart now** once and leave the application closed while the installer runs. When the window returns, verify the new version, account, open project and saved change. To test a normal quit, repeat from the older candidate and quit normally (on macOS use **⌘Q**), then reopen the same installation. The default feed serves the current public release.

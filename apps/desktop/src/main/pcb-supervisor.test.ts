@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { coreEnvironment } from "./child-process-env";
 import { corePcbEnvironment, PcbSupervisor, resolvePcbBackend } from "./pcb-supervisor";
 
@@ -41,7 +41,7 @@ describe("bundled PCB backend", () => {
     const opts = {
       packaged: true,
       resourcesPath: resources,
-      env: { FABDESK_PROJECTS_DIR: "C:\\boards", BUN_OPTIONS: "--cwd=.. --" },
+      env: { FABDESK_PROJECTS_DIR: "C:/boards//old/../project/./", BUN_OPTIONS: "--cwd=.. --" },
     };
     const resolved = resolvePcbBackend(opts)!;
     expect(resolved).toMatchObject({
@@ -52,7 +52,7 @@ describe("bundled PCB backend", () => {
         KICAD_SOCKET_TRANSPORT: "ws",
         PORT: "4020",
         HOST: "127.0.0.1",
-        WORKSPACE_ROOT: "C:\\boards",
+        WORKSPACE_ROOT: resolve("C:/boards/project"),
       },
     });
     const expectedOptions = (dir: string) =>

@@ -1,21 +1,25 @@
 /**
  * In-app installer download for the update badge: streams the manifest asset into the user's
  * Downloads folder, verifies its SHA-256 against the manifest, and opens it on request.
- * No auto-install: the OS installer / DMG / AppImage takes over from there.
+ * Debian packages are verified in a private staging directory and applied through apt.
  */
 import type { ReleaseAsset, UpdateDownloadState } from "@fabdesk/protocol";
 import { createHash } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import { mkdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, net, shell } from "electron";
 import type { UpdateChecker } from "./updates";
+import { installDebianUpdate } from "./update-deb";
 
 export class UpdateDownloader {
   #state: UpdateDownloadState = { state: "idle" };
   #abort: AbortController | null = null;
+  #pending: Promise<UpdateDownloadState> | null = null;
 
-  constructor(private readonly checker: UpdateChecker) {}
+  constructor(private readonly checker: UpdateChecker, private readonly systemPackage = false,
+    private readonly checkCore?: () => Promise<void>, private readonly restartApplied?: () => Promise<void>) {}
 
   state(): UpdateDownloadState {
     return this.#state;
@@ -32,9 +36,19 @@ export class UpdateDownloader {
     this.#abort?.abort();
   }
 
+  async waitForInstall(): Promise<void> {
+    if (this.#state.state === "installing") await this.#pending;
+  }
+
   /** Starts (or returns the current) download of the installer picked by the last update check. */
-  async download(): Promise<UpdateDownloadState> {
-    if (this.#state.state === "downloading" || this.#state.state === "verifying") return this.#state;
+  download(): Promise<UpdateDownloadState> {
+    return this.#pending ??= this.#download().catch(error => {
+      this.#set({ state: "error", message: error instanceof Error ? error.message : String(error) });
+      return this.#state;
+    }).finally(() => { this.#pending = null; });
+  }
+
+  async #download(): Promise<UpdateDownloadState> {
     const result = this.checker.last() ?? (await this.checker.check());
     const asset = result.asset;
     const version = result.latest?.version;
@@ -42,39 +56,38 @@ export class UpdateDownloader {
       this.#set({ state: "error", message: "No update available for this platform." });
       return this.#state;
     }
-    const dir = app.getPath("downloads");
+    if (this.systemPackage && asset.kind !== "deb") throw new Error("No matching Debian package is available for this installation.");
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9+._-]*$/.test(asset.filename)) throw new Error("The update filename is invalid.");
+    const dir = this.systemPackage ? join(app.getPath("userData"), "updates", "debian") : app.getPath("downloads");
     const finalPath = join(dir, asset.filename);
     const partPath = `${finalPath}.part`;
-    // Reuse a previous good download.
-    if (await fileMatches(finalPath, asset)) {
-      this.#set({ state: "done", version, filename: asset.filename, path: finalPath, sha256: asset.sha256 });
-      return this.#state;
-    }
     const abort = new AbortController();
     this.#abort = abort;
     this.#set({ state: "downloading", version, filename: asset.filename, received: 0, total: asset.size, percent: 0, bytesPerSecond: null });
     try {
-      await mkdir(dir, { recursive: true });
+      await mkdir(dir, { recursive: true, mode: 0o700 });
       await rm(partPath, { force: true });
-      const sha256 = await streamToFile(asset, partPath, abort.signal, (received, bps) => {
-        const total = asset.size || 0;
-        this.#set({
-          state: "downloading",
-          version,
-          filename: asset.filename,
-          received,
-          total,
-          percent: total > 0 ? Math.min(1, received / total) : null,
-          bytesPerSecond: bps,
+      if (!await fileMatches(finalPath, asset)) {
+        const sha256 = await streamToFile(asset, partPath, abort.signal, (received, bps) => {
+          this.#set({
+            state: "downloading", version, filename: asset.filename, received, total: asset.size,
+            percent: asset.size ? Math.min(1, received / asset.size) : null, bytesPerSecond: bps,
+          });
         });
-      });
-      this.#set({ state: "verifying", version, filename: asset.filename });
-      if (sha256 !== asset.sha256) {
-        await rm(partPath, { force: true });
-        throw new Error(`Checksum mismatch: expected ${asset.sha256.slice(0, 12)}…, got ${sha256.slice(0, 12)}…`);
+        this.#set({ state: "verifying", version, filename: asset.filename });
+        if (sha256 !== asset.sha256) throw new Error("The downloaded update failed checksum verification. Retry the download.");
+        await rename(partPath, finalPath);
       }
-      await rename(partPath, finalPath);
-      this.#set({ state: "done", version, filename: asset.filename, path: finalPath, sha256 });
+      abort.signal.throwIfAborted();
+      if (this.systemPackage) {
+        await this.checkCore?.();
+        abort.signal.throwIfAborted();
+        this.#abort = null;
+        this.#set({ state: "installing", version });
+        await installDebianUpdate(finalPath, app.getPath("exe"), version, process.arch);
+        await rm(finalPath, { force: true }).catch(() => {});
+      }
+      this.#set({ state: "done", version, filename: asset.filename, path: finalPath, sha256: asset.sha256, ...(this.systemPackage ? { restart: true } : {}) });
     } catch (error) {
       await rm(partPath, { force: true });
       const aborted = abort.signal.aborted;
@@ -88,6 +101,11 @@ export class UpdateDownloader {
   /** Opens the downloaded installer with the OS (mounts the DMG, launches the .exe, etc.). */
   async open(): Promise<string> {
     if (this.#state.state !== "done") return "Nothing downloaded yet.";
+    if (this.systemPackage) {
+      if (!this.restartApplied) return "Quit and reopen fabPlane to use the updated package.";
+      await this.restartApplied();
+      return "";
+    }
     const error = await shell.openPath(this.#state.path);
     if (error) shell.showItemInFolder(this.#state.path);
     return error;
@@ -99,7 +117,6 @@ async function fileMatches(path: string, asset: ReleaseAsset): Promise<boolean> 
     const info = await stat(path);
     if (info.size !== asset.size) return false;
     const hash = createHash("sha256");
-    const { createReadStream } = await import("node:fs");
     await new Promise<void>((resolve, reject) => {
       createReadStream(path).on("data", (chunk) => hash.update(chunk)).on("end", resolve).on("error", reject);
     });
@@ -118,18 +135,18 @@ async function streamToFile(
   const response = await net.fetch(asset.url, { signal, headers: { accept: "application/octet-stream" } });
   if (!response.ok || !response.body) throw new Error(`Download failed: HTTP ${response.status}`);
   const hash = createHash("sha256");
-  const out = createWriteStream(path);
   const reader = response.body.getReader();
   let received = 0;
   let lastEmit = 0;
   const started = Date.now();
-  try {
+  async function* chunks() {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       hash.update(value);
       received += value.byteLength;
-      if (!out.write(value)) await new Promise<void>((resolve) => out.once("drain", resolve));
+      if (received > asset.size) throw new Error("The update exceeds its expected size.");
+      yield value;
       const now = Date.now();
       if (now - lastEmit > 150) {
         lastEmit = now;
@@ -137,9 +154,13 @@ async function streamToFile(
         onProgress(received, elapsed > 0.5 ? received / elapsed : null);
       }
     }
-  } finally {
-    await new Promise<void>((resolve) => out.end(resolve));
   }
+  try {
+    await pipeline(chunks(), createWriteStream(path, { flags: "wx", mode: 0o600 }), { signal });
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  if (received !== asset.size) throw new Error("The update download is incomplete.");
   onProgress(received, null);
   return hash.digest("hex");
 }
@@ -150,6 +171,7 @@ export interface UpdateTransport {
   download(): Promise<UpdateDownloadState>;
   cancel(): void;
   open(): Promise<string>;
+  waitForInstall?(): Promise<void>;
 }
 
 export function registerUpdateDownloadIpc(downloader: UpdateTransport): void {

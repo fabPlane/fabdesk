@@ -4,7 +4,6 @@
  * No Electron imports: this file is unit-tested under Bun.
  */
 import type { ReleaseAsset, UpdateCheckResult } from "@fabdesk/protocol";
-import { readFileSync, rmSync } from "node:fs";
 
 type Platform = ReleaseAsset["platform"];
 type Arch = ReleaseAsset["arch"];
@@ -25,25 +24,33 @@ export interface InPlaceEnvironment {
   appImage?: string | undefined;
   /** `FABDESK_UPDATE_INPLACE=0` keeps the old download-and-open flow. */
   disabled?: boolean | undefined;
+  /** electron-builder writes resources/package-type into its Debian package. */
+  packageType?: string | undefined;
+  volumeWritable?: boolean | undefined;
 }
 
-/** Why this install cannot replace itself, or null when it can. */
-export function inPlaceUnsupportedReason(env: InPlaceEnvironment): string | null {
-  if (env.disabled) return "In-place updates are turned off.";
-  if (!env.packaged) return "Development builds do not update themselves.";
+export type AlternateInstallMode = "move-to-applications" | "system-package" | "installer";
+
+/** Null means the native updater can stage this build for the next launch. */
+export function alternateInstallMode(env: InPlaceEnvironment): AlternateInstallMode | null {
+  if (!env.packaged || env.disabled) return "installer";
   if (env.platform === "darwin") {
-    // Opened straight from the mounted DMG, or quarantined and translocated: both are read-only.
-    if (env.exePath.startsWith("/Volumes/") || env.exePath.includes("/AppTranslocation/")) {
-      return "Move fabPlane to the Applications folder to update it in place.";
-    }
-    return null;
+    const readOnly = env.exePath.includes("/AppTranslocation/") || (env.exePath.startsWith("/Volumes/") && !env.volumeWritable);
+    return readOnly ? "move-to-applications" : null;
   }
-  if (env.platform === "win32") return null;
-  if (env.platform === "linux") {
-    // A .deb install is owned by the package manager.
-    return env.appImage ? null : "Only the AppImage updates itself.";
+  if (env.platform === "win32" || (env.platform === "linux" && env.appImage)) return null;
+  return env.platform === "linux" && env.packageType === "deb" ? "system-package" : "installer";
+}
+
+/** A package-managed installation must stay on the same package format and architecture. */
+export function assetForInstallMode(result: UpdateCheckResult, mode: AlternateInstallMode | null, platform: string, arch: string, appImage?: string): ReleaseAsset | null {
+  if (mode === "system-package" || (mode === "installer" && platform === "linux" && !appImage)) {
+    return result.latest?.assets.find(a => a.platform === "linux" && a.arch === arch && a.kind === "deb") ?? null;
   }
-  return "This platform does not update in place.";
+  if (mode === "move-to-applications" || mode === null) {
+    return inPlaceAsset(result.latest?.assets ?? [], platform, arch);
+  }
+  return result.asset;
 }
 
 /** The asset the updater applies on this platform, or null when the release has none. */
@@ -74,22 +81,4 @@ export function toUpdateInfo(result: UpdateCheckResult, asset: ReleaseAsset): Fe
     path: asset.url,
     files: [{ url: asset.url, sha2: asset.sha256, size: asset.size }],
   };
-}
-
-/**
- * The version whose in-place install was started but is not the one running: that install did not
- * apply, so that version goes through the installer file. Clears the record once it did apply.
- */
-export function notAppliedVersion(recordPath: string, runningVersion: string): string | null {
-  let version: unknown;
-  try {
-    version = (JSON.parse(readFileSync(recordPath, "utf8")) as { version?: unknown }).version;
-  } catch {
-    return null;
-  }
-  if (typeof version !== "string" || version === runningVersion) {
-    rmSync(recordPath, { force: true });
-    return null;
-  }
-  return version;
 }

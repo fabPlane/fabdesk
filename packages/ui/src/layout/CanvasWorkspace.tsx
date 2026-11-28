@@ -176,7 +176,6 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         {projectId && !boardOpen && !secondary && !isDraft && <Button size="sm" title="Return to the canvas workspace" onClick={() => { ui().setBoardOpen(true); setAssistantOpen(false); }}><Icon name="pcb" width={16} height={16} />Canvas</Button>}
         {projectId && <ProjectActivity key={`${client.baseUrl}/${projectId}`} projectId={projectId} />}
         <span className="fd-canvas-connection" title={connectionTitle}><i data-connected={connected} />{connection ?? <span className="sr-only">Connected</span>}</span>
-        <span className="fd-canvas-update"><UpdateBadge /></span>
         {projectId && !fresh && !isDraft && <Button size="sm" variant="secondary" title="Review source and output updates" aria-current={area === "review" && boardTab === "updates" ? "page" : undefined} onClick={() => ui().setBoardTab("updates")}>Review</Button>}
         {projectId && !fresh && !isDraft && <HostedReviewTools key={projectId} projectId={projectId} shareButton />}
         <ProfileButton />
@@ -191,6 +190,7 @@ export function CanvasWorkspace({ onNewChat, coreStatus, banner }: AppShellProps
         </WorkspaceMenu>
       </div>
     </header>
+    <UpdateBadge />
     {banner}
     {home ? <main className="fd-home-surface" data-home-view={homeView}>
       <div className="fd-home-view-bar"><div className="fd-home-view-switch" role="group" aria-label="What Home shows">

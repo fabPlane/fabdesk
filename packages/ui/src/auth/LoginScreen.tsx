@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Input, Spinner } from "../components/ui";
+import { UpdateBadge } from "../components/UpdateBadge";
 import { acceptAuthSnapshot, deviceLoginUrl, useCore } from "@fabdesk/client-core";
 import { useAuthStore } from "@fabdesk/client-core";
 import { isMac } from "../util";
@@ -98,7 +99,7 @@ export function LoginScreen() {
     }
   };
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto bg-bg p-6" style={{ alignItems: "safe center" }}>
+    <div className="fd-update-screen flex h-full flex-col items-center justify-center gap-4 overflow-y-auto bg-bg p-6" style={{ justifyContent: "safe center" }}>
       <div className="w-full max-w-sm rounded-2xl border border-border bg-panel p-6 shadow-xl">
         <div className="mb-1 text-lg font-semibold">fabPlane</div>
         <div className="mb-5 text-xs text-muted">Sign in with your fabPlane account to start designing boards.</div>
@@ -173,6 +174,8 @@ export function LoginScreen() {
           </div>
         )}
       </div>
+      {/* The workspace header is not on screen yet, so a signed-out user would never learn of an update. */}
+      <UpdateBadge />
     </div>
   );
 }
