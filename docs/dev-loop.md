@@ -32,6 +32,8 @@ Options (environment variables for `bun run dev`):
 - A FabPlane PCB bridge on `http://127.0.0.1:4020` (or `FABDESK_FP_PCB_BRIDGE_URL`) for `circuit_build` / `route_run`: `KICAD_SRC=<kicad fork> bun run --filter @fp-pcb/bridge start` in a `fab_pcb` checkout.
 - `FABDESK_DEV_PROFILE=1` forces the isolated "fabPlane Dev" identity on a packaged nightly;
   `FABDESK_DEV_PROFILE=0` forces the production identity even when unpackaged.
+- Unpackaged runs show the app icon with a "DEV" band. `FABDESK_DEV_ICON=0` shows the plain icon
+  (screen recordings); it does not change the app name or the data folders.
 
 ## Running next to an installed fabPlane
 

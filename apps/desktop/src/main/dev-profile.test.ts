@@ -21,6 +21,7 @@ import {
   spawnCorePort,
   useDevProfile,
   type IdentityApp,
+  developmentIconFile,
 } from "./dev-profile";
 
 function fakeApp(appData = "/home/me/.config"): IdentityApp & {
@@ -86,6 +87,25 @@ describe("useDevProfile", () => {
     expect(parseDevProfileFlag("")).toBeUndefined();
     expect(parseDevProfileFlag("yes")).toBeUndefined();
     expect(useDevProfile({ packaged: true, env: { FABDESK_DEV_PROFILE: "yes" } })).toBe(false);
+  });
+});
+
+describe("developmentIconFile", () => {
+  test("unpackaged runs show the DEV band icon", () => {
+    expect(developmentIconFile({ packaged: false, platform: "darwin", env: {} })).toBe("dev/icon.png");
+    expect(developmentIconFile({ packaged: false, platform: "win32", env: {} })).toBe("dev/icon.ico");
+    expect(developmentIconFile({ packaged: false, platform: "linux", env: {} })).toBe("dev/icon-512.png");
+  });
+
+  test("FABDESK_DEV_ICON=0 shows the plain icon", () => {
+    const env = { FABDESK_DEV_ICON: "0" };
+    expect(developmentIconFile({ packaged: false, platform: "darwin", env })).toBe("icon.png");
+    expect(developmentIconFile({ packaged: false, platform: "win32", env })).toBe("icon.ico");
+    expect(developmentIconFile({ packaged: false, platform: "linux", env })).toBe("icons/512x512.png");
+  });
+
+  test("packaged apps keep the icon in their bundle", () => {
+    expect(developmentIconFile({ packaged: true, platform: "darwin", env: {} })).toBeUndefined();
   });
 });
 

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { isCoreReady, type CoreInfo } from "../shared/core-info";
 import { CoreSupervisor } from "./core-supervisor";
-import { applyDesktopIdentity } from "./dev-profile";
+import { applyDesktopIdentity, developmentIconFile } from "./dev-profile";
 import { registerIpc } from "./ipc";
 import { installAppMenu } from "./app-menu";
 import { automationEnabled, startAppAutomation, type AppAutomation } from "./automation";
@@ -173,10 +173,8 @@ async function stopBackendsForQuit(): Promise<void> {
 }
 
 function developmentIconPath(): string | undefined {
-  if (app.isPackaged) return undefined;
-  if (process.platform === "win32") return join(here, "../../build/icon.ico");
-  if (process.platform === "linux") return join(here, "../../build/icons/512x512.png");
-  return join(here, "../../build/icon.png");
+  const file = developmentIconFile({ packaged: app.isPackaged, platform: process.platform, env: process.env });
+  return file ? join(here, "../../build", file) : undefined;
 }
 
 function createWindow(): BrowserWindow {
