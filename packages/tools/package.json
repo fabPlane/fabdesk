@@ -15,6 +15,7 @@
     "@fabdesk/board-diff": "workspace:*",
     "@fabdesk/board-workflow": "workspace:*",
     "@fabdesk/board-art": "workspace:*",
+    "@fabdesk/fab-check": "workspace:*",
     "@fabdesk/kicad": "workspace:*",
     "@fabdesk/product-video": "workspace:*",
     "@fabdesk/protocol": "workspace:*",

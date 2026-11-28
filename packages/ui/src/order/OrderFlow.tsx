@@ -63,6 +63,28 @@ export function OrderFlow() {
             </Button>
           </div>
         )}
+        {order.data && (
+          <div className="mt-5 max-w-xl rounded-lg border border-border p-4" data-testid="fab-package-gate">
+            <div className="text-sm font-semibold">Fab package check</div>
+            <p className="mt-1 text-xs text-muted">
+              Inspect the exported Gerbers, drill, BOM and pick-and-place before you send them. This is a soft gate: it does not block the vendors.
+            </p>
+            <div className="mt-2 text-xs">
+              Status: <span className="font-medium">{order.data.checks.fabPackage}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setBoardTab("fab");
+                  setOrderFlowOpen(false);
+                }}
+              >
+                Open Fab check
+              </Button>
+            </div>
+          </div>
+        )}
         {order.data && order.data.warnings.length > 0 && (
           <ul className="mt-4 max-w-xl list-disc space-y-1 pl-5 text-sm text-muted" data-testid="order-warnings">
             {order.data.warnings.map((warning) => (

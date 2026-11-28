@@ -25,6 +25,7 @@ export const APP_BOARD_TABS = [
   "bom",
   "placement",
   "diff",
+  "fab",
 ] as const;
 export const APP_SETTINGS_SECTIONS = [
   "agents",

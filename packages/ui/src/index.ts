@@ -62,6 +62,8 @@ export { BoardPanel } from "./board/BoardPanel";
 export { SvgTab } from "./board/SvgTab";
 export { SvgViewer } from "./board/SvgViewer";
 export { DrcTab, normalizeReport } from "./board/DrcTab";
+export { FabCheckTab, FabCheckSummaryCard } from "./board/FabCheckTab";
+export { isFabCheckReport, chatSummary as fabCheckChatSummary } from "./board/fab-check";
 export { DiffTab } from "./board/DiffTab";
 export { diffHeadline } from "./board/diff-copy";
 export { RendersTab } from "./board/RendersTab";

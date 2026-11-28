@@ -8,7 +8,7 @@ export const WORKSPACE_AREAS = {
   mechanical: { label: "Mechanical", views: [{ tab: "cad", label: "Enclosure & CAD" }] },
   parts: { label: "Parts", views: [{ tab: "bom", label: "Parts & shopping" }] },
   outputs: { label: "Outputs", views: [{ tab: "renders", label: "Library" }, { tab: "3d", label: "Models & video" }, { tab: "files", label: "Export files" }] },
-  review: { label: "Review", views: [{ tab: "updates", label: "Updates" }, { tab: "diff", label: "Changes" }, { tab: "comments", label: "Comments" }, { tab: "drc", label: "Checks" }] },
+  review: { label: "Review", views: [{ tab: "updates", label: "Updates" }, { tab: "diff", label: "Changes" }, { tab: "comments", label: "Comments" }, { tab: "drc", label: "Checks" }, { tab: "fab", label: "Fab check" }] },
   files: { label: "Files", views: [{ tab: "files", label: "Files" }, { tab: "notes", label: "Notes" }] },
 } as const;
 export type WorkspaceArea = keyof typeof WORKSPACE_AREAS;
@@ -18,7 +18,7 @@ export function workspaceAreaForView(view: string): WorkspaceArea {
   if (view === "cad") return "mechanical";
   if (view === "bom") return "parts";
   if (view === "renders") return "outputs";
-  if (view === "updates" || view === "diff" || view === "comments" || view === "drc") return "review";
+  if (view === "updates" || view === "diff" || view === "comments" || view === "drc" || view === "fab") return "review";
   if (view === "files" || view === "notes") return "files";
   return "boards";
 }

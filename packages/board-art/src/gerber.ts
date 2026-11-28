@@ -4,19 +4,27 @@ const SCALE = 1_000_000;
 
 export type GerberAperture =
   | { id: number; kind: "C"; d: number }
-  | { id: number; kind: "R"; w: number; h: number };
+  | { id: number; kind: "R"; w: number; h: number }
+  | { id: number; kind: "O"; w: number; h: number };
 
 export type GerberOp =
   | { op: "flash"; x: number; y: number; aperture: number }
   | { op: "draw"; x1: number; y1: number; x2: number; y2: number; aperture: number }
   | { op: "region"; points: Array<{ x: number; y: number }> };
 
+export type GerberFormat = { int: number; frac: number };
+
 export type ParsedGerber = {
   comments: string[];
   unit: "mm" | "in" | null;
   polarity: "dark" | "clear" | null;
+  /** `%TF.FileFunction,...*%` or KiCad `G04 #@! TF.FileFunction` comment. */
+  fileFunction: string | null;
+  format: GerberFormat | null;
   apertures: GerberAperture[];
   ops: GerberOp[];
+  /** Aperture codes that were not C/R/O (macros, polygons). */
+  skippedApertures: number[];
 };
 
 export function writeGerberLayer(opts: {
@@ -168,13 +176,16 @@ export function buildGerberSet(
   return files;
 }
 
-/** Parse enough RS-274X to count flashes, draws and apertures. */
+/** Parse enough RS-274X to count flashes, draws and apertures, and to recover FileFunction/format. */
 export function parseGerber(text: string): ParsedGerber {
   const comments: string[] = [];
   const apertures: GerberAperture[] = [];
+  const skippedApertures: number[] = [];
   const ops: GerberOp[] = [];
   let unit: ParsedGerber["unit"] = null;
   let polarity: ParsedGerber["polarity"] = null;
+  let fileFunction: string | null = null;
+  let format: GerberFormat | null = null;
   let current = 0;
   let x = 0;
   let y = 0;
@@ -185,8 +196,8 @@ export function parseGerber(text: string): ParsedGerber {
   const digits = { int: 4, frac: 6 };
 
   const applyCoord = (token: string) => {
-    const xm = /X(-?\d+)/.exec(token);
-    const ym = /Y(-?\d+)/.exec(token);
+    const xm = /X(-?\d+(?:\.\d+)?)/.exec(token);
+    const ym = /Y(-?\d+(?:\.\d+)?)/.exec(token);
     if (xm) x = parseCoord(xm[1] ?? "0", digits);
     if (ym) y = parseCoord(ym[1] ?? "0", digits);
   };
@@ -195,9 +206,14 @@ export function parseGerber(text: string): ParsedGerber {
     const line = raw.trim();
     if (!line) continue;
     if (line.startsWith("G04")) {
-      comments.push(line.replace(/^G04\s*/, "").replace(/\*$/, "").trim());
+      const comment = line.replace(/^G04\s*/, "").replace(/\*$/, "").trim();
+      comments.push(comment);
+      const tf = /TF\.FileFunction,([^*%]+)/.exec(comment);
+      if (tf) fileFunction = (tf[1] ?? "").trim();
       continue;
     }
+    const fileFn = /%TF\.FileFunction,([^*%]+)\*%/.exec(line);
+    if (fileFn) fileFunction = (fileFn[1] ?? "").trim();
     if (line.startsWith("%MOMM")) unit = "mm";
     if (line.startsWith("%MOIN")) unit = "in";
     if (line.startsWith("%LPD")) polarity = "dark";
@@ -206,12 +222,16 @@ export function parseGerber(text: string): ParsedGerber {
     if (fs) {
       digits.int = Number(fs[1]);
       digits.frac = Number(fs[2]);
+      format = { int: digits.int, frac: digits.frac };
     }
-    const add = /%ADD(\d+)([CR]),([0-9.]+)(?:X([0-9.]+))?/.exec(line);
+    const add = /%ADD(\d+)([A-Z]+)(?:,([0-9.]+)(?:X([0-9.]+))?)?/.exec(line);
     if (add) {
       const id = Number(add[1]);
-      if (add[2] === "C") apertures.push({ id, kind: "C", d: Number(add[3]) });
-      else apertures.push({ id, kind: "R", w: Number(add[3]), h: Number(add[4] ?? add[3]) });
+      const kind = add[2] ?? "";
+      if (kind === "C") apertures.push({ id, kind: "C", d: Number(add[3]) });
+      else if (kind === "R") apertures.push({ id, kind: "R", w: Number(add[3]), h: Number(add[4] ?? add[3]) });
+      else if (kind === "O") apertures.push({ id, kind: "O", w: Number(add[3]), h: Number(add[4] ?? add[3]) });
+      else skippedApertures.push(id);
       continue;
     }
     if (line.includes("G36")) {
@@ -245,12 +265,16 @@ export function parseGerber(text: string): ParsedGerber {
     px = x;
     py = y;
   }
-  return { comments, unit, polarity, apertures, ops };
+  return { comments, unit, polarity, fileFunction, format, apertures, ops, skippedApertures };
 }
 
 function parseCoord(raw: string, digits: { int: number; frac: number }): number {
   const neg = raw.startsWith("-");
   const digitsOnly = neg ? raw.slice(1) : raw;
+  if (digitsOnly.includes(".")) {
+    const n = Number(digitsOnly);
+    return neg ? -n : n;
+  }
   const n = Number(digitsOnly) / 10 ** digits.frac;
   return neg ? -n : n;
 }

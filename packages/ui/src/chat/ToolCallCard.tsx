@@ -8,6 +8,8 @@ import { useUiStore } from "../stores/ui";
 import { cn, isImagePath, stringifyPretty } from "../util";
 import { ProjectImage } from "./ProjectImage";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { FabCheckSummaryCard } from "../board/FabCheckTab";
+import { isFabCheckReport } from "../board/fab-check";
 
 type ToolUse = Extract<MessagePart, { type: "tool_use" }>;
 type ToolResult = Extract<MessagePart, { type: "tool_result" }>;
@@ -85,6 +87,16 @@ function commandText(input: unknown): string {
   return typeof args["command"] === "string" ? args["command"] : typeof args["cmd"] === "string" ? args["cmd"] : "";
 }
 
+function unwrapReport(output: unknown) {
+  if (isFabCheckReport(output)) return output;
+  if (output && typeof output === "object") {
+    const o = output as Record<string, unknown>;
+    if (isFabCheckReport(o["json"])) return o["json"];
+    if (isFabCheckReport(o["structuredContent"])) return o["structuredContent"];
+  }
+  return null;
+}
+
 function summarizeArgs(input: unknown): string {
   if (!input || typeof input !== "object") return input === undefined ? "" : String(input);
   return Object.entries(input as Record<string, unknown>)
@@ -157,6 +169,11 @@ export function ToolCallCard({ use, result, streaming = false }: { use: ToolUse;
       {choices?.projectId === projectId && <ChooseSchematicSheet choices={choices} />}
       {focus?.projectId === projectId && <ShowSchematicComponent focus={focus} />}
       {error && result && <ErrorNotice error={resultText(result.output)} />}
+      {result && unwrapReport(result.output) && (
+        <div className="px-2.5 pb-2">
+          <FabCheckSummaryCard report={unwrapReport(result.output)!} />
+        </div>
+      )}
       {images.length > 0 && (
         <div className="flex flex-wrap gap-2 px-2.5 pb-2">
           {images.map((img, i) =>

@@ -16,6 +16,7 @@ import { ToolError, defineTool } from "../registry";
 import { ok, p, requireBoard, requireKicad, requireSchematic, inspectSavedHierarchy } from "./common";
 import { expectedPcbSource, withPcbOutput } from "../pcb-output";
 import { silk_art } from "./silk-art";
+import { fab_package_check } from "./fab-package-check";
 import { projectHasPlacedBoard } from "../board-state";
 import { writeJlcExports } from "../release-jlc";
 
@@ -692,4 +693,5 @@ export const exportTools = [
   silk_art,
   export_stencil,
   export_laser_stencil,
+  fab_package_check,
 ];

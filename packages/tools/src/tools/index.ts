@@ -95,6 +95,7 @@ export * from "./board-engines";
 export * from "./render";
 export * from "./export";
 export * from "./silk-art";
+export * from "./fab-package-check";
 export * from "./sim";
 export * from "./app";
 export * from "./shopping";
