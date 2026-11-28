@@ -128,6 +128,13 @@ function ProfileAccountWindow({ onShared }: { onShared: () => void }) {
     if (current?.status === "pending" && current.pending && !credentials)
       await host.openExternal(await deviceLoginUrl(client, current.pending.verificationUriComplete));
   };
+  // Opened by a "Sign in" button elsewhere: start right away instead of asking for a second click.
+  const signInRequested = useUiStore((s) => s.profileSignInRequested);
+  useEffect(() => {
+    if (!signInRequested || !state) return;
+    useUiStore.setState({ profileSignInRequested: false });
+    if (!signedIn && state.status !== "pending") void run(async () => { await signIn(); });
+  }, [signInRequested, !!state]);
   const signOut = async () => {
     await client.logout();
     const before = useAuthStore.getState().state;

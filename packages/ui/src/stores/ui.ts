@@ -151,7 +151,10 @@ export interface UiState {
   paletteOpen: boolean;
   profileOpen: boolean;
   profileReason: "invitation" | "sharing" | "expired" | null;
-  setProfileOpen: (open: boolean, reason?: "invitation" | "sharing" | "expired") => void;
+  /** `signIn` starts signing in as soon as the dialog is up, for buttons that say "Sign in". */
+  setProfileOpen: (open: boolean, reason?: "invitation" | "sharing" | "expired", signIn?: boolean) => void;
+  /** One-shot: the account dialog should start sign-in when it opens (not persisted). */
+  profileSignInRequested: boolean;
   settingsOpen: boolean;
   /** Section the settings dialog should show when it next opens; null keeps the last one. */
   settingsSection: SettingsSection | null;
@@ -464,7 +467,8 @@ export function createUiStore(storage?: StateStorage) {
   paletteOpen: false,
   profileOpen: false,
   profileReason: null,
-  setProfileOpen: (profileOpen, reason) => set({ profileOpen, profileReason: profileOpen ? reason ?? null : null }),
+  profileSignInRequested: false,
+  setProfileOpen: (profileOpen, reason, signIn) => set({ profileOpen, profileReason: profileOpen ? reason ?? null : null, profileSignInRequested: profileOpen && !!signIn }),
   settingsOpen: false,
   settingsSection: null,
   sketchOpen: false,

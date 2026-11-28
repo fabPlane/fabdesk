@@ -280,7 +280,7 @@ function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Pro
             </strong>
             <p>
               {payload.code === "cloud_signed_out"
-                ? "Sign in to your fabPlane account to publish a shared page. You can preview it or download a review ZIP without signing in."
+                ? "Publishing a shared page needs your fabPlane account."
                 : payload.message}
             </p>
             <div>
@@ -288,13 +288,13 @@ function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Pro
                 <Button
                   size="sm"
                   onClick={() => {
-                    useUiStore.getState().setProfileOpen(true, account ? "expired" : "sharing");
+                    useUiStore.getState().setProfileOpen(true, account ? "expired" : "sharing", true);
                   }}
                 >
-                  Profile & account
+                  {account ? "Sign in again" : "Sign in"}
                 </Button>
               )}
-              <Button
+              {payload.code !== "cloud_signed_out" && <Button
                 size="sm"
                 disabled={busy || settings.isFetching}
                 onClick={() => {
@@ -307,7 +307,7 @@ function ShareProjectForAccount({ projectId, onClose, onDownload, account }: Pro
                 }}
               >
                 {error instanceof ClipboardCopyError && link ? "Try copying again" : "Retry"}
-              </Button>
+              </Button>}
             </div>
           </div>
         )}
